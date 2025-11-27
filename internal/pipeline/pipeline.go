@@ -9,6 +9,7 @@ import (
 
 	"github.com/retroenv/retrodisasm/internal/arch/chip8"
 	"github.com/retroenv/retrodisasm/internal/arch/m6502"
+	"github.com/retroenv/retrodisasm/internal/arch/x86"
 	"github.com/retroenv/retrodisasm/internal/assembler"
 	"github.com/retroenv/retrodisasm/internal/assembler/asm6"
 	"github.com/retroenv/retrodisasm/internal/assembler/ca65"
@@ -175,6 +176,13 @@ func (p *Pipeline) createDisassemblerForSystem(system arch.System, paramConverte
 			return nil, fmt.Errorf("creating chip8 disassembler: %w", err)
 		}
 		return dis, nil
+	case arch.DOS:
+		archImpl := x86.New(p.logger)
+		dis, err := disasm.New(p.logger, archImpl, cart, disasmOpts, fileWriterConstructor)
+		if err != nil {
+			return nil, fmt.Errorf("creating x86 disassembler: %w", err)
+		}
+		return dis, nil
 	default:
 		return nil, fmt.Errorf("unsupported system '%s'", system)
 	}
@@ -212,6 +220,12 @@ func (p *Pipeline) printInfo(opts options.Program, cart *cartridge.Cartridge, sy
 
 	case arch.CHIP8System:
 		p.logger.Info("Processing Chip-8 ROM",
+			log.String("file", opts.Input),
+			log.String("assembler", opts.Assembler),
+		)
+
+	case arch.DOS:
+		p.logger.Info("Processing DOS .com file",
 			log.String("file", opts.Input),
 			log.String("assembler", opts.Assembler),
 		)

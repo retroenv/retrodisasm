@@ -61,9 +61,9 @@ func (l *Loader) loadFromReader(reader io.Reader, binary bool, system arch.Syste
 	var cart *cartridge.Cartridge
 	var err error
 
-	// Handle CHIP-8 and binary files as raw buffer data
+	// Handle CHIP-8, DOS, and binary files as raw buffer data
 	switch {
-	case binary, system == arch.CHIP8System:
+	case binary, system == arch.CHIP8System, system == arch.DOS:
 		cart, err = cartridge.LoadBuffer(reader)
 	default:
 		cart, err = cartridge.LoadFile(reader)

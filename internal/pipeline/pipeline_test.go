@@ -56,6 +56,11 @@ func TestCreateDisassemblerForSystem(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:    "create DOS disassembler",
+			system:  arch.DOS,
+			wantErr: false,
+		},
+		{
 			name:       "unsupported system",
 			system:     arch.System("unknown"),
 			wantErr:    true,
@@ -320,6 +325,62 @@ func TestPrintInfo(t *testing.T) {
 			p.printInfo(opts, cart, tt.system)
 		})
 	}
+}
+
+//nolint:funlen // test functions can be long
+func TestExecuteDOS(t *testing.T) {
+	logger := log.NewTestLogger(t)
+	p := New(logger)
+
+	// Create a simple DOS .com program:
+	// MOV AH, 09h      ; B4 09
+	// MOV DX, 010Eh    ; BA 0E 01
+	// INT 21h          ; CD 21
+	// MOV AH, 4Ch      ; B4 4C
+	// INT 21h          ; CD 21
+	// "Hello$"         ; 48 65 6C 6C 6F 24
+	comData := []byte{
+		0xB4, 0x09, // MOV AH, 09h
+		0xBA, 0x0E, 0x01, // MOV DX, 010Eh
+		0xCD, 0x21, // INT 21h
+		0xB4, 0x4C, // MOV AH, 4Ch
+		0xCD, 0x21, // INT 21h
+		'H', 'e', 'l', 'l', 'o', '$',
+	}
+
+	cart, err := p.loader.LoadFromBytes(comData, false, arch.DOS)
+	assert.NoError(t, err)
+	assert.NotNil(t, cart)
+	// Note: cartridge.LoadBuffer pads to 16KB, but our actual data is at the start
+
+	opts := options.Program{
+		Input:     "test.com",
+		Assembler: "retroasm",
+		Quiet:     true,
+	}
+	disasmOpts := options.Disassembler{
+		System: arch.DOS,
+	}
+
+	var buf bytes.Buffer
+	ctx := context.Background()
+
+	result, err := p.ExecuteWithCartridge(ctx, cart, opts, disasmOpts, &buf, arch.DOS)
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+
+	output := buf.String()
+	t.Logf("Disassembly output:\n%s", output)
+
+	// Verify output contains expected assembly elements
+	assert.Contains(t, output, "[bits 16]")
+	assert.Contains(t, output, "[org 0x0100]")
+	assert.Contains(t, output, "Start:")
+
+	// Check for mov instructions (should have decoded the opcodes)
+	assert.Contains(t, output, "mov")
+	// Check for int instruction
+	assert.Contains(t, output, "int")
 }
 
 // buildMinimalNESROM creates a minimal valid NES ROM in iNES format.

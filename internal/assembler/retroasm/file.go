@@ -42,6 +42,8 @@ func (w *FileWriter) Write() error {
 		return w.writeNES()
 	case arch.CHIP8System:
 		return w.writeCHIP8()
+	case arch.DOS:
+		return w.writeDOS()
 	default:
 		return fmt.Errorf("unsupported system for retroasm: %s", w.options.System)
 	}

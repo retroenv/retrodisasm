@@ -45,6 +45,9 @@ func (d *Detector) detectFromFile(filename string) arch.System {
 		return arch.CHIP8System
 	case ".nes":
 		return arch.NES
+	case ".com":
+		// DOS .com executable
+		return arch.DOS
 	default:
 		// Default to M6502/NES for unknown extensions
 		return arch.NES

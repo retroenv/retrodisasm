@@ -20,6 +20,7 @@ const (
 var SystemAssemblers = map[arch.System][]string{
 	arch.NES:         {Asm6, Ca65, Nesasm, Retroasm},
 	arch.CHIP8System: {Retroasm},
+	arch.DOS:         {Retroasm},
 }
 
 // ValidateSystemAssembler checks if the assembler is supported for the given system.
