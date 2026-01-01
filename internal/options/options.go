@@ -8,6 +8,9 @@ import (
 	"github.com/retroenv/retrogolib/arch"
 )
 
+// OutputStdout is the special output value that indicates stdout.
+const OutputStdout = "-"
+
 // Positional contains positional arguments.
 type Positional struct {
 	File string `arg:"positional" usage:"file to disassemble"`
@@ -16,7 +19,7 @@ type Positional struct {
 // Parameters contains file path options.
 type Parameters struct {
 	Input       string `flag:"i" usage:"input ROM file"`
-	Output      string `flag:"o" usage:"output .asm file (default: stdout)"`
+	Output      string `flag:"o" usage:"output .asm file (default: <input>.asm, use - for stdout)"`
 	Config      string `flag:"c" usage:"ca65 linker config file"`
 	CodeDataLog string `flag:"cdl" usage:"Code/Data log file (.cdl)"`
 	Batch       string `flag:"batch" usage:"batch process files matching pattern (e.g. *.nes)"`

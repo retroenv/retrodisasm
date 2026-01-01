@@ -82,7 +82,7 @@ func PrintBanner(logger *log.Logger, opts options.Program, version, commit, date
 
 // createWriter creates the output writer based on options.
 func createWriter(opts options.Program) (io.Writer, error) {
-	if opts.Output == "" {
+	if opts.Output == "" || opts.Output == options.OutputStdout {
 		return os.Stdout, nil
 	}
 

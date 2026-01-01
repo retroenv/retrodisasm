@@ -9,6 +9,7 @@ import (
 	"github.com/retroenv/retrodisasm/internal/cli"
 	"github.com/retroenv/retrodisasm/internal/config"
 	"github.com/retroenv/retrodisasm/internal/fileprocessor"
+	"github.com/retroenv/retrodisasm/internal/options"
 	"github.com/retroenv/retrogolib/app"
 	"github.com/retroenv/retrogolib/log"
 )
@@ -45,7 +46,7 @@ func main() {
 
 	for _, file := range files {
 		opts.Input = file
-		if len(files) > 1 || opts.Output == "" {
+		if opts.Output != options.OutputStdout && (len(files) > 1 || opts.Output == "") {
 			opts.Output = fileprocessor.GenerateOutputFilename(file)
 		}
 

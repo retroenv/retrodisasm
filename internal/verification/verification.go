@@ -13,18 +13,18 @@ import (
 	"github.com/retroenv/retrodisasm/internal/assembler/asm6"
 	"github.com/retroenv/retrodisasm/internal/assembler/ca65"
 	"github.com/retroenv/retrodisasm/internal/assembler/nesasm"
-	"github.com/retroenv/retrodisasm/internal/options"
+	opts "github.com/retroenv/retrodisasm/internal/options"
 	"github.com/retroenv/retrodisasm/internal/program"
 	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
 	"github.com/retroenv/retrogolib/log"
 )
 
 // VerifyOutput verifies that the output file recreates the exact input file.
-func VerifyOutput(ctx context.Context, logger *log.Logger, options options.Program,
+func VerifyOutput(ctx context.Context, logger *log.Logger, options opts.Program,
 	cart *cartridge.Cartridge, app *program.Program) error {
 
-	if options.Output == "" {
-		return errors.New("can not verify console output")
+	if options.Output == "" || options.Output == opts.OutputStdout {
+		return errors.New("can not verify stdout output")
 	}
 
 	filePart := filepath.Ext(options.Output)
@@ -72,7 +72,7 @@ func VerifyOutput(ctx context.Context, logger *log.Logger, options options.Progr
 	return nil
 }
 
-func assembleFile(ctx context.Context, options options.Program, cart *cartridge.Cartridge, app *program.Program,
+func assembleFile(ctx context.Context, options opts.Program, cart *cartridge.Cartridge, app *program.Program,
 	filePart, outputFile string) error {
 
 	switch options.Assembler {
