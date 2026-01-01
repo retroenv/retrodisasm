@@ -34,10 +34,22 @@ type BankReference struct {
 
 // Mapper provides a mapper manager interface for architecture code.
 type Mapper interface {
+	// BankCount returns the number of PRG banks.
+	BankCount() int
+	// BankVectors reads the three interrupt vectors from the specified bank's raw PRG data.
+	BankVectors(bankIndex int) [3]uint16
+	// IsAddressFixed returns true if the address is in a fixed (non-switchable) region.
+	IsAddressFixed(addr uint16) bool
+	// MapBank maps the switchable windows of the specified bank to the address space.
+	MapBank(bankIndex int)
+	// MappedBank returns the mapped bank for the given address.
 	MappedBank(address uint16) MappedBank
+	// MappedBankIndex returns the bank index for the given address.
 	MappedBankIndex(address uint16) uint16
 	// OffsetInfo returns the offset information for the given address.
 	OffsetInfo(address uint16) *DisasmOffset
 	// ReadMemory reads a byte from memory at the given address.
 	ReadMemory(address uint16) byte
+	// RestoreDefaultMapping restores the default bank mapping.
+	RestoreDefaultMapping()
 }

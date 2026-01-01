@@ -46,6 +46,36 @@ func (m *mockMapper) OffsetInfo(address uint16) *offset.DisasmOffset {
 	return offset
 }
 
+func (m *mockMapper) MappedBank(_ uint16) offset.MappedBank {
+	return nil
+}
+
+func (m *mockMapper) MappedBankIndex(_ uint16) uint16 {
+	return 0
+}
+
+func (m *mockMapper) ReadMemory(_ uint16) byte {
+	return 0
+}
+
+func (m *mockMapper) BankCount() int {
+	return 1
+}
+
+func (m *mockMapper) BankVectors(_ int) [3]uint16 {
+	return [3]uint16{}
+}
+
+func (m *mockMapper) MapBank(_ int) {
+}
+
+func (m *mockMapper) RestoreDefaultMapping() {
+}
+
+func (m *mockMapper) IsAddressFixed(_ uint16) bool {
+	return false
+}
+
 // mockDisasm is a minimal mock for testing.
 type mockDisasm struct {
 	Memory []byte

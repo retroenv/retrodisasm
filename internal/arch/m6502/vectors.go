@@ -16,6 +16,54 @@ func (ar *Arch6502) Initialize() error {
 	return nil
 }
 
+// InitializeBankVectors adds vector entry points for a specific bank.
+// Uses mapper-specific knowledge to determine which vectors to trace:
+// - Fixed regions (e.g., $C000-$FFFF for UNROM): Already traced from last bank, skip
+// - Switchable regions: Trace if vector differs from last bank's vector
+// This is called after the bank is mapped to the address space.
+func (ar *Arch6502) InitializeBankVectors(bankIndex int) {
+	vectors := ar.mapper.BankVectors(bankIndex)
+	vectorNames := []string{"NMI", "Reset", "IRQ"}
+
+	for i, addr := range vectors {
+		// Skip vectors in fixed regions - they always point to last bank's code
+		// which was already traced during initial processing
+		if ar.mapper.IsAddressFixed(addr) {
+			ar.logger.Debug("Skipping vector in fixed region",
+				log.Int("bank", bankIndex),
+				log.String("type", vectorNames[i]),
+				log.Hex("address", addr))
+			continue
+		}
+
+		// Always set label for switchable vectors (even if same address as last bank,
+		// since it's different code in each bank)
+		offsetInfo := ar.mapper.OffsetInfo(addr)
+		if offsetInfo != nil && offsetInfo.Label == "" {
+			offsetInfo.Label = fmt.Sprintf("%s_Bank%d", vectorNames[i], bankIndex)
+			offsetInfo.SetType(program.CallDestination)
+		}
+
+		if !ar.isValidVectorAddress(addr) {
+			continue
+		}
+		if !ar.isValidOpcodeAt(addr) {
+			ar.logger.Debug("Skipping bank vector with invalid opcode",
+				log.Int("bank", bankIndex),
+				log.String("type", vectorNames[i]),
+				log.Hex("address", addr))
+			continue
+		}
+
+		ar.logger.Debug("Adding bank vector entry point",
+			log.Int("bank", bankIndex),
+			log.String("type", vectorNames[i]),
+			log.Hex("address", addr))
+
+		ar.dis.AddAddressToParse(addr, addr, 0, nil, false)
+	}
+}
+
 // initializeIrqHandlers reads the 3 IRQ handler addresses and adds them to the addresses to be
 // followed for execution flow. Multiple handler can point to the same address.
 // nolint:funlen
@@ -117,4 +165,25 @@ func (ar *Arch6502) calculateCodeBaseAddress(resetHandler uint16) {
 
 	ar.dis.SetCodeBaseAddress(codeBaseAddress)
 	ar.dis.SetVectorsStartAddress(vectorsStartAddress)
+}
+
+// isValidVectorAddress checks if a vector address appears valid for tracing.
+func (ar *Arch6502) isValidVectorAddress(addr uint16) bool {
+	if addr == 0x0000 || addr == 0xFFFF {
+		return false
+	}
+	if addr < nes.CodeBaseAddress { // < 0x8000
+		return false
+	}
+	if addr >= m6502.InterruptVectorStartAddress { // >= 0xFFFA
+		return false
+	}
+	return true
+}
+
+// isValidOpcodeAt checks if the byte at addr is a valid 6502 opcode.
+func (ar *Arch6502) isValidOpcodeAt(addr uint16) bool {
+	b := ar.mapper.ReadMemory(addr)
+	opcode := m6502.Opcodes[b]
+	return opcode.Instruction != nil
 }

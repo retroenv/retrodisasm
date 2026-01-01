@@ -40,6 +40,9 @@ type architecture interface {
 	HandleDisambiguousInstructions(address uint16, offsetInfo *offset.DisasmOffset) bool
 	// Initialize the architecture.
 	Initialize() error
+	// InitializeBankVectors adds vector entry points for a specific bank.
+	// This is called after the bank is mapped to allow tracing code in that bank.
+	InitializeBankVectors(bankIndex int)
 	// IsAddressingIndexed returns if the opcode is using indexed addressing.
 	IsAddressingIndexed(opcode instruction.Opcode) bool
 	// LastCodeAddress returns the last possible address of code.
@@ -78,7 +81,6 @@ type Disasm struct {
 	branchDestinations   set.Set[uint16] // set of all addresses that are branched to
 	unreachableAddresses set.Set[uint16] // set of addresses marked as unreachable (dead code)
 
-	// TODO handle bank switch
 	offsetsToParse      []uint16
 	offsetsToParseAdded set.Set[uint16]
 	offsetsParsed       set.Set[uint16]
@@ -86,7 +88,8 @@ type Disasm struct {
 	functionReturnsToParse      []uint16
 	functionReturnsToParseAdded set.Set[uint16]
 
-	mapper *mapper.Mapper
+	mapper           *mapper.Mapper
+	currentBankIndex int // current bank being processed (-1 for last/default bank)
 }
 
 // New creates a new disassembler that uses the passed architecture to implement system
@@ -132,6 +135,11 @@ func (dis *Disasm) Process(ctx context.Context, mainWriter io.Writer, newBankWri
 		return nil, err
 	}
 
+	// Process additional banks (non-last banks) to trace their vector entry points
+	if err := dis.processAdditionalBanks(ctx); err != nil {
+		return nil, err
+	}
+
 	// Post-process architecture-specific patterns after all branch destinations are known
 	if err := dis.arch.PostProcessCode(); err != nil {
 		return nil, fmt.Errorf("post-processing code: %w", err)
@@ -153,6 +161,86 @@ func (dis *Disasm) Process(ctx context.Context, mainWriter io.Writer, newBankWri
 		return nil, fmt.Errorf("writing app to file: %w", err)
 	}
 	return app, nil
+}
+
+// processAdditionalBanks processes non-last banks to trace their vector entry points.
+// For each bank, it temporarily maps that bank, initializes its vectors, and runs the parser.
+func (dis *Disasm) processAdditionalBanks(ctx context.Context) error {
+	bankCount := dis.mapper.BankCount()
+	if bankCount <= 1 {
+		return nil // Single bank, nothing additional to process
+	}
+
+	// Process all banks except the last one (which was already processed)
+	for bankIndex := range bankCount - 1 {
+		// Track current bank for label generation
+		dis.currentBankIndex = bankIndex
+
+		// Map this bank to the address space
+		dis.mapper.MapBank(bankIndex)
+
+		// Clear tracking for switchable addresses so they can be re-traced in this bank
+		dis.clearSwitchableAddressTracking()
+
+		// Add this bank's vectors as entry points (only unique vectors are added)
+		dis.arch.InitializeBankVectors(bankIndex)
+
+		// Parse any new addresses that were added
+		if err := dis.followExecutionFlow(ctx); err != nil {
+			dis.mapper.RestoreDefaultMapping()
+			dis.currentBankIndex = -1
+			return fmt.Errorf("processing bank %d: %w", bankIndex, err)
+		}
+
+		// Process branch destinations for this bank while it's still mapped
+		// This ensures labels are set on the correct bank's offsets
+		dis.processBankBranchDestinations()
+	}
+
+	// Reset to indicate we're back to default/last bank
+	dis.currentBankIndex = -1
+
+	// Restore default mapping for final output
+	dis.mapper.RestoreDefaultMapping()
+	return nil
+}
+
+// clearSwitchableAddressTracking removes switchable addresses from tracking sets
+// so they can be re-traced when processing a different bank.
+// Fixed addresses (which always point to the last bank) are kept.
+func (dis *Disasm) clearSwitchableAddressTracking() {
+	// Create list of addresses to remove (can't modify set while iterating)
+	var toRemove []uint16
+	for addr := range dis.offsetsToParseAdded {
+		if !dis.mapper.IsAddressFixed(addr) {
+			toRemove = append(toRemove, addr)
+		}
+	}
+	for _, addr := range toRemove {
+		dis.offsetsToParseAdded.Remove(addr)
+	}
+
+	// Also clear from offsetsParsed for switchable addresses
+	toRemove = toRemove[:0]
+	for addr := range dis.offsetsParsed {
+		if !dis.mapper.IsAddressFixed(addr) {
+			toRemove = append(toRemove, addr)
+		}
+	}
+	for _, addr := range toRemove {
+		dis.offsetsParsed.Remove(addr)
+	}
+
+	// Also clear from functionReturnsToParseAdded (JSR targets)
+	toRemove = toRemove[:0]
+	for addr := range dis.functionReturnsToParseAdded {
+		if !dis.mapper.IsAddressFixed(addr) {
+			toRemove = append(toRemove, addr)
+		}
+	}
+	for _, addr := range toRemove {
+		dis.functionReturnsToParseAdded.Remove(addr)
+	}
 }
 
 // Cart returns the loaded cartridge.

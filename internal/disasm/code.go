@@ -58,6 +58,57 @@ func (dis *Disasm) processJumpDestinations() {
 	}
 }
 
+// processBankBranchDestinations processes branch destinations for the currently mapped bank.
+// This must be called while the bank is still mapped so labels are set on the correct offsets.
+// Only processes addresses in switchable regions; fixed regions are handled by processJumpDestinations.
+func (dis *Disasm) processBankBranchDestinations() {
+	bankIndex := dis.currentBankIndex
+
+	for address := range dis.branchDestinations {
+		// Skip fixed addresses - they'll be processed once with the default mapping
+		if dis.mapper.IsAddressFixed(address) {
+			continue
+		}
+
+		offsetInfo := dis.mapper.OffsetInfo(address)
+		if offsetInfo == nil {
+			continue
+		}
+
+		// Use existing label or generate bank-specific label
+		name := offsetInfo.Label
+		if name == "" {
+			switch {
+			case offsetInfo.IsType(program.JumpEngine):
+				name = fmt.Sprintf("_jump_engine_%04x_b%d", address, bankIndex)
+			case offsetInfo.IsType(program.CallDestination):
+				name = fmt.Sprintf("_func_%04x_b%d", address, bankIndex)
+			default:
+				name = fmt.Sprintf("_label_%04x_b%d", address, bankIndex)
+			}
+			offsetInfo.Label = name
+
+			// Handle jump into instruction: if offset is code but has no opcode bytes,
+			// it's inside another instruction
+			if (offsetInfo.IsType(program.CodeOffset) || offsetInfo.IsType(program.CodeAsData)) &&
+				len(offsetInfo.Data) == 0 {
+
+				dis.handleJumpIntoInstruction(address)
+			}
+		}
+
+		// Update callers to reference this label
+		for _, bankRef := range offsetInfo.BranchFrom {
+			callerInfo := bankRef.Mapped.OffsetInfo(bankRef.Index)
+			callerInfo.BranchingTo = name
+
+			if callerInfo.IsType(program.CodeOffset) {
+				callerInfo.Code = callerInfo.Opcode.Instruction().Name()
+			}
+		}
+	}
+}
+
 // handleJumpIntoInstruction converts an instruction that has a jump destination label inside
 // its second or third opcode bytes into data.
 func (dis *Disasm) handleJumpIntoInstruction(address uint16) {

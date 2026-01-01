@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/retroenv/retrodisasm/internal/program"
+	"github.com/retroenv/retrogolib/set"
 )
 
 const dataBytesPerLine = 16
@@ -26,6 +27,10 @@ type Writer struct {
 	app     *program.Program
 	options Options
 	writer  io.Writer
+
+	// writtenAliases tracks aliases (constants/variables) that have already been written
+	// to avoid duplicates in multi-bank ROMs where the same hardware registers are used
+	writtenAliases set.Set[string]
 }
 
 // Options of the writer.
@@ -37,14 +42,15 @@ type Options struct {
 // New creates a new writer.
 func New(app *program.Program, writer io.Writer, options Options) *Writer {
 	return &Writer{
-		app:     app,
-		options: options,
-		writer:  writer,
+		app:            app,
+		options:        options,
+		writer:         writer,
+		writtenAliases: set.New[string](),
 	}
 }
 
 // ProcessPRG processes the PRG segment and writes all code offsets, labels and their comments.
-func (w Writer) ProcessPRG(bank *program.PRGBank, endIndex int) error {
+func (w *Writer) ProcessPRG(bank *program.PRGBank, endIndex int) error {
 	var previousLineWasCode bool
 
 	for i := 0; i < endIndex; i++ {
@@ -78,7 +84,7 @@ func (w Writer) ProcessPRG(bank *program.PRGBank, endIndex int) error {
 }
 
 // BundleDataWrites bundles writes of data bytes to print dataBytesPerLine bytes per line.
-func (w Writer) BundleDataWrites(data []byte, lineWriter lineWriterFunc) error {
+func (w *Writer) BundleDataWrites(data []byte, lineWriter lineWriterFunc) error {
 	remaining := len(data)
 	for i := 0; remaining > 0; {
 		toWrite := min(remaining, dataBytesPerLine)
@@ -114,8 +120,22 @@ func (w Writer) BundleDataWrites(data []byte, lineWriter lineWriterFunc) error {
 }
 
 // OutputAliasMap outputs an alias map, for constants or variables.
-func (w Writer) OutputAliasMap(aliases map[string]uint16) error {
+// Aliases that have already been written are skipped to avoid duplicates in multi-bank ROMs.
+func (w *Writer) OutputAliasMap(aliases map[string]uint16) error {
 	if len(aliases) == 0 {
+		return nil
+	}
+
+	// Filter out already-written aliases
+	newAliases := make(map[string]uint16)
+	for name, address := range aliases {
+		if !w.writtenAliases.Contains(name) {
+			newAliases[name] = address
+			w.writtenAliases.Add(name)
+		}
+	}
+
+	if len(newAliases) == 0 {
 		return nil
 	}
 
@@ -124,14 +144,14 @@ func (w Writer) OutputAliasMap(aliases map[string]uint16) error {
 	}
 
 	// sort the aliases by name before outputting to avoid random map order
-	names := make([]string, 0, len(aliases))
-	for constant := range aliases {
+	names := make([]string, 0, len(newAliases))
+	for constant := range newAliases {
 		names = append(names, constant)
 	}
 	slices.Sort(names)
 
 	for _, constant := range names {
-		address := aliases[constant]
+		address := newAliases[constant]
 		if _, err := fmt.Fprintf(w.writer, "%s = $%04X\n", constant, address); err != nil {
 			return fmt.Errorf("writing alias: %w", err)
 		}
@@ -143,8 +163,36 @@ func (w Writer) OutputAliasMap(aliases map[string]uint16) error {
 	return nil
 }
 
+// VectorLabel returns the label for a vector address if one exists, otherwise the hex address.
+// It first checks the current bank, then falls back to the last bank (for shared vectors).
+func (w *Writer) VectorLabel(bank *program.PRGBank, addr uint16) string {
+	if addr < w.app.CodeBaseAddress {
+		return fmt.Sprintf("$%04X", addr)
+	}
+	index := int(addr - w.app.CodeBaseAddress)
+
+	// Check current bank first.
+	if index >= 0 && index < len(bank.Offsets) {
+		if label := bank.Offsets[index].Label; label != "" {
+			return label
+		}
+	}
+
+	// Fall back to last bank (shared vectors like NMI/Reset have labels there).
+	if len(w.app.PRG) > 0 {
+		lastBank := w.app.PRG[len(w.app.PRG)-1]
+		if index >= 0 && index < len(lastBank.Offsets) {
+			if label := lastBank.Offsets[index].Label; label != "" {
+				return label
+			}
+		}
+	}
+
+	return fmt.Sprintf("$%04X", addr)
+}
+
 // WriteCommentHeader writes the CRC32 checksums and code base address as comments to the output.
-func (w Writer) WriteCommentHeader() error {
+func (w *Writer) WriteCommentHeader() error {
 	if _, err := fmt.Fprintf(w.writer, "; PRG CRC32 checksum: %08x\n", w.app.Checksums.PRG); err != nil {
 		return fmt.Errorf("writing prg checksum: %w", err)
 	}
@@ -160,7 +208,7 @@ func (w Writer) WriteCommentHeader() error {
 	return nil
 }
 
-func (w Writer) writeOffset(bank *program.PRGBank, index, endIndex int, offset program.Offset) (int, error) {
+func (w *Writer) writeOffset(bank *program.PRGBank, index, endIndex int, offset program.Offset) (int, error) {
 	if offset.IsType(program.CodeOffset) && len(offset.Data) == 0 {
 		return 0, nil
 	}
@@ -188,7 +236,7 @@ func (w Writer) writeOffset(bank *program.PRGBank, index, endIndex int, offset p
 	return len(offset.Data) - 1, nil
 }
 
-func (w Writer) writeLabel(index int, offset program.Offset) error {
+func (w *Writer) writeLabel(index int, offset program.Offset) error {
 	if offset.Label == "" {
 		return nil
 	}
@@ -211,7 +259,7 @@ func (w Writer) writeLabel(index int, offset program.Offset) error {
 	return nil
 }
 
-func (w Writer) writeCodeLine(offset program.Offset) error {
+func (w *Writer) writeCodeLine(offset program.Offset) error {
 	if offset.Comment == "" {
 		if _, err := fmt.Fprintf(w.writer, "  %s\n", offset.Code); err != nil {
 			return fmt.Errorf("writing line: %w", err)
@@ -225,7 +273,7 @@ func (w Writer) writeCodeLine(offset program.Offset) error {
 }
 
 // bundlePRGDataWrites parses PRG to create bundled writes of data bytes per line.
-func (w Writer) bundlePRGDataWrites(bank *program.PRGBank, startIndex, endIndex int) (int, error) {
+func (w *Writer) bundlePRGDataWrites(bank *program.PRGBank, startIndex, endIndex int) (int, error) {
 	data := getPrgData(bank, startIndex, endIndex)
 	if len(data) == 0 {
 		return 0, nil

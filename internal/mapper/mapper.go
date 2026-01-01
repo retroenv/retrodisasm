@@ -22,6 +22,8 @@ type Mapper struct {
 	dis    disasm          // Reference to disasm for single-bank systems
 	vars   variableManager // Reference to variable manager
 	consts constantManager // Reference to constant manager
+
+	config MapperConfig // Mapper-specific configuration
 }
 
 // New creates a new mapper manager.
@@ -49,6 +51,8 @@ func createSingleBankMapper(cart *cartridge.Cartridge) (*Mapper, error) {
 
 // createMultiBankMapper creates a mapper for multi-bank systems (e.g., NES)
 func createMultiBankMapper(cart *cartridge.Cartridge, bankWindowSize int) (*Mapper, error) {
+	config := GetMapperConfig(cart.Mapper)
+
 	prgSize := len(cart.PRG)
 	mappedBanks := prgSize / bankWindowSize
 	mappedWindows := 0x10000 / bankWindowSize
@@ -58,6 +62,7 @@ func createMultiBankMapper(cart *cartridge.Cartridge, bankWindowSize int) (*Mapp
 		bankWindowSize: bankWindowSize,
 		banksMapped:    make([]mappedBank, mappedBanks),
 		mapped:         make([]mappedBank, mappedWindows),
+		config:         config,
 	}
 
 	m.initializeBanks(cart.PRG)
@@ -92,7 +97,8 @@ func (m *Mapper) populateBankMappings(bankWindowSize int) error {
 	return nil
 }
 
-// configureDefaultBankMapping sets up default bank mappings for NES systems
+// configureDefaultBankMapping sets up default bank mappings for NES systems.
+// Maps first bank to $8000/$A000 and last bank to $C000/$E000.
 func (m *Mapper) configureDefaultBankMapping() {
 	if m.bankWindowSize == 0x2000 {
 		m.setMappedBank(0x8000, m.banksMapped[0])
@@ -198,4 +204,76 @@ func log2(i int) int {
 		n++
 	}
 	return n
+}
+
+// BankCount returns the number of PRG banks.
+func (m *Mapper) BankCount() int {
+	return len(m.banks)
+}
+
+// MapBank maps the switchable windows of the specified bank to the address space.
+// Only windows defined as switchable by the mapper config are affected.
+// Fixed regions (e.g., $C000-$FFFF for UNROM) remain mapped to the last bank.
+func (m *Mapper) MapBank(bankIndex int) {
+	if m.bankWindowSize == 0 || bankIndex < 0 || bankIndex >= len(m.banks) {
+		return
+	}
+
+	// Get switchable windows from mapper config
+	var switchable []uint16
+	if m.config != nil {
+		switchable = m.config.SwitchableWindows()
+	}
+	if len(switchable) == 0 {
+		return // No switchable windows (e.g., NROM)
+	}
+
+	// Calculate how many windows per 32KB bank
+	windowsPerBank := 0x8000 / m.bankWindowSize
+	baseWindow := bankIndex * windowsPerBank
+
+	// Map only the switchable windows
+	for _, addr := range switchable {
+		windowOffset := int(addr-0x8000) / m.bankWindowSize
+		windowIndex := baseWindow + windowOffset
+		if windowIndex < len(m.banksMapped) {
+			m.setMappedBank(addr, m.banksMapped[windowIndex])
+		}
+	}
+}
+
+// RestoreDefaultMapping restores the default bank mapping.
+func (m *Mapper) RestoreDefaultMapping() {
+	m.configureDefaultBankMapping()
+}
+
+// IsAddressFixed returns true if the given address is in a fixed (non-switchable) region.
+// Fixed regions always map to the last bank regardless of bank switching.
+func (m *Mapper) IsAddressFixed(addr uint16) bool {
+	if m.config == nil {
+		return false
+	}
+	return m.config.IsAddressFixed(addr)
+}
+
+// BankVectors reads the three interrupt vectors from the specified bank's raw PRG data.
+// Returns [3]uint16 containing NMI, Reset, IRQ addresses in order.
+func (m *Mapper) BankVectors(bankIndex int) [3]uint16 {
+	if bankIndex < 0 || bankIndex >= len(m.banks) {
+		return [3]uint16{}
+	}
+	bnk := m.banks[bankIndex]
+	if len(bnk.prg) < 6 {
+		return [3]uint16{}
+	}
+	var vectors [3]uint16
+	idx := len(bnk.prg) - 6
+	for i := range 3 {
+		b1 := bnk.prg[idx]
+		idx++
+		b2 := bnk.prg[idx]
+		idx++
+		vectors[i] = uint16(b2)<<8 | uint16(b1)
+	}
+	return vectors
 }

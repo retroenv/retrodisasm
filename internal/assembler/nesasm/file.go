@@ -198,9 +198,10 @@ func (f FileWriter) writeBankVectors(bank *program.PRGBank) error {
 		return fmt.Errorf("writing vector org: %w", err)
 	}
 
-	nmi := fmt.Sprintf("$%04X", bank.Vectors[0])
-	reset := fmt.Sprintf("$%04X", bank.Vectors[1])
-	irq := fmt.Sprintf("$%04X", bank.Vectors[2])
+	// Use labels if available, otherwise use raw addresses.
+	nmi := f.writer.VectorLabel(bank, bank.Vectors[0])
+	reset := f.writer.VectorLabel(bank, bank.Vectors[1])
+	irq := f.writer.VectorLabel(bank, bank.Vectors[2])
 
 	if _, err := fmt.Fprintf(f.mainWriter, vectors, nmi, reset, irq); err != nil {
 		return fmt.Errorf("writing bank vectors: %w", err)

@@ -234,10 +234,10 @@ func (f FileWriter) writeCode(bank *program.PRGBank) error {
 // Each bank has its own NMI, Reset, and IRQ vectors stored in the last 6 bytes.
 func (f FileWriter) writeBankVectors(bank *program.PRGBank) error {
 	// Vectors are: [0]=NMI, [1]=Reset, [2]=IRQ
-	// Output as .addr directives using the addresses stored in the bank
-	nmi := fmt.Sprintf("$%04X", bank.Vectors[0])
-	reset := fmt.Sprintf("$%04X", bank.Vectors[1])
-	irq := fmt.Sprintf("$%04X", bank.Vectors[2])
+	// Use labels if available, otherwise use raw addresses.
+	nmi := f.writer.VectorLabel(bank, bank.Vectors[0])
+	reset := f.writer.VectorLabel(bank, bank.Vectors[1])
+	irq := f.writer.VectorLabel(bank, bank.Vectors[2])
 
 	if _, err := fmt.Fprintf(f.mainWriter, "\n.addr %s, %s, %s\n", nmi, reset, irq); err != nil {
 		return fmt.Errorf("writing bank vectors: %w", err)
