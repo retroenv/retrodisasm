@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.3.1] - 2026-01-03
+
+Added:
+
+* add `-base` flag for custom base address in binary mode
+* add `-o -` flag for stdout output
+* add `-output-unofficial` flag to output unofficial opcodes as mnemonics
+* add `-stop-at-unofficial` flag to stop tracing at unofficial opcodes
+* add multi-bank ROM support with per-bank vectors
+
+Fixed:
+
+* fix binary mode incorrectly including NES segments
+* fix tracing continuing after BRK instruction
+* fix unconditional branch detection for complementary branch patterns
+
 ## [v0.3.0] - 2025-11-08
 
 Added:
