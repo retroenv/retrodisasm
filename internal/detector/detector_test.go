@@ -32,6 +32,12 @@ func TestDetect(t *testing.T) {
 			wantSystem: arch.CHIP8System,
 		},
 		{
+			name:       "explicit DOS system option",
+			systemOpt:  "dos",
+			inputFile:  "game.bin",
+			wantSystem: arch.DOS,
+		},
+		{
 			name:       "detect from .nes extension",
 			systemOpt:  "",
 			inputFile:  "game.nes",
@@ -48,6 +54,12 @@ func TestDetect(t *testing.T) {
 			systemOpt:  "",
 			inputFile:  "game.rom",
 			wantSystem: arch.CHIP8System,
+		},
+		{
+			name:       "detect from .com extension",
+			systemOpt:  "",
+			inputFile:  "game.com",
+			wantSystem: arch.DOS,
 		},
 		{
 			name:       "unknown extension defaults to NES",
@@ -98,6 +110,16 @@ func TestDetectFromFile(t *testing.T) {
 			name:       ".rom extension",
 			filename:   "game.rom",
 			wantSystem: arch.CHIP8System,
+		},
+		{
+			name:       ".com extension",
+			filename:   "program.com",
+			wantSystem: arch.DOS,
+		},
+		{
+			name:       ".COM extension (uppercase)",
+			filename:   "PROGRAM.COM",
+			wantSystem: arch.DOS,
 		},
 		{
 			name:       "no extension",

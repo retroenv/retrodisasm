@@ -43,6 +43,8 @@ func (d *Detector) detectFromFile(filename string) arch.System {
 	case ".ch8", ".rom":
 		// ROM files could be CHIP-8, default to CHIP-8 for .rom extension
 		return arch.CHIP8System
+	case ".com":
+		return arch.DOS
 	case ".nes":
 		return arch.NES
 	default:

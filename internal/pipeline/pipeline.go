@@ -9,9 +9,11 @@ import (
 
 	"github.com/retroenv/retrodisasm/internal/arch/chip8"
 	"github.com/retroenv/retrodisasm/internal/arch/m6502"
+	"github.com/retroenv/retrodisasm/internal/arch/x86"
 	"github.com/retroenv/retrodisasm/internal/assembler"
 	"github.com/retroenv/retrodisasm/internal/assembler/asm6"
 	"github.com/retroenv/retrodisasm/internal/assembler/ca65"
+	"github.com/retroenv/retrodisasm/internal/assembler/nasm"
 	"github.com/retroenv/retrodisasm/internal/assembler/nesasm"
 	"github.com/retroenv/retrodisasm/internal/assembler/retroasm"
 	"github.com/retroenv/retrodisasm/internal/detector"
@@ -75,8 +77,17 @@ func (p *Pipeline) ExecuteWithCartridge(ctx context.Context, cart *cartridge.Car
 	disasmOpts.System = system
 	disasmOpts.Binary = opts.Binary
 
+	// DOS .com files use binary mode with default base address 0x0100
+	if system == arch.DOS {
+		disasmOpts.Binary = true
+		// Only set default base address if not explicitly provided
+		if disasmOpts.BaseAddress == 0 {
+			disasmOpts.BaseAddress = 0x0100
+		}
+	}
+
 	// When using binary mode, only output code without NES-specific segments
-	if opts.Binary {
+	if disasmOpts.Binary {
 		disasmOpts.CodeOnly = true
 	}
 
@@ -141,6 +152,10 @@ func (p *Pipeline) initializeAssembler(assemblerName string) (disasm.FileWriterC
 		fileWriterConstructor = ca65.New
 		paramCfg = ca65.ParamConfig
 
+	case assembler.Nasm:
+		fileWriterConstructor = nasm.New
+		paramCfg = nasm.ParamConfig
+
 	case assembler.Nesasm:
 		fileWriterConstructor = nesasm.New
 		paramCfg = nesasm.ParamConfig
@@ -174,6 +189,14 @@ func (p *Pipeline) createDisassemblerForSystem(system arch.System, paramConverte
 		dis, err := disasm.New(p.logger, archImpl, cart, disasmOpts, fileWriterConstructor)
 		if err != nil {
 			return nil, fmt.Errorf("creating chip8 disassembler: %w", err)
+		}
+		return dis, nil
+	case arch.DOS:
+		archImpl := x86.New(p.logger, paramConverter)
+		archImpl.SetOptions(cart, disasmOpts.BaseAddress)
+		dis, err := disasm.New(p.logger, archImpl, cart, disasmOpts, fileWriterConstructor)
+		if err != nil {
+			return nil, fmt.Errorf("creating x86 disassembler: %w", err)
 		}
 		return dis, nil
 	default:
@@ -215,6 +238,13 @@ func (p *Pipeline) printInfo(opts options.Program, cart *cartridge.Cartridge, sy
 		p.logger.Info("Processing Chip-8 ROM",
 			log.String("file", opts.Input),
 			log.String("assembler", opts.Assembler),
+		)
+
+	case arch.DOS:
+		p.logger.Info("Processing DOS .com file",
+			log.String("file", opts.Input),
+			log.String("assembler", opts.Assembler),
+			log.Int("size", len(cart.PRG)),
 		)
 	}
 }

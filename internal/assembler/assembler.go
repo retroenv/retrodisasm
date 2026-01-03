@@ -12,6 +12,7 @@ import (
 const (
 	Asm6     = "asm6"
 	Ca65     = "ca65"
+	Nasm     = "nasm"
 	Nesasm   = "nesasm"
 	Retroasm = "retroasm"
 )
@@ -20,6 +21,7 @@ const (
 var SystemAssemblers = map[arch.System][]string{
 	arch.NES:         {Asm6, Ca65, Nesasm, Retroasm},
 	arch.CHIP8System: {Retroasm},
+	arch.DOS:         {Nasm},
 }
 
 // ValidateSystemAssembler checks if the assembler is supported for the given system.

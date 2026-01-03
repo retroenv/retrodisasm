@@ -14,7 +14,7 @@ import (
 	"github.com/retroenv/retrogolib/cli"
 )
 
-var validAssemblers = []string{"asm6", "ca65", "nesasm", "retroasm"}
+var validAssemblers = []string{"asm6", "ca65", "nasm", "nesasm", "retroasm"}
 
 // ParseFlags parses command line flags and returns program and disassembler options.
 func ParseFlags() (options.Program, options.Disassembler, error) {
