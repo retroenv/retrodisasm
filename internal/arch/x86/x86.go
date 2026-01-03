@@ -166,29 +166,29 @@ func (a *X86) formatOffsetCode(offsetInfo *offset.DisasmOffset, instruction inst
 
 // formatOperands formats the operands for an x86 instruction.
 func (a *X86) formatOperands(opcode Opcode, data []byte) string {
-	if opcode.Opcode == nil || opcode.Opcode.Instruction == nil {
+	if opcode.op == nil || opcode.op.Instruction == nil {
 		return ""
 	}
 
 	// Handle register + immediate instructions (like MOV AH, imm8)
-	if opcode.Register > 0 {
-		regName := a.registerParamToString(opcode.Register)
+	if opcode.op.Register > 0 {
+		regName := a.registerParamToString(opcode.op.Register)
 		if len(data) > 1 {
 			// Has immediate operand
-			imm := a.formatImmediate(data[1:], int(opcode.Size)-1)
+			imm := a.formatImmediate(data[1:], int(opcode.op.Size)-1)
 			return fmt.Sprintf("%s, %s", regName, imm)
 		}
 		return regName
 	}
 
 	// Handle pure immediate instructions (like INT imm8)
-	addrMode := opcode.Opcode.Addressing.String()
+	addrMode := opcode.op.Addressing.String()
 	if addrMode == "immediate" && len(data) > 1 {
-		return a.formatImmediate(data[1:], int(opcode.Size)-1)
+		return a.formatImmediate(data[1:], int(opcode.op.Size)-1)
 	}
 
 	// Handle ModR/M based instructions
-	if opcode.HasModRM && len(data) >= 2 {
+	if opcode.op.HasModRM && len(data) >= 2 {
 		return a.formatModRM(data)
 	}
 
@@ -320,26 +320,37 @@ func (a *X86) getEffectiveAddress(rm byte, dispSize int, dispBytes []byte) strin
 // handleControlFlow processes control flow based on instruction type.
 func (a *X86) handleControlFlow(address uint16, offsetInfo *offset.DisasmOffset, instruction instruction.Instruction, instr Instruction) {
 	pc := a.dis.ProgramCounter()
+	name := instr.Name()
 
 	switch {
-	case instr.IsJump():
+	case name == x86cpu.CallName:
+		// CALL: add target and continue to next instruction
+		if target, ok := a.extractBranchTarget(address, offsetInfo.Data); ok {
+			a.dis.AddAddressToParse(target, offsetInfo.Context, address, instruction, true)
+		}
+		nextAddr := pc + uint16(len(offsetInfo.Data))
+		a.dis.AddAddressToParse(nextAddr, offsetInfo.Context, address, instruction, false)
+
+	case name == x86cpu.JmpName:
+		// Unconditional JMP: add target only, don't continue
 		if target, ok := a.extractBranchTarget(address, offsetInfo.Data); ok {
 			a.dis.AddAddressToParse(target, offsetInfo.Context, address, instruction, true)
 		}
 
-	case instruction.IsCall():
+	case x86cpu.ConditionalJumpInstructions.Contains(name):
+		// Conditional jumps: add target AND continue to next instruction
 		if target, ok := a.extractBranchTarget(address, offsetInfo.Data); ok {
 			a.dis.AddAddressToParse(target, offsetInfo.Context, address, instruction, true)
 		}
-		// Continue to next instruction after call
 		nextAddr := pc + uint16(len(offsetInfo.Data))
 		a.dis.AddAddressToParse(nextAddr, offsetInfo.Context, address, instruction, false)
 
 	case !instr.IsReturn():
-		// Continue to next instruction for non-terminal instructions
+		// Normal instructions (not RET/RETF/IRET/HLT/JMP): continue to next instruction
 		nextAddr := pc + uint16(len(offsetInfo.Data))
 		a.dis.AddAddressToParse(nextAddr, offsetInfo.Context, address, instruction, false)
 	}
+	// Terminal instructions (RET/RETF/IRET/HLT/JMP) - don't add any addresses
 }
 
 // extractBranchTarget extracts the target address from a branch instruction.

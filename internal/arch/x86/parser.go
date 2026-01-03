@@ -37,14 +37,14 @@ func (a *X86) initializeOffsetInfo(offsetInfo *offset.DisasmOffset) (bool, error
 		// Read second opcode byte
 		if pc+1 >= a.LastCodeAddress() {
 			offsetInfo.Data = data
-			offsetInfo.Opcode = Opcode{&opcodeInfo}
+			offsetInfo.Opcode = Opcode{op: &opcodeInfo}
 			return false, nil
 		}
 
 		secondByte, err := a.dis.ReadMemory(pc + 1)
 		if err != nil {
 			offsetInfo.Data = data
-			offsetInfo.Opcode = Opcode{&opcodeInfo}
+			offsetInfo.Opcode = Opcode{op: &opcodeInfo}
 			return false, nil //nolint:nilerr // Intentionally stopping disassembly on read error
 		}
 
@@ -57,14 +57,14 @@ func (a *X86) initializeOffsetInfo(offsetInfo *offset.DisasmOffset) (bool, error
 	if opcodeInfo.HasModRM {
 		if pc+uint16(instructionSize) >= a.LastCodeAddress() {
 			offsetInfo.Data = data
-			offsetInfo.Opcode = Opcode{&opcodeInfo}
+			offsetInfo.Opcode = Opcode{op: &opcodeInfo}
 			return false, nil
 		}
 
 		modrmByte, err := a.dis.ReadMemory(pc + uint16(instructionSize))
 		if err != nil {
 			offsetInfo.Data = data
-			offsetInfo.Opcode = Opcode{&opcodeInfo}
+			offsetInfo.Opcode = Opcode{op: &opcodeInfo}
 			return false, nil //nolint:nilerr // Intentionally stopping disassembly on read error
 		}
 
@@ -106,7 +106,7 @@ func (a *X86) initializeOffsetInfo(offsetInfo *offset.DisasmOffset) (bool, error
 	}
 
 	offsetInfo.Data = data
-	offsetInfo.Opcode = Opcode{&opcodeInfo}
+	offsetInfo.Opcode = Opcode{op: &opcodeInfo}
 	return true, nil //nolint:nilerr // Error intentionally ignored in loops above
 }
 
