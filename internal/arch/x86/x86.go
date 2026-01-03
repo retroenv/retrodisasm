@@ -197,18 +197,7 @@ func (a *X86) formatOperands(opcode Opcode, data []byte) string {
 
 // registerParamToString converts a RegisterParam to its string representation.
 func (a *X86) registerParamToString(reg x86cpu.RegisterParam) string {
-	// Map RegisterParam values to register names
-	regNames := map[x86cpu.RegisterParam]string{
-		0: "al", 1: "cl", 2: "dl", 3: "bl",
-		4: "ah", 5: "ch", 6: "dh", 7: "bh",
-		8: "ax", 9: "cx", 10: "dx", 11: "bx",
-		12: "sp", 13: "bp", 14: "si", 15: "di",
-	}
-
-	if name, ok := regNames[reg]; ok {
-		return name
-	}
-	return fmt.Sprintf("reg%d", reg)
+	return reg.String()
 }
 
 // formatImmediate formats an immediate value from instruction bytes.
@@ -238,14 +227,12 @@ func (a *X86) formatModRM(data []byte) string {
 		return ""
 	}
 
-	modRM := data[1]
-	mod := (modRM >> 6) & 0x03
-	reg := (modRM >> 3) & 0x07
-	rm := modRM & 0x07
+	var modrm x86cpu.ModRM
+	modrm.FromByte(data[1])
 
 	// Get register names
-	regName := a.getRegisterName(reg, false) // assuming word registers for now
-	rmOperand := a.getRMOperand(mod, rm, data[2:])
+	regName := a.getRegisterName(modrm.Reg, false) // assuming word registers for now
+	rmOperand := a.getRMOperand(modrm.Mod, modrm.RM, data[2:])
 
 	return fmt.Sprintf("%s, %s", regName, rmOperand)
 }

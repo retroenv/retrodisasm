@@ -28,16 +28,10 @@ func (i Instruction) IsCall() bool {
 
 // IsJump returns true if this is a jump instruction.
 func (i Instruction) IsJump() bool {
-	name := i.Name()
-	return name == x86.JmpName ||
-		name == x86.JbName || name == x86.JbeName ||
-		name == x86.JlName || name == x86.JleName ||
-		name == x86.JnbName || name == x86.JnbeName ||
-		name == x86.JnlName || name == x86.JnleName ||
-		name == x86.JnoName || name == x86.JnpName ||
-		name == x86.JnsName || name == x86.JnzName ||
-		name == x86.JoName || name == x86.JpName ||
-		name == x86.JsName || name == x86.JzName
+	if i.Instruction == nil {
+		return false
+	}
+	return x86.BranchingInstructions.Contains(i.Name())
 }
 
 // IsReturn returns true if this is a return instruction.
