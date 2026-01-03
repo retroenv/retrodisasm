@@ -5,20 +5,17 @@ import (
 
 	"github.com/retroenv/retrodisasm/internal/offset"
 	chip8cpu "github.com/retroenv/retrogolib/arch/cpu/chip8"
-	"github.com/retroenv/retrogolib/arch/system/nes/parameter"
 	"github.com/retroenv/retrogolib/assert"
 )
 
 func TestNew(t *testing.T) {
-	converter := parameter.New(parameter.Config{})
-	arch := New(converter)
+	arch := New()
 
 	assert.NotNil(t, arch)
-	assert.Equal(t, converter, arch.converter)
 }
 
 func TestChip8_Constants(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	constants, err := arch.Constants()
 	assert.NoError(t, err)
@@ -26,7 +23,7 @@ func TestChip8_Constants(t *testing.T) {
 }
 
 func TestChip8_AddressingParam(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	tests := []struct {
 		name     string
@@ -53,7 +50,7 @@ func TestChip8_AddressingParam(t *testing.T) {
 }
 
 func TestChip8_HandleDisambiguousInstructions(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	// CHIP-8 has no disambiguous instructions
 	result := arch.HandleDisambiguousInstructions(0x200, nil)
@@ -61,7 +58,7 @@ func TestChip8_HandleDisambiguousInstructions(t *testing.T) {
 }
 
 func TestChip8_IsAddressingIndexed(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	// CHIP-8 doesn't use indexed addressing
 	result := arch.IsAddressingIndexed(nil)
@@ -69,14 +66,14 @@ func TestChip8_IsAddressingIndexed(t *testing.T) {
 }
 
 func TestChip8_LastCodeAddress(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	addr := arch.LastCodeAddress()
 	assert.Equal(t, LastCodeAddress, addr)
 }
 
 func TestChip8_ProcessVariableUsage(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	// CHIP-8 has simple addressing, no complex variable usage
 	err := arch.ProcessVariableUsage(nil, "test")
@@ -84,7 +81,7 @@ func TestChip8_ProcessVariableUsage(t *testing.T) {
 }
 
 func TestChip8_ReadOpParam(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	// CHIP-8 opcodes are self-contained, no additional parameters
 	param, data, err := arch.ReadOpParam(0, 0x200)
@@ -94,7 +91,7 @@ func TestChip8_ReadOpParam(t *testing.T) {
 }
 
 func TestChip8_BankWindowSize(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	// CHIP-8 doesn't use banking
 	size := arch.BankWindowSize(nil)
@@ -193,7 +190,7 @@ func TestInstruction_IsDataReference(t *testing.T) {
 }
 
 func TestChip8_Initialize(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 	mapper := newMockMapper()
 	dis := newMockDisasm()
 
@@ -212,7 +209,7 @@ func TestChip8_Initialize(t *testing.T) {
 }
 
 func TestChip8_ReadMemory(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 	mapper := newMockMapper()
 	dis := newMockDisasm()
 
@@ -232,7 +229,7 @@ func TestChip8_ReadMemory(t *testing.T) {
 }
 
 func TestChip8_ProcessOffset(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 	mapper := newMockMapper()
 	dis := newMockDisasm()
 
@@ -260,7 +257,7 @@ func TestChip8_ProcessOffset(t *testing.T) {
 }
 
 func TestChip8_ProcessOffset_JumpInstruction(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 	mapper := newMockMapper()
 	dis := newMockDisasm()
 
@@ -283,7 +280,7 @@ func TestChip8_ProcessOffset_JumpInstruction(t *testing.T) {
 }
 
 func TestChip8_ProcessOffset_CallInstruction(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 	mapper := newMockMapper()
 	dis := newMockDisasm()
 
@@ -306,7 +303,7 @@ func TestChip8_ProcessOffset_CallInstruction(t *testing.T) {
 }
 
 func TestChip8_ProcessOffset_SkipInstruction(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 	mapper := newMockMapper()
 	dis := newMockDisasm()
 
@@ -329,7 +326,7 @@ func TestChip8_ProcessOffset_SkipInstruction(t *testing.T) {
 }
 
 func TestChip8_ProcessOffset_LoadIInstruction(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 	mapper := newMockMapper()
 	dis := newMockDisasm()
 
@@ -352,7 +349,7 @@ func TestChip8_ProcessOffset_LoadIInstruction(t *testing.T) {
 }
 
 func TestChip8_ProcessOffset_DataOffset(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 	mapper := newMockMapper()
 	dis := newMockDisasm()
 
@@ -383,7 +380,7 @@ func TestChip8_Constants_EdgeCases(t *testing.T) {
 }
 
 func TestChip8_AddressingParam_EdgeCases(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	tests := []struct {
 		name     string
@@ -411,7 +408,7 @@ func TestChip8_AddressingParam_EdgeCases(t *testing.T) {
 }
 
 func TestChip8_formatInstruction(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	tests := []struct {
 		name      string
@@ -456,7 +453,7 @@ func TestChip8_formatInstruction(t *testing.T) {
 }
 
 func TestChip8_extractTargetAddressInROM(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	tests := []struct {
 		name          string
@@ -496,7 +493,7 @@ func TestChip8_extractTargetAddressInROM(t *testing.T) {
 }
 
 func TestChip8_formatJumpInstruction(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	tests := []struct {
 		name     string
@@ -517,7 +514,7 @@ func TestChip8_formatJumpInstruction(t *testing.T) {
 }
 
 func TestChip8_formatCompareInstruction(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	tests := []struct {
 		name     string
@@ -540,7 +537,7 @@ func TestChip8_formatCompareInstruction(t *testing.T) {
 }
 
 func TestChip8_formatLoadInstruction(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	tests := []struct {
 		name     string
@@ -562,7 +559,7 @@ func TestChip8_formatLoadInstruction(t *testing.T) {
 }
 
 func TestChip8_formatAddInstruction(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	tests := []struct {
 		name     string
@@ -583,7 +580,7 @@ func TestChip8_formatAddInstruction(t *testing.T) {
 }
 
 func TestChip8_formatBinaryInstruction(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	opcode := uint16(0x8231) // OR V2, V3
 	result := arch.formatBinaryInstruction(opcode)
@@ -591,7 +588,7 @@ func TestChip8_formatBinaryInstruction(t *testing.T) {
 }
 
 func TestChip8_formatShiftInstruction(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	opcode := uint16(0x8236) // SHR V2
 	result := arch.formatShiftInstruction(opcode)
@@ -599,7 +596,7 @@ func TestChip8_formatShiftInstruction(t *testing.T) {
 }
 
 func TestChip8_formatRandomInstruction(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	opcode := uint16(0xC234) // RND V2, $34
 	result := arch.formatRandomInstruction(opcode)
@@ -607,7 +604,7 @@ func TestChip8_formatRandomInstruction(t *testing.T) {
 }
 
 func TestChip8_formatDrawInstruction(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	opcode := uint16(0xD235) // DRW V2, V3, $5
 	result := arch.formatDrawInstruction(opcode)
@@ -615,7 +612,7 @@ func TestChip8_formatDrawInstruction(t *testing.T) {
 }
 
 func TestChip8_formatSkipInstruction(t *testing.T) {
-	arch := New(parameter.New(parameter.Config{}))
+	arch := New()
 
 	opcode := uint16(0xE29E) // SKP V2
 	result := arch.formatSkipInstruction(opcode)

@@ -12,7 +12,6 @@ import (
 	"github.com/retroenv/retrodisasm/internal/program"
 	"github.com/retroenv/retrogolib/arch/cpu/chip8"
 	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
-	"github.com/retroenv/retrogolib/arch/system/nes/parameter"
 )
 
 // CHIP-8 memory layout constants.
@@ -57,19 +56,16 @@ type disasm interface {
 }
 
 // New returns a new CHIP-8 architecture configuration.
-func New(converter parameter.Converter) *Chip8 {
-	return &Chip8{
-		converter: converter,
-	}
+func New() *Chip8 {
+	return &Chip8{}
 }
 
 // Chip8 implements the arch.Architecture interface for CHIP-8 processors.
 // CHIP-8 is an interpreted programming language with 4KB of memory,
 // 16 general-purpose 8-bit registers, and a simple instruction set.
 type Chip8 struct {
-	converter parameter.Converter
-	dis       disasm
-	mapper    offset.Mapper
+	dis    disasm
+	mapper offset.Mapper
 }
 
 // InjectDependencies sets the required dependencies for this architecture.

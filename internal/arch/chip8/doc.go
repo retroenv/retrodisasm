@@ -38,8 +38,7 @@
 // # Usage Example
 //
 //	// Create CHIP-8 architecture instance
-//	converter := parameter.New(parameter.Config{})
-//	arch := chip8.New(converter)
+//	arch := chip8.New()
 //
 //	// Initialize disassembler
 //	err := arch.Initialize(disassembler)

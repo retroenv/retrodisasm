@@ -170,7 +170,7 @@ func (p *Pipeline) createDisassemblerForSystem(system arch.System, paramConverte
 		}
 		return dis, nil
 	case arch.CHIP8System:
-		archImpl := chip8.New(paramConverter)
+		archImpl := chip8.New()
 		dis, err := disasm.New(p.logger, archImpl, cart, disasmOpts, fileWriterConstructor)
 		if err != nil {
 			return nil, fmt.Errorf("creating chip8 disassembler: %w", err)
