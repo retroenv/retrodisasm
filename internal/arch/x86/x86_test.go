@@ -3,25 +3,18 @@ package x86
 import (
 	"testing"
 
-	"github.com/retroenv/retrogolib/arch/system/nes/parameter"
 	"github.com/retroenv/retrogolib/assert"
-	"github.com/retroenv/retrogolib/log"
 )
 
 func TestNew(t *testing.T) {
-	logger := log.NewTestLogger(t)
-	converter := parameter.New(parameter.Config{})
-	arch := New(logger, converter)
+	arch := New()
 
 	assert.NotNil(t, arch)
-	assert.Equal(t, converter, arch.converter)
-	assert.Equal(t, logger, arch.logger)
 	assert.Equal(t, DefaultCodeBase, arch.codeBase)
 }
 
 func TestX86_Constants(t *testing.T) {
-	logger := log.NewTestLogger(t)
-	arch := New(logger, parameter.New(parameter.Config{}))
+	arch := New()
 
 	constants, err := arch.Constants()
 	assert.NoError(t, err)
@@ -29,8 +22,7 @@ func TestX86_Constants(t *testing.T) {
 }
 
 func TestX86_AddressingParam(t *testing.T) {
-	logger := log.NewTestLogger(t)
-	arch := New(logger, parameter.New(parameter.Config{}))
+	arch := New()
 
 	tests := []struct {
 		name     string
@@ -58,24 +50,21 @@ func TestX86_AddressingParam(t *testing.T) {
 }
 
 func TestX86_HandleDisambiguousInstructions(t *testing.T) {
-	logger := log.NewTestLogger(t)
-	arch := New(logger, parameter.New(parameter.Config{}))
+	arch := New()
 
 	result := arch.HandleDisambiguousInstructions(0x0100, nil)
 	assert.False(t, result) // Currently no disambiguation implemented
 }
 
 func TestX86_IsAddressingIndexed(t *testing.T) {
-	logger := log.NewTestLogger(t)
-	arch := New(logger, parameter.New(parameter.Config{}))
+	arch := New()
 
 	result := arch.IsAddressingIndexed(nil)
 	assert.False(t, result)
 }
 
 func TestX86_LastCodeAddress(t *testing.T) {
-	logger := log.NewTestLogger(t)
-	arch := New(logger, parameter.New(parameter.Config{}))
+	arch := New()
 
 	// Set PRG length for testing
 	arch.SetPRGLength(1000)
@@ -85,8 +74,7 @@ func TestX86_LastCodeAddress(t *testing.T) {
 }
 
 func TestX86_SetCodeBase(t *testing.T) {
-	logger := log.NewTestLogger(t)
-	arch := New(logger, parameter.New(parameter.Config{}))
+	arch := New()
 
 	customBase := uint16(0x0200)
 	arch.SetCodeBase(customBase)
@@ -95,8 +83,7 @@ func TestX86_SetCodeBase(t *testing.T) {
 }
 
 func TestX86_BankWindowSize(t *testing.T) {
-	logger := log.NewTestLogger(t)
-	arch := New(logger, parameter.New(parameter.Config{}))
+	arch := New()
 
 	size := arch.BankWindowSize(nil)
 	assert.Equal(t, 0, size) // DOS doesn't use banking

@@ -192,7 +192,7 @@ func (p *Pipeline) createDisassemblerForSystem(system arch.System, paramConverte
 		}
 		return dis, nil
 	case arch.DOS:
-		archImpl := x86.New(p.logger, paramConverter)
+		archImpl := x86.New()
 		archImpl.SetOptions(cart, disasmOpts.BaseAddress)
 		dis, err := disasm.New(p.logger, archImpl, cart, disasmOpts, fileWriterConstructor)
 		if err != nil {

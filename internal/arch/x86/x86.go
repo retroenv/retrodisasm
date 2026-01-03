@@ -8,8 +8,6 @@ import (
 	"github.com/retroenv/retrodisasm/internal/instruction"
 	"github.com/retroenv/retrodisasm/internal/offset"
 	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
-	"github.com/retroenv/retrogolib/arch/system/nes/parameter"
-	"github.com/retroenv/retrogolib/log"
 )
 
 // DOS .com file constants.
@@ -37,18 +35,14 @@ type disasm interface {
 }
 
 // New returns a new x86 architecture configuration.
-func New(logger *log.Logger, converter parameter.Converter) *X86 {
+func New() *X86 {
 	return &X86{
-		logger:    logger,
-		converter: converter,
-		codeBase:  DefaultCodeBase,
+		codeBase: DefaultCodeBase,
 	}
 }
 
 // X86 implements the arch.Architecture interface for x86 (8086/8088) processors.
 type X86 struct {
-	logger    *log.Logger
-	converter parameter.Converter
 	dis       disasm
 	mapper    offset.Mapper
 	codeBase  uint16 // Base address for code (default 0x0100)
