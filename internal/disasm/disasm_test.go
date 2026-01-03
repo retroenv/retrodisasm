@@ -155,6 +155,45 @@ func TestDisasmStopAtUnofficial(t *testing.T) {
 	runDisasm(t, setup, input, expected)
 }
 
+// TestDisasmStopAtBRK tests that BRK instructions stop tracing (treated as data)
+// unless they are branch destinations. Multiple consecutive BRKs are typically
+// ROM padding ($00 bytes).
+func TestDisasmStopAtBRK(t *testing.T) {
+	input := []byte{
+		0xbd, 0x08, 0x80, // $8000 lda a:$8008,X (references data)
+		0x90, 0x04, // $8003 bcc $8009 (branch over BRKs)
+		0x00, // $8005 brk - stops trace, treated as data
+		0x00, // $8006 brk (consecutive BRK, padding)
+		0x00, // $8007 brk (consecutive BRK, padding)
+		0x40, // $8008 rti - never reached by trace, becomes data
+		0x40, // $8009 rti - reached via branch from $8003
+	}
+
+	// BRK at $8005 stops the trace. Subsequent 0x00 bytes at $8006-$8007 are never
+	// reached by execution flow (BRK jumps to IRQ handler), so they're treated as data.
+	// RTI at $8008 is also never reached by trace, becomes data.
+	// RTI at $8009 is reached via the branch at $8003.
+	expected := `Reset:
+        lda a:_data_8008_indexed,X
+        bcc _label_8009
+        brk
+
+        .byte $00, $00
+
+        _data_8008_indexed:
+        .byte $40
+
+        _label_8009:
+        rti
+`
+
+	setup := func(opts *options.Disassembler, _ *cartridge.Cartridge) {
+		opts.OffsetComments = false
+		opts.HexComments = false
+	}
+	runDisasm(t, setup, input, expected)
+}
+
 // TestDisasmBranchToUnofficialInstruction ensures that when an unofficial instruction
 // (converted to CodeAsData) is a branch destination, it doesn't get consumed by a preceding
 // instruction that could overlap with it.
