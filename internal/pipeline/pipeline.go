@@ -163,6 +163,7 @@ func (p *Pipeline) createDisassemblerForSystem(system arch.System, paramConverte
 	switch system {
 	case arch.NES:
 		archImpl := m6502.New(p.logger, paramConverter)
+		archImpl.SetOptions(disasmOpts) // Set options before disasm.New for BankWindowSize
 		dis, err := disasm.New(p.logger, archImpl, cart, disasmOpts, fileWriterConstructor)
 		if err != nil {
 			return nil, fmt.Errorf("creating m6502 disassembler: %w", err)

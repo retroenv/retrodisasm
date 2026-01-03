@@ -13,14 +13,7 @@ import (
 func (dis *Disasm) AddAddressToParse(address, context, from uint16,
 	currentInstruction instruction.Instruction, isABranchDestination bool) {
 
-	// ignore branching into addresses before the code base address, for example when generating code in
-	// zeropage and branching into it to execute it.
-	if address < dis.codeBaseAddress {
-		return
-	}
-
-	// Don't follow branches to addresses marked as unreachable (dead code)
-	if dis.unreachableAddresses.Contains(address) {
+	if !dis.isValidCodeAddress(address) {
 		return
 	}
 
@@ -68,8 +61,31 @@ func (dis *Disasm) DeleteFunctionReturnToParse(address uint16) {
 	dis.functionReturnsToParseAdded.Remove(address)
 }
 
+// isValidCodeAddress checks if an address is within valid code bounds.
+func (dis *Disasm) isValidCodeAddress(address uint16) bool {
+	// Ignore branching into addresses before the code base address, for example when generating code in
+	// zeropage and branching into it to execute it.
+	if address < dis.codeBaseAddress {
+		return false
+	}
+
+	// For binary mode, also check upper bound (code base + code size)
+	if dis.options.Binary && dis.cart != nil {
+		codeEnd := dis.codeBaseAddress + uint16(len(dis.cart.PRG))
+		if address >= codeEnd {
+			return false
+		}
+	}
+
+	// Don't follow branches to addresses marked as unreachable (dead code)
+	if dis.unreachableAddresses.Contains(address) {
+		return false
+	}
+
+	return true
+}
+
 // followExecutionFlow parses opcodes and follows the execution flow to parse all code.
-// nolint: funlen
 func (dis *Disasm) followExecutionFlow(ctx context.Context) error {
 	for {
 		// Check for context cancellation

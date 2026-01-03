@@ -30,6 +30,7 @@ type Flags struct {
 	Assembler    string `flag:"a" usage:"assembler format: asm6, ca65, nesasm, retroasm" default:"ca65"`
 	System       string `flag:"s" usage:"target system: nes, chip8 (default: auto-detect)"`
 	Binary       bool   `flag:"binary" usage:"treat input as raw binary without header"`
+	BaseAddress  string `flag:"base" usage:"base address for -binary mode in hex (e.g. 0200, 8000)"`
 	AssembleTest bool   `flag:"verify" usage:"verify output by reassembling and comparing to input"`
 	Debug        bool   `flag:"debug" usage:"enable debug logging"`
 	Quiet        bool   `flag:"q" usage:"quiet mode"`
@@ -57,7 +58,8 @@ type Disassembler struct {
 	CodeDataLog io.ReadCloser // Code/Data log file to parse
 	System      arch.System   // system type (e.g., nes, chip8)
 
-	AssemblerSupportsUnofficial bool // assembler can output unofficial opcodes (false for nesasm)
+	AssemblerSupportsUnofficial bool   // assembler can output unofficial opcodes (false for nesasm)
+	BaseAddress                 uint16 // base address for code (0 = auto/default)
 	Binary                      bool
 	CodeOnly                    bool
 	HexComments                 bool

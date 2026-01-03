@@ -75,7 +75,8 @@ type Arch6502 struct {
 	consts                         *consts.Consts
 	codeBaseAddress                uint16
 	complementaryBranchPairs       []ComplementaryBranchPair
-	complementaryBranchSecondAddrs set.Set[uint16] // addresses of second branches in complementary pairs
+	complementaryBranchSecondAddrs set.Set[uint16]      // addresses of second branches in complementary pairs
+	options                        options.Disassembler // Stored options for early access (before dependency injection)
 }
 
 // InjectDependencies sets the required dependencies for this architecture.
@@ -85,6 +86,12 @@ func (ar *Arch6502) InjectDependencies(deps Dependencies) {
 	ar.jumpEngine = deps.JumpEngine
 	ar.vars = deps.Vars
 	ar.consts = deps.Consts
+}
+
+// SetOptions sets disassembler options before dependency injection.
+// This is needed because BankWindowSize is called before InjectDependencies.
+func (ar *Arch6502) SetOptions(opts options.Disassembler) {
+	ar.options = opts
 }
 
 // SetCodeBaseAddress sets the code base address for this architecture.
@@ -172,6 +179,11 @@ func (ar *Arch6502) PostProcessCode() error {
 }
 
 // BankWindowSize returns the bank window size.
+// Returns 0 for binary mode to use single-bank mode (no bank windowing).
 func (ar *Arch6502) BankWindowSize(_ *cartridge.Cartridge) int {
-	return 0x2000 // TODO calculate dynamically
+	// Debug: check if options.Binary is set
+	if ar.options.Binary {
+		return 0 // Single-bank mode for binary files
+	}
+	return 0x2000 // Multi-bank mode for NES ROMs
 }

@@ -163,8 +163,15 @@ func paramReadWord(dis disasm, address uint16) (uint16, []byte, error) {
 }
 
 // ReadMemory reads a byte from memory using NES-specific memory mapping.
+// In binary mode, all reads go through the mapper directly.
 func (ar *Arch6502) ReadMemory(address uint16) (byte, error) {
 	var value byte
+
+	// In binary mode, always use mapper (no NES-specific memory mapping)
+	if ar.options.Binary {
+		value = ar.mapper.ReadMemory(address)
+		return value, nil
+	}
 
 	switch {
 	case address < 0x2000:

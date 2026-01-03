@@ -59,6 +59,11 @@ func (m mappedBank) ID() int {
 }
 
 func setBankVectors(bnk *bank, prgBank *program.PRGBank) {
+	// Skip vector extraction for small binaries (less than 6 bytes)
+	if len(bnk.prg) < 6 {
+		return
+	}
+
 	idx := len(bnk.prg) - 6
 	for i := range 3 {
 		b1 := bnk.prg[idx]

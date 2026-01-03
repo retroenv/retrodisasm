@@ -105,45 +105,47 @@ usage: retrodisasm [options] [file]
 
 Parameters:
   -i string
-    	input ROM file
+        input ROM file
   -o string
-    	output .asm file (default: <input>.asm, use - for stdout)
+        output .asm file (default: <input>.asm, use - for stdout)
   -c string
-    	ca65 linker config file
+        ca65 linker config file
   -cdl string
-    	Code/Data log file (.cdl)
+        Code/Data log file (.cdl)
   -batch string
-    	batch process files matching pattern (e.g. *.nes)
+        batch process files matching pattern (e.g. *.nes)
 
 Options:
   -a string
-    	assembler format: asm6, ca65, nesasm, retroasm (default: ca65)
+        assembler format: asm6, ca65, nesasm, retroasm (default: ca65)
   -s string
-    	target system: nes, chip8 (default: auto-detect)
+        target system: nes, chip8 (default: auto-detect)
   -binary
-    	treat input as raw binary without header
+        treat input as raw binary without header
+  -base string
+        base address for -binary mode in hex (e.g. 0200, 8000)
   -verify
-    	verify output by reassembling and comparing to input
+        verify output by reassembling and comparing to input
   -debug
-    	enable debug logging
+        enable debug logging
   -q
-    	quiet mode
+        quiet mode
 
 Output options:
   -nohexcomments
-    	omit hex opcode bytes in comments
+        omit hex opcode bytes in comments
   -nooffsets
-    	omit file offsets in comments
+        omit file offsets in comments
   -output-unofficial
-    	use mnemonics for unofficial opcodes (incompatible with -verify)
+        use mnemonics for unofficial opcodes (incompatible with -verify)
   -stop-at-unofficial
-    	stop tracing at unofficial opcodes unless branched to
+        stop tracing at unofficial opcodes unless branched to
   -z
-    	include trailing zero bytes in banks
+        include trailing zero bytes in banks
 
 Positional arguments:
   file
-    	file to disassemble
+        file to disassemble
 ```
 
 ### System-Specific Options

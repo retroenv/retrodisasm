@@ -26,12 +26,25 @@ type PRGBank struct {
 
 // LastNonZeroByte searches for the last byte in PRG that is not zero.
 func (bank PRGBank) LastNonZeroByte(options options.Disassembler) int {
-	endIndex := len(bank.Offsets) - 6 // leave space for vectors
+	// In binary mode, don't reserve space for vectors since raw binaries don't have them
+	vectorSpace := 6
+	if options.Binary {
+		vectorSpace = 0
+	}
+
+	endIndex := len(bank.Offsets) - vectorSpace
+	if endIndex < 0 {
+		endIndex = len(bank.Offsets)
+	}
+
 	if options.ZeroBytes {
 		return endIndex
 	}
 
-	start := len(bank.Offsets) - 1 - 6 // skip irq pointers
+	start := len(bank.Offsets) - 1 - vectorSpace
+	if start < 0 {
+		start = len(bank.Offsets) - 1
+	}
 
 	for i := start; i >= 0; i-- {
 		offset := bank.Offsets[i]

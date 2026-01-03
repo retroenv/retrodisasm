@@ -443,10 +443,39 @@ func TestDisasmIndirectJmp(t *testing.T) {
 	runDisasm(t, setup, input, expected)
 }
 
-func testProgram(t *testing.T, options options.Disassembler, cart *cartridge.Cartridge, code []byte) *Disasm {
+// TestDisasmBinaryModeWithBaseAddress tests binary mode with a custom base address.
+// This verifies that code is disassembled starting at the specified base address
+// rather than the default NES code base address.
+func TestDisasmBinaryModeWithBaseAddress(t *testing.T) {
+	input := []byte{
+		0xa9, 0x42, // lda #$42
+		0x8d, 0x00, 0x03, // sta $0300
+		0x4c, 0x00, 0x02, // jmp $0200 (jump back to start)
+	}
+
+	// With base address 0x0200, the Reset label should be at $0200
+	// and the jmp should reference Reset
+	expected := `Reset:
+        lda #$42
+        sta a:$0300
+        jmp Reset
+`
+
+	setup := func(opts *options.Disassembler, cart *cartridge.Cartridge) {
+		opts.Binary = true
+		opts.BaseAddress = 0x0200
+		opts.OffsetComments = false
+		opts.HexComments = false
+		// Use smaller PRG for binary mode
+		cart.PRG = make([]byte, len(input))
+	}
+	runDisasm(t, setup, input, expected)
+}
+
+func testProgram(t *testing.T, opts options.Disassembler, cart *cartridge.Cartridge, code []byte) *Disasm {
 	t.Helper()
 
-	if len(cart.PRG) == 0x8000 {
+	if !opts.Binary && len(cart.PRG) == 0x8000 {
 		// point reset handler to offset 0 of PRG buffer, aka 0x8000 address
 		cart.PRG[0x7FFD] = 0x80
 	}
@@ -455,7 +484,8 @@ func testProgram(t *testing.T, options options.Disassembler, cart *cartridge.Car
 
 	logger := log.NewTestLogger(t)
 	ar := m6502.New(logger, parameter.New(ca65.ParamConfig))
-	disasm, err := New(logger, ar, cart, options, ca65.New)
+	ar.SetOptions(opts) // Set options before disasm.New for BankWindowSize in binary mode
+	disasm, err := New(logger, ar, cart, opts, ca65.New)
 	assert.NoError(t, err)
 
 	return disasm

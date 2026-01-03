@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/retroenv/retrodisasm/internal/assembler"
@@ -100,7 +101,24 @@ func createDisasmOptions(opts options.Program) options.Disassembler {
 		disasmOptions.AssemblerSupportsUnofficial = false
 	}
 
+	// Parse base address if provided
+	if opts.BaseAddress != "" {
+		var baseAddr uint64
+		var err error
+		// Try parsing with 0x prefix
+		if strings.HasPrefix(opts.BaseAddress, "0x") || strings.HasPrefix(opts.BaseAddress, "0X") {
+			baseAddr, err = strconv.ParseUint(opts.BaseAddress[2:], 16, 16)
+		} else {
+			// Parse as hex without prefix
+			baseAddr, err = strconv.ParseUint(opts.BaseAddress, 16, 16)
+		}
+		if err == nil && baseAddr <= 0xFFFF {
+			disasmOptions.BaseAddress = uint16(baseAddr)
+		}
+	}
+
 	// Apply output flag settings
+	disasmOptions.Binary = opts.Binary
 	disasmOptions.HexComments = !opts.NoHexComments
 	disasmOptions.OffsetComments = !opts.NoOffsets
 	disasmOptions.OutputUnofficialAsMnemonics = opts.OutputUnofficial
