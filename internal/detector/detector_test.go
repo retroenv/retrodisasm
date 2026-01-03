@@ -9,6 +9,7 @@ import (
 	"github.com/retroenv/retrogolib/log"
 )
 
+//nolint:funlen
 func TestDetect(t *testing.T) {
 	logger := log.NewTestLogger(t)
 	d := New(logger)

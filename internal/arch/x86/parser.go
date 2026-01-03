@@ -28,26 +28,30 @@ func (a *X86) initializeOffsetInfo(offsetInfo *offset.DisasmOffset) (bool, error
 		return false, nil
 	}
 
-	// Start with base opcode byte
+	// Parse instruction bytes
+	data, ok := a.parseInstructionBytes(pc, opcodeByte, &opcodeInfo)
+	if !ok {
+		offsetInfo.Data = data
+		offsetInfo.Opcode = Opcode{op: &opcodeInfo}
+		return false, nil
+	}
+
+	offsetInfo.Data = data
+	offsetInfo.Opcode = Opcode{op: &opcodeInfo}
+	return true, nil
+}
+
+// parseInstructionBytes reads all bytes for an instruction.
+func (a *X86) parseInstructionBytes(pc uint16, opcodeByte byte, opcodeInfo *x86.Opcode) ([]byte, bool) {
 	data := []byte{opcodeByte}
 	instructionSize := 1
 
 	// Handle two-byte opcodes (0x0F prefix)
 	if opcodeByte == 0x0F {
-		// Read second opcode byte
-		if pc+1 >= a.LastCodeAddress() {
-			offsetInfo.Data = data
-			offsetInfo.Opcode = Opcode{op: &opcodeInfo}
-			return false, nil
+		secondByte, ok := a.readByte(pc + 1)
+		if !ok {
+			return data, false
 		}
-
-		secondByte, err := a.dis.ReadMemory(pc + 1)
-		if err != nil {
-			offsetInfo.Data = data
-			offsetInfo.Opcode = Opcode{op: &opcodeInfo}
-			return false, nil //nolint:nilerr // Intentionally stopping disassembly on read error
-		}
-
 		data = append(data, secondByte)
 		instructionSize = 2
 		// TODO: Look up two-byte opcode
@@ -55,59 +59,67 @@ func (a *X86) initializeOffsetInfo(offsetInfo *offset.DisasmOffset) (bool, error
 
 	// Handle ModR/M byte if needed
 	if opcodeInfo.HasModRM {
-		if pc+uint16(instructionSize) >= a.LastCodeAddress() {
-			offsetInfo.Data = data
-			offsetInfo.Opcode = Opcode{op: &opcodeInfo}
-			return false, nil
-		}
-
-		modrmByte, err := a.dis.ReadMemory(pc + uint16(instructionSize))
-		if err != nil {
-			offsetInfo.Data = data
-			offsetInfo.Opcode = Opcode{op: &opcodeInfo}
-			return false, nil //nolint:nilerr // Intentionally stopping disassembly on read error
-		}
-
-		data = append(data, modrmByte)
-		instructionSize++
-
-		// Decode ModR/M for displacement
-		mod := (modrmByte >> 6) & 0x03
-		rm := modrmByte & 0x07
-
-		// Add displacement bytes based on mod and r/m
-		dispSize := a.getDisplacementSize(mod, rm)
-		for range dispSize {
-			if pc+uint16(instructionSize) >= a.LastCodeAddress() {
-				break
-			}
-			dispByte, err := a.dis.ReadMemory(pc + uint16(instructionSize))
-			if err != nil {
-				break
-			}
-			data = append(data, dispByte)
-			instructionSize++
-		}
+		data, instructionSize = a.readModRMBytes(pc, data, instructionSize)
 	}
 
 	// Add immediate bytes based on opcode size
-	// The size in the opcode table includes everything
-	remainingBytes := int(opcodeInfo.Size) - instructionSize
-	for range remainingBytes {
-		if pc+uint16(instructionSize) >= a.LastCodeAddress() {
+	data = a.readImmediateBytes(pc, data, instructionSize, int(opcodeInfo.Size))
+
+	return data, true
+}
+
+// readByte reads a single byte at the given address.
+func (a *X86) readByte(addr uint16) (byte, bool) {
+	if addr >= a.LastCodeAddress() {
+		return 0, false
+	}
+	b, err := a.dis.ReadMemory(addr)
+	if err != nil {
+		return 0, false
+	}
+	return b, true
+}
+
+// readModRMBytes reads the ModR/M byte and any displacement bytes.
+func (a *X86) readModRMBytes(pc uint16, data []byte, instructionSize int) ([]byte, int) {
+	modrmByte, ok := a.readByte(pc + uint16(instructionSize))
+	if !ok {
+		return data, instructionSize
+	}
+
+	data = append(data, modrmByte)
+	instructionSize++
+
+	// Decode ModR/M for displacement
+	mod := (modrmByte >> 6) & 0x03
+	rm := modrmByte & 0x07
+
+	// Add displacement bytes based on mod and r/m
+	dispSize := a.getDisplacementSize(mod, rm)
+	for range dispSize {
+		dispByte, ok := a.readByte(pc + uint16(instructionSize))
+		if !ok {
 			break
 		}
-		immByte, err := a.dis.ReadMemory(pc + uint16(instructionSize))
-		if err != nil {
+		data = append(data, dispByte)
+		instructionSize++
+	}
+
+	return data, instructionSize
+}
+
+// readImmediateBytes reads immediate value bytes.
+func (a *X86) readImmediateBytes(pc uint16, data []byte, instructionSize, totalSize int) []byte {
+	remainingBytes := totalSize - instructionSize
+	for range remainingBytes {
+		immByte, ok := a.readByte(pc + uint16(instructionSize))
+		if !ok {
 			break
 		}
 		data = append(data, immByte)
 		instructionSize++
 	}
-
-	offsetInfo.Data = data
-	offsetInfo.Opcode = Opcode{op: &opcodeInfo}
-	return true, nil //nolint:nilerr // Error intentionally ignored in loops above
+	return data
 }
 
 // getDisplacementSize returns the displacement size based on mod and r/m fields.
