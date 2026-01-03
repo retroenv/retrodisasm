@@ -7,6 +7,7 @@ import (
 	"github.com/retroenv/retrodisasm/internal/consts"
 	"github.com/retroenv/retrodisasm/internal/instruction"
 	"github.com/retroenv/retrodisasm/internal/offset"
+	x86cpu "github.com/retroenv/retrogolib/arch/cpu/x86"
 	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
 	"github.com/retroenv/retrogolib/arch/system/nes/parameter"
 	"github.com/retroenv/retrogolib/log"
@@ -147,8 +148,186 @@ func (a *X86) ProcessOffset(address uint16, offsetInfo *offset.DisasmOffset) (bo
 // formatOffsetCode formats the instruction code string for display.
 func (a *X86) formatOffsetCode(offsetInfo *offset.DisasmOffset, instruction instruction.Instruction) {
 	name := instruction.Name()
-	// TODO: Format x86 instruction with operands
-	offsetInfo.Code = name
+
+	// Get the opcode wrapper to access x86-specific info
+	opcodeWrapper, ok := offsetInfo.Opcode.(Opcode)
+	if !ok {
+		offsetInfo.Code = name
+		return
+	}
+
+	operands := a.formatOperands(opcodeWrapper, offsetInfo.Data)
+	if operands != "" {
+		offsetInfo.Code = fmt.Sprintf("%s %s", name, operands)
+	} else {
+		offsetInfo.Code = name
+	}
+}
+
+// formatOperands formats the operands for an x86 instruction.
+func (a *X86) formatOperands(opcode Opcode, data []byte) string {
+	if opcode.Opcode == nil || opcode.Opcode.Instruction == nil {
+		return ""
+	}
+
+	// Handle register + immediate instructions (like MOV AH, imm8)
+	if opcode.Register > 0 {
+		regName := a.registerParamToString(opcode.Register)
+		if len(data) > 1 {
+			// Has immediate operand
+			imm := a.formatImmediate(data[1:], int(opcode.Size)-1)
+			return fmt.Sprintf("%s, %s", regName, imm)
+		}
+		return regName
+	}
+
+	// Handle pure immediate instructions (like INT imm8)
+	addrMode := opcode.Opcode.Addressing.String()
+	if addrMode == "immediate" && len(data) > 1 {
+		return a.formatImmediate(data[1:], int(opcode.Size)-1)
+	}
+
+	// Handle ModR/M based instructions
+	if opcode.HasModRM && len(data) >= 2 {
+		return a.formatModRM(data)
+	}
+
+	return ""
+}
+
+// registerParamToString converts a RegisterParam to its string representation.
+func (a *X86) registerParamToString(reg x86cpu.RegisterParam) string {
+	// Map RegisterParam values to register names
+	regNames := map[x86cpu.RegisterParam]string{
+		0: "al", 1: "cl", 2: "dl", 3: "bl",
+		4: "ah", 5: "ch", 6: "dh", 7: "bh",
+		8: "ax", 9: "cx", 10: "dx", 11: "bx",
+		12: "sp", 13: "bp", 14: "si", 15: "di",
+	}
+
+	if name, ok := regNames[reg]; ok {
+		return name
+	}
+	return fmt.Sprintf("reg%d", reg)
+}
+
+// formatImmediate formats an immediate value from instruction bytes.
+func (a *X86) formatImmediate(data []byte, size int) string {
+	if len(data) == 0 {
+		return "0x00"
+	}
+
+	switch size {
+	case 1:
+		return fmt.Sprintf("0x%02X", data[0])
+	case 2:
+		if len(data) >= 2 {
+			// Little-endian word
+			val := uint16(data[0]) | (uint16(data[1]) << 8)
+			return fmt.Sprintf("0x%04X", val)
+		}
+		return fmt.Sprintf("0x%02X", data[0])
+	default:
+		return fmt.Sprintf("0x%02X", data[0])
+	}
+}
+
+// formatModRM formats operands based on ModR/M byte.
+func (a *X86) formatModRM(data []byte) string {
+	if len(data) < 2 {
+		return ""
+	}
+
+	modRM := data[1]
+	mod := (modRM >> 6) & 0x03
+	reg := (modRM >> 3) & 0x07
+	rm := modRM & 0x07
+
+	// Get register names
+	regName := a.getRegisterName(reg, false) // assuming word registers for now
+	rmOperand := a.getRMOperand(mod, rm, data[2:])
+
+	return fmt.Sprintf("%s, %s", regName, rmOperand)
+}
+
+// getRegisterName returns the register name for a register number.
+func (a *X86) getRegisterName(reg byte, isByte bool) string {
+	if isByte {
+		byteRegs := []string{"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"}
+		if reg < 8 {
+			return byteRegs[reg]
+		}
+	}
+	wordRegs := []string{"ax", "cx", "dx", "bx", "sp", "bp", "si", "di"}
+	if reg < 8 {
+		return wordRegs[reg]
+	}
+	return "??"
+}
+
+// getRMOperand formats the R/M operand based on mod and r/m fields.
+func (a *X86) getRMOperand(mod, rm byte, dispBytes []byte) string {
+	switch mod {
+	case 0: // Memory, no displacement (except rm=110)
+		if rm == 6 {
+			// Direct address
+			if len(dispBytes) >= 2 {
+				addr := uint16(dispBytes[0]) | (uint16(dispBytes[1]) << 8)
+				return fmt.Sprintf("[0x%04X]", addr)
+			}
+			return "[disp16]"
+		}
+		return a.getEffectiveAddress(rm, 0, nil)
+	case 1: // Memory + 8-bit displacement
+		if len(dispBytes) >= 1 {
+			return a.getEffectiveAddress(rm, 1, dispBytes[:1])
+		}
+		return a.getEffectiveAddress(rm, 1, nil)
+	case 2: // Memory + 16-bit displacement
+		if len(dispBytes) >= 2 {
+			return a.getEffectiveAddress(rm, 2, dispBytes[:2])
+		}
+		return a.getEffectiveAddress(rm, 2, nil)
+	case 3: // Register
+		return a.getRegisterName(rm, false)
+	}
+	return "??"
+}
+
+// getEffectiveAddress formats an effective address from r/m and displacement.
+func (a *X86) getEffectiveAddress(rm byte, dispSize int, dispBytes []byte) string {
+	baseAddr := []string{
+		"bx+si", "bx+di", "bp+si", "bp+di",
+		"si", "di", "bp", "bx",
+	}
+
+	if rm >= 8 {
+		return "[??]"
+	}
+
+	base := baseAddr[rm]
+
+	switch dispSize {
+	case 0:
+		return fmt.Sprintf("[%s]", base)
+	case 1:
+		if len(dispBytes) >= 1 {
+			disp := int8(dispBytes[0])
+			if disp >= 0 {
+				return fmt.Sprintf("[%s+0x%02X]", base, disp)
+			}
+			return fmt.Sprintf("[%s-0x%02X]", base, -disp)
+		}
+		return fmt.Sprintf("[%s+disp8]", base)
+	case 2:
+		if len(dispBytes) >= 2 {
+			disp := uint16(dispBytes[0]) | (uint16(dispBytes[1]) << 8)
+			return fmt.Sprintf("[%s+0x%04X]", base, disp)
+		}
+		return fmt.Sprintf("[%s+disp16]", base)
+	}
+
+	return fmt.Sprintf("[%s]", base)
 }
 
 // handleControlFlow processes control flow based on instruction type.

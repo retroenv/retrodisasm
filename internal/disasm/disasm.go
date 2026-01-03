@@ -9,6 +9,7 @@ import (
 
 	"github.com/retroenv/retrodisasm/internal/arch/chip8"
 	"github.com/retroenv/retrodisasm/internal/arch/m6502"
+	"github.com/retroenv/retrodisasm/internal/arch/x86"
 	"github.com/retroenv/retrodisasm/internal/assembler"
 	"github.com/retroenv/retrodisasm/internal/consts"
 	"github.com/retroenv/retrodisasm/internal/instruction"
@@ -265,6 +266,11 @@ func (dis *Disasm) initializeComponents(ar architecture, logger *log.Logger, car
 		})
 	case *chip8.Chip8:
 		a.InjectDependencies(chip8.Dependencies{
+			Disasm: dis,
+			Mapper: m,
+		})
+	case *x86.X86:
+		a.InjectDependencies(x86.Dependencies{
 			Disasm: dis,
 			Mapper: m,
 		})

@@ -62,12 +62,13 @@ func (l *Loader) loadFromReader(reader io.Reader, binary bool, system arch.Syste
 	var err error
 
 	// DOS .com files need raw loading without padding to preserve file size
-	if system == arch.DOS {
+	switch {
+	case system == arch.DOS:
 		cart, err = l.loadRawBinary(reader)
-	} else if binary || system == arch.CHIP8System {
+	case binary || system == arch.CHIP8System:
 		// Handle CHIP-8 and binary files as raw buffer data (with 16KB padding)
 		cart, err = cartridge.LoadBuffer(reader)
-	} else {
+	default:
 		cart, err = cartridge.LoadFile(reader)
 	}
 	if err != nil {

@@ -15,6 +15,9 @@ type Instruction struct {
 
 // Name returns the instruction name.
 func (i Instruction) Name() string {
+	if i.Instruction == nil {
+		return "nil_instruction"
+	}
 	return i.Instruction.Name
 }
 

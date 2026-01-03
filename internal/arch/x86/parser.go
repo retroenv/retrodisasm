@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/retroenv/retrodisasm/internal/offset"
+	"github.com/retroenv/retrodisasm/internal/program"
 	"github.com/retroenv/retrogolib/arch/cpu/x86"
 )
 
@@ -20,10 +21,10 @@ func (a *X86) initializeOffsetInfo(offsetInfo *offset.DisasmOffset) (bool, error
 	// Get opcode info from table
 	opcodeInfo := x86.Opcodes[opcodeByte]
 
-	// Handle undefined opcodes
-	if opcodeInfo.Instruction == x86.Undefined {
+	// Handle undefined/unknown opcodes - treat as data and stop tracing
+	if opcodeInfo.Instruction == nil || opcodeInfo.Instruction == x86.Undefined {
 		offsetInfo.Data = []byte{opcodeByte}
-		offsetInfo.Opcode = Opcode{&opcodeInfo}
+		offsetInfo.SetType(program.DataOffset)
 		return false, nil
 	}
 
@@ -44,7 +45,7 @@ func (a *X86) initializeOffsetInfo(offsetInfo *offset.DisasmOffset) (bool, error
 		if err != nil {
 			offsetInfo.Data = data
 			offsetInfo.Opcode = Opcode{&opcodeInfo}
-			return false, nil
+			return false, nil //nolint:nilerr // Intentionally stopping disassembly on read error
 		}
 
 		data = append(data, secondByte)
@@ -64,7 +65,7 @@ func (a *X86) initializeOffsetInfo(offsetInfo *offset.DisasmOffset) (bool, error
 		if err != nil {
 			offsetInfo.Data = data
 			offsetInfo.Opcode = Opcode{&opcodeInfo}
-			return false, nil
+			return false, nil //nolint:nilerr // Intentionally stopping disassembly on read error
 		}
 
 		data = append(data, modrmByte)
@@ -76,7 +77,7 @@ func (a *X86) initializeOffsetInfo(offsetInfo *offset.DisasmOffset) (bool, error
 
 		// Add displacement bytes based on mod and r/m
 		dispSize := a.getDisplacementSize(mod, rm)
-		for i := 0; i < dispSize; i++ {
+		for range dispSize {
 			if pc+uint16(instructionSize) >= a.LastCodeAddress() {
 				break
 			}
@@ -92,7 +93,7 @@ func (a *X86) initializeOffsetInfo(offsetInfo *offset.DisasmOffset) (bool, error
 	// Add immediate bytes based on opcode size
 	// The size in the opcode table includes everything
 	remainingBytes := int(opcodeInfo.Size) - instructionSize
-	for i := 0; i < remainingBytes; i++ {
+	for range remainingBytes {
 		if pc+uint16(instructionSize) >= a.LastCodeAddress() {
 			break
 		}
@@ -106,7 +107,7 @@ func (a *X86) initializeOffsetInfo(offsetInfo *offset.DisasmOffset) (bool, error
 
 	offsetInfo.Data = data
 	offsetInfo.Opcode = Opcode{&opcodeInfo}
-	return true, nil
+	return true, nil //nolint:nilerr // Error intentionally ignored in loops above
 }
 
 // getDisplacementSize returns the displacement size based on mod and r/m fields.
