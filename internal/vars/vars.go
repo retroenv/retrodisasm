@@ -191,7 +191,7 @@ func (v *Vars) getOpcodeStart(address uint16) (*offset.DisasmOffset, uint16, uin
 
 	for {
 		offsetInfo := v.mapper.OffsetInfo(address)
-		if len(offsetInfo.Data) == 0 {
+		if offsetInfo == nil || len(offsetInfo.Data) == 0 {
 			address--
 			addressAdjustment++
 			continue

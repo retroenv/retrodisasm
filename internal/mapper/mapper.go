@@ -187,6 +187,12 @@ func (m *Mapper) OffsetInfo(address uint16) *offset.DisasmOffset {
 		index = int(address) - int(m.codeBaseAddress)
 	}
 	pointer := bnk.dataStart + index
+
+	// Bounds check: ensure pointer is within the offsets array
+	if pointer < 0 || pointer >= len(bnk.bank.offsets) {
+		return nil
+	}
+
 	offsetInfo := bnk.bank.offsets[pointer]
 	return offsetInfo
 }
