@@ -472,6 +472,39 @@ func TestDisasmBinaryModeWithBaseAddress(t *testing.T) {
 	runDisasm(t, setup, input, expected)
 }
 
+// TestBRKAtEnd tests that BRK instructions at the end of a binary are properly disassembled.
+// This is a regression test for ensuring BRK (0x00) bytes are treated as instructions rather
+// than being skipped as padding when they appear at the end of the program.
+// It also verifies that execution tracing stops after BRK - the input includes two consecutive
+// 0x00 bytes, but only the first should be disassembled as "brk", while the second is not traced
+// (trailing zero bytes after traced code are stripped from output).
+func TestBRKAtEnd(t *testing.T) {
+	input := []byte{
+		0xa9, 0x34, // $8000: LDA #$34
+		0x8d, 0x01, 0x20, // $8002: STA $2001
+		0x00, // $8005: BRK (should be disassembled)
+		0x00, // $8006: Second 0x00 (should be data, not traced after BRK)
+	}
+
+	expected := `
+        PPU_MASK = $2001
+
+        Reset:
+        lda #$34
+        sta PPU_MASK
+        brk
+`
+
+	setup := func(opts *options.Disassembler, cart *cartridge.Cartridge) {
+		opts.Binary = true
+		opts.BaseAddress = 0x8000
+		opts.OffsetComments = false
+		opts.HexComments = false
+		cart.PRG = make([]byte, len(input))
+	}
+	runDisasm(t, setup, input, expected)
+}
+
 func testProgram(t *testing.T, opts options.Disassembler, cart *cartridge.Cartridge, code []byte) *Disasm {
 	t.Helper()
 

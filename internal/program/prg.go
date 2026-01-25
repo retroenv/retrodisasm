@@ -48,7 +48,12 @@ func (bank PRGBank) LastNonZeroByte(options options.Disassembler) int {
 
 	for i := start; i >= 0; i-- {
 		offset := bank.Offsets[i]
-		if (len(offset.Data) == 0 || offset.Data[0] == 0) && offset.Label == "" {
+		// Skip zero bytes that are not code instructions and have no label
+		// BRK instruction (0x00) should be included if it's marked as CodeOffset
+		isZeroByte := len(offset.Data) == 0 || offset.Data[0] == 0
+		isCodeOrHasLabel := offset.IsType(CodeOffset|CodeAsData) || offset.Label != ""
+
+		if isZeroByte && !isCodeOrHasLabel {
 			continue
 		}
 		return i + 1
