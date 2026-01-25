@@ -31,9 +31,7 @@ func TestCreateDisassemblerForSystem(t *testing.T) {
 	nesData := buildMinimalNESROM(1, 0)
 
 	cart, err := p.loader.LoadFromBytes(nesData, false, arch.NES)
-	if err != nil {
-		t.Fatalf("Failed to load cartridge: %v", err)
-	}
+	assert.NoError(t, err)
 
 	disasmOpts := options.Disassembler{
 		System: arch.NES,

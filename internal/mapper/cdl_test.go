@@ -35,7 +35,7 @@ func TestApplyCodeDataLog_Code(t *testing.T) {
 	mapper.ApplyCodeDataLog(prgFlags)
 
 	// Verify that code addresses were added to parse
-	assert.Equal(t, 3, len(mockDis.addedAddresses))
+	assert.Len(t, mockDis.addedAddresses, 3)
 	assert.Equal(t, uint16(0x8000), mockDis.addedAddresses[0])
 	assert.Equal(t, uint16(0x8001), mockDis.addedAddresses[1])
 	assert.Equal(t, uint16(0x8003), mockDis.addedAddresses[2])
@@ -97,7 +97,7 @@ func TestApplyCodeDataLog_BoundsCheck(t *testing.T) {
 
 	// Current behavior: processes until index > len(offsets)
 	// With 0x10 (16) offsets, processes indices 0-16 (17 addresses)
-	assert.Equal(t, 0x11, len(mockDis.addedAddresses))
+	assert.Len(t, mockDis.addedAddresses, 0x11)
 }
 
 func TestApplyCodeDataLog_Empty(t *testing.T) {
@@ -120,5 +120,5 @@ func TestApplyCodeDataLog_Empty(t *testing.T) {
 	mapper.ApplyCodeDataLog(prgFlags)
 
 	// Should not have added any addresses
-	assert.Equal(t, 0, len(mockDis.addedAddresses))
+	assert.Len(t, mockDis.addedAddresses, 0)
 }

@@ -185,7 +185,7 @@ func TestSetToProgram(t *testing.T) {
 		app := &program.Program{Constants: map[string]uint16{}}
 		consts.SetToProgram(app)
 
-		assert.Equal(t, 1, len(app.Constants))
+		assert.Len(t, app.Constants, 1)
 		assert.Equal(t, uint16(0x2000), app.Constants["PPU_CTRL"])
 	})
 }
@@ -219,7 +219,7 @@ func TestAssignBankConstants(t *testing.T) {
 		prgBank := program.NewPRGBank(0x4000)
 		consts.AssignBankConstants(0, prgBank)
 
-		assert.Equal(t, 0, len(prgBank.Constants))
+		assert.Len(t, prgBank.Constants, 0)
 	})
 
 	t.Run("assigns multiple constants", func(t *testing.T) {
@@ -239,7 +239,7 @@ func TestAssignBankConstants(t *testing.T) {
 		prgBank := program.NewPRGBank(0x4000)
 		consts.AssignBankConstants(0, prgBank)
 
-		assert.Equal(t, 4, len(prgBank.Constants))
+		assert.Len(t, prgBank.Constants, 4)
 		assert.Equal(t, uint16(0x2000), prgBank.Constants["PPU_CTRL"])
 		assert.Equal(t, uint16(0x2000), prgBank.Constants["PPU_CTRL_W"])
 		assert.Equal(t, uint16(0x2001), prgBank.Constants["PPU_MASK"])
@@ -261,7 +261,7 @@ func TestAssignBankConstants(t *testing.T) {
 		prgBank := program.NewPRGBank(0x4000)
 		consts.AssignBankConstants(0, prgBank)
 
-		assert.Equal(t, 1, len(prgBank.Constants))
+		assert.Len(t, prgBank.Constants, 1)
 		assert.Equal(t, uint16(0x2000), prgBank.Constants["PPU_CTRL"])
 	})
 }

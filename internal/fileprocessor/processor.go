@@ -73,7 +73,7 @@ func PrintBanner(logger *log.Logger, opts options.Program, version, commit, date
 		versionString += fmt.Sprintf(" (%s)", commit)
 	}
 
-	logger.Info("retrodisasm", log.String("version", versionString))
+	logger.Info("Retrodisasm", log.String("version", versionString))
 
 	if date != "" && !strings.Contains(date, "unknown") {
 		logger.Info("Build", log.String("date", date))

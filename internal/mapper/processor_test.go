@@ -31,13 +31,13 @@ func TestClassifyRemainingAsData(t *testing.T) {
 		mapper.ClassifyRemainingAsData()
 
 		// Verify unclassified offsets were marked as data
-		assert.Equal(t, 0, len(mapper.banks[0].offsets[0].Data)) // Code - no data set
-		assert.Equal(t, 1, len(mapper.banks[0].offsets[1].Data)) // Unclassified - data set
+		assert.Len(t, mapper.banks[0].offsets[0].Data, 0) // Code - no data set
+		assert.Len(t, mapper.banks[0].offsets[1].Data, 1) // Unclassified - data set
 		assert.Equal(t, byte(0x20), mapper.banks[0].offsets[1].Data[0])
-		assert.Equal(t, 0, len(mapper.banks[0].offsets[2].Data)) // Already data - no change
-		assert.Equal(t, 1, len(mapper.banks[0].offsets[3].Data)) // Unclassified - data set
+		assert.Len(t, mapper.banks[0].offsets[2].Data, 0) // Already data - no change
+		assert.Len(t, mapper.banks[0].offsets[3].Data, 1) // Unclassified - data set
 		assert.Equal(t, byte(0x40), mapper.banks[0].offsets[3].Data[0])
-		assert.Equal(t, 0, len(mapper.banks[0].offsets[4].Data)) // Function ref - no data set
+		assert.Len(t, mapper.banks[0].offsets[4].Data, 0) // Function ref - no data set
 	})
 
 	t.Run("handles all code bank", func(t *testing.T) {
@@ -58,7 +58,7 @@ func TestClassifyRemainingAsData(t *testing.T) {
 
 		// Verify no data was set (all code)
 		for i := range mapper.banks[0].offsets {
-			assert.Equal(t, 0, len(mapper.banks[0].offsets[i].Data))
+			assert.Len(t, mapper.banks[0].offsets[i].Data, 0)
 		}
 	})
 
@@ -76,7 +76,7 @@ func TestClassifyRemainingAsData(t *testing.T) {
 
 		// Verify all offsets were marked as data
 		for i := range mapper.banks[0].offsets {
-			assert.Equal(t, 1, len(mapper.banks[0].offsets[i].Data))
+			assert.Len(t, mapper.banks[0].offsets[i].Data, 1)
 			assert.Equal(t, cart.PRG[i], mapper.banks[0].offsets[i].Data[0])
 		}
 	})
@@ -97,10 +97,10 @@ func TestClassifyRemainingAsData(t *testing.T) {
 		mapper.ClassifyRemainingAsData()
 
 		// Verify unclassified offsets in both banks were marked as data
-		assert.Equal(t, 0, len(mapper.banks[0].offsets[0].Data))
-		assert.Equal(t, 1, len(mapper.banks[0].offsets[1].Data))
-		assert.Equal(t, 0, len(mapper.banks[1].offsets[0].Data))
-		assert.Equal(t, 1, len(mapper.banks[1].offsets[1].Data))
+		assert.Len(t, mapper.banks[0].offsets[0].Data, 0)
+		assert.Len(t, mapper.banks[0].offsets[1].Data, 1)
+		assert.Len(t, mapper.banks[1].offsets[0].Data, 0)
+		assert.Len(t, mapper.banks[1].offsets[1].Data, 1)
 	})
 }
 
@@ -137,9 +137,9 @@ func TestSetProgramBanks_SingleBank(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify program bank was created
-	assert.Equal(t, 1, len(app.PRG))
+	assert.Len(t, app.PRG, 1)
 	assert.Equal(t, "CODE", app.PRG[0].Name)
-	assert.Equal(t, 0x100, len(app.PRG[0].Offsets))
+	assert.Len(t, app.PRG[0].Offsets, 0x100)
 
 	// Verify AssignBankVariables and AssignBankConstants were called
 	assert.Equal(t, 1, mockVars.setBankCalls)
@@ -174,7 +174,7 @@ func TestSetProgramBanks_MultiBanks(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify multiple program banks were created
-	assert.Equal(t, 2, len(app.PRG))
+	assert.Len(t, app.PRG, 2)
 	assert.Equal(t, "PRG_BANK_0", app.PRG[0].Name)
 	assert.Equal(t, "PRG_BANK_1", app.PRG[1].Name)
 

@@ -12,6 +12,7 @@ import (
 	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
 	"github.com/retroenv/retrogolib/assert"
 	"github.com/retroenv/retrogolib/log"
+	"github.com/retroenv/retrogolib/set"
 )
 
 func TestDetectComplementaryBranchSequence(t *testing.T) {
@@ -85,7 +86,7 @@ func TestProcessComplementaryBranches(t *testing.T) {
 	arch.ProcessComplementaryBranches()
 
 	assert.Contains(t, mockMapper.offsets[0x8000].Comment, "unconditional branch pattern")
-	assert.True(t, mockDis.unreachableAddresses[0x8002])
+	assert.True(t, mockDis.unreachableAddresses.Contains(0x8002))
 }
 
 func TestProcessComplementaryBranchesWithIncomingJump(t *testing.T) {
@@ -93,7 +94,8 @@ func TestProcessComplementaryBranchesWithIncomingJump(t *testing.T) {
 	arch, mockDis := createMockArch(t, rom)
 
 	// Mark the second instruction as a branch destination
-	mockDis.branchDestinations = map[uint16]bool{0x8002: true}
+	mockDis.branchDestinations = set.New[uint16]()
+	mockDis.branchDestinations.Add(0x8002)
 
 	// Record a complementary branch pair
 	arch.complementaryBranchPairs = []ComplementaryBranchPair{
@@ -118,7 +120,7 @@ func TestProcessComplementaryBranchesWithIncomingJump(t *testing.T) {
 
 	assert.Contains(t, mockMapper.offsets[0x8000].Comment, "unconditional branch pattern")
 	assert.Contains(t, mockMapper.offsets[0x8002].Comment, "reachable from other code")
-	assert.False(t, mockDis.unreachableAddresses[0x8002])
+	assert.False(t, mockDis.unreachableAddresses.Contains(0x8002))
 }
 
 func testBranchSequence(t *testing.T, instruction, nextInstruction byte) (bool, *offset.DisasmOffset) {
@@ -138,8 +140,8 @@ func testBranchSequence(t *testing.T, instruction, nextInstruction byte) (bool, 
 type mockDisasm struct {
 	rom                  []byte
 	pc                   uint16
-	branchDestinations   map[uint16]bool
-	unreachableAddresses map[uint16]bool
+	branchDestinations   set.Set[uint16]
+	unreachableAddresses set.Set[uint16]
 }
 
 func (m *mockDisasm) ReadMemory(address uint16) (byte, error) {
@@ -189,14 +191,14 @@ func (m *mockDisasm) IsBranchDestination(address uint16) bool {
 	if m.branchDestinations == nil {
 		return false
 	}
-	return m.branchDestinations[address]
+	return m.branchDestinations.Contains(address)
 }
 
 func (m *mockDisasm) MarkAddressAsUnreachable(address uint16) {
 	if m.unreachableAddresses == nil {
-		m.unreachableAddresses = make(map[uint16]bool)
+		m.unreachableAddresses = set.New[uint16]()
 	}
-	m.unreachableAddresses[address] = true
+	m.unreachableAddresses.Add(address)
 }
 
 func (m *mockDisasm) ProgramCounter() uint16 {

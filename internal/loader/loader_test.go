@@ -143,7 +143,7 @@ func TestLoadFromBytes(t *testing.T) {
 		cart, err := loader.LoadFromBytes(nesData, false, arch.NES)
 		assert.NoError(t, err)
 		assert.NotNil(t, cart)
-		assert.Equal(t, 16384, len(cart.PRG)) // 1 bank = 16KB
+		assert.Len(t, cart.PRG, 16384) // 1 bank = 16KB
 	})
 
 	t.Run("load NES ROM with mapper 1", func(t *testing.T) {
@@ -154,7 +154,7 @@ func TestLoadFromBytes(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, cart)
 		assert.Equal(t, byte(1), cart.Mapper)
-		assert.Equal(t, 32768, len(cart.PRG)) // 2 banks = 32KB
+		assert.Len(t, cart.PRG, 32768) // 2 banks = 32KB
 	})
 
 	t.Run("error on invalid NES header", func(t *testing.T) {
@@ -185,9 +185,8 @@ func createTempFile(t *testing.T, data []byte) string {
 	t.Helper()
 	tmpDir := t.TempDir()
 	tmpFile := filepath.Join(tmpDir, "test.bin")
-	if err := os.WriteFile(tmpFile, data, 0600); err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
+	err := os.WriteFile(tmpFile, data, 0600)
+	assert.NoError(t, err)
 	return tmpFile
 }
 

@@ -135,7 +135,7 @@ func TestAddReference(t *testing.T) {
 		vars.AddReference(0x0010, 0x8001, opcode, false)
 
 		varInfo, _ := vars.Get(0x0010)
-		assert.Equal(t, 2, len(varInfo.usageAt))
+		assert.Len(t, varInfo.usageAt, 2)
 	})
 }
 
@@ -222,7 +222,7 @@ func TestAssignBankVariables(t *testing.T) {
 		prgBank := program.NewPRGBank(0x4000)
 		vars.AssignBankVariables(0, prgBank)
 
-		assert.Equal(t, 0, len(prgBank.Variables))
+		assert.Len(t, prgBank.Variables, 0)
 	})
 
 	t.Run("assigns multiple variables", func(t *testing.T) {
@@ -244,7 +244,7 @@ func TestAssignBankVariables(t *testing.T) {
 		prgBank := program.NewPRGBank(0x4000)
 		vars.AssignBankVariables(0, prgBank)
 
-		assert.Equal(t, 3, len(prgBank.Variables))
+		assert.Len(t, prgBank.Variables, 3)
 		assert.Equal(t, uint16(0x0010), prgBank.Variables["_var_0010"])
 		assert.Equal(t, uint16(0x0020), prgBank.Variables["_var_0020"])
 		assert.Equal(t, uint16(0x0030), prgBank.Variables["_var_0030"])

@@ -28,7 +28,7 @@ func TestNew_SingleBank(t *testing.T) {
 	mapper, err := New(arch, cart)
 	assert.NoError(t, err)
 	assert.NotNil(t, mapper)
-	assert.Equal(t, 1, len(mapper.banks))
+	assert.Len(t, mapper.banks, 1)
 	assert.Equal(t, 0, mapper.bankWindowSize)
 }
 
@@ -43,7 +43,7 @@ func TestNew_MultiBank(t *testing.T) {
 	mapper, err := New(arch, cart)
 	assert.NoError(t, err)
 	assert.NotNil(t, mapper)
-	assert.Equal(t, 1, len(mapper.banks))
+	assert.Len(t, mapper.banks, 1)
 	assert.Equal(t, 0x4000, mapper.bankWindowSize)
 }
 

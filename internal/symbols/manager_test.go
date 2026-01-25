@@ -18,7 +18,7 @@ func TestManager(t *testing.T) {
 
 		assert.NotNil(t, mgr)
 		assert.Equal(t, 0, mgr.Len())
-		assert.Equal(t, 0, len(mgr.Banks()))
+		assert.Len(t, mgr.Banks(), 0)
 	})
 
 	t.Run("set and get item", func(t *testing.T) {
@@ -54,7 +54,7 @@ func TestManager(t *testing.T) {
 		mgr.Set(0x8001, testItem{name: "B", value: 0x2222})
 
 		items := mgr.Items()
-		assert.Equal(t, 2, len(items))
+		assert.Len(t, items, 2)
 		assert.Equal(t, "A", items[0x8000].name)
 		assert.Equal(t, "B", items[0x8001].name)
 	})
@@ -79,7 +79,7 @@ func TestManager(t *testing.T) {
 
 		sorted := mgr.SortedByUint16(func(t testItem) uint16 { return t.value })
 
-		assert.Equal(t, 3, len(sorted))
+		assert.Len(t, sorted, 3)
 		assert.Equal(t, "A", sorted[0].name)
 		assert.Equal(t, "B", sorted[1].name)
 		assert.Equal(t, "C", sorted[2].name)
@@ -110,11 +110,11 @@ func TestBank(t *testing.T) {
 	t.Run("add banks", func(t *testing.T) {
 		mgr := New[testItem]()
 
-		assert.Equal(t, 0, len(mgr.Banks()))
+		assert.Len(t, mgr.Banks(), 0)
 
 		mgr.AddBank()
 		mgr.AddBank()
-		assert.Equal(t, 2, len(mgr.Banks()))
+		assert.Len(t, mgr.Banks(), 2)
 	})
 
 	t.Run("get bank by index", func(t *testing.T) {
