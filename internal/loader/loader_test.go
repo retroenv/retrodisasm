@@ -153,7 +153,7 @@ func TestLoadFromBytes(t *testing.T) {
 		cart, err := loader.LoadFromBytes(nesData, false, arch.NES)
 		assert.NoError(t, err)
 		assert.NotNil(t, cart)
-		assert.Equal(t, byte(1), cart.Mapper)
+		assert.Equal(t, uint16(1), cart.Mapper)
 		assert.Len(t, cart.PRG, 32768) // 2 banks = 32KB
 	})
 

@@ -48,6 +48,13 @@ func (w *FileWriter) writeHeader() error {
 
 	control1, control2 := cartridge.ControlBytes(w.app.Battery, byte(w.app.Mirror), w.app.Mapper, len(w.app.Trainer) > 0)
 
+	// iNES 2.0: mapper numbers > 0xFF require extended header encoding.
+	ramByte := w.app.RAM
+	if w.app.Mapper > 0xFF {
+		control2 = (control2 &^ 0x0C) | 0x08
+		ramByte = byte((w.app.Mapper >> 8) & 0x0F)
+	}
+
 	if _, err := fmt.Fprintf(w.mainWriter, "%-30s ; %s\n", ".byte \"NES\", $1a", "Magic string that always begins an iNES header"); err != nil {
 		return fmt.Errorf("writing magic string: %w", err)
 	}
@@ -60,7 +67,7 @@ func (w *FileWriter) writeHeader() error {
 		{byte(len(w.app.CHR) / 8192), "Number of 8KB CHR-ROM banks"},
 		{control1, "Control bits 1"},
 		{control2, "Control bits 2"},
-		{w.app.RAM, "Number of 8KB PRG-RAM banks"},
+		{ramByte, "Number of 8KB PRG-RAM banks"},
 		{w.app.VideoFormat, "Video format NTSC/PAL"},
 	}
 

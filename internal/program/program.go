@@ -58,7 +58,7 @@ type Program struct {
 	Handlers    Handlers
 	Battery     byte
 	Mirror      cartridge.MirrorMode
-	Mapper      byte
+	Mapper      uint16
 	VideoFormat byte
 
 	// keep constants and variables in the banks and global in the app to let the chosen assembler decide

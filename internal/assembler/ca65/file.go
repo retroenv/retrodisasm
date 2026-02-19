@@ -65,6 +65,13 @@ func New(app *program.Program, options options.Disassembler, mainWriter io.Write
 func (f FileWriter) Write() error {
 	control1, control2 := cartridge.ControlBytes(f.app.Battery, byte(f.app.Mirror), f.app.Mapper, len(f.app.Trainer) > 0)
 
+	// iNES 2.0: mapper numbers > 0xFF require extended header encoding.
+	ramByte := f.app.RAM
+	if f.app.Mapper > 0xFF {
+		control2 = (control2 &^ 0x0C) | 0x08
+		ramByte = byte((f.app.Mapper >> 8) & 0x0F)
+	}
+
 	var writes []any // nolint:prealloc
 
 	if !f.options.CodeOnly {
@@ -78,7 +85,7 @@ func (f FileWriter) Write() error {
 			headerByteWrite{value: byte(len(f.app.CHR) / 8192), comment: "Number of 8KB CHR-ROM banks"},
 			headerByteWrite{value: control1, comment: "Control bits 1"},
 			headerByteWrite{value: control2, comment: "Control bits 2"},
-			headerByteWrite{value: f.app.RAM, comment: "Number of 8KB PRG-RAM banks"},
+			headerByteWrite{value: ramByte, comment: "Number of 8KB PRG-RAM banks"},
 			headerByteWrite{value: f.app.VideoFormat, comment: "Video format NTSC/PAL"},
 		}
 	}

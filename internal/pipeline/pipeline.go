@@ -204,7 +204,7 @@ func (p *Pipeline) printInfo(opts options.Program, cart *cartridge.Cartridge, sy
 	case arch.NES:
 		p.logger.Info("Processing NES ROM",
 			log.String("file", opts.Input),
-			log.Uint8("mapper", cart.Mapper),
+			log.Uint16("mapper", cart.Mapper),
 			log.String("assembler", opts.Assembler),
 		)
 		if cart.Mapper != 0 && cart.Mapper != 3 {
