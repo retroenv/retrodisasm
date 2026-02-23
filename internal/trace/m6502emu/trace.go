@@ -23,6 +23,8 @@ type Mapper interface {
 	MappingSignature() uint64
 	ResolveAddress(address uint16) (bankID int, physicalOffset uint32, ok bool)
 	ApplyMapperWrite(address uint16, value byte) bool
+	SnapshotRuntimeState() any
+	RestoreRuntimeState(snapshot any) bool
 }
 
 // Config controls advisory trace execution limits.
@@ -74,9 +76,41 @@ type Result struct {
 	ConditionalBranchCount     int
 	BranchAlternateCount       int
 	BranchAlternateBudgetDrops int
+	BranchStatesExecuted       int
 	Instructions               int
 	HaltReason                 string
 	Duration                   time.Duration
+}
+
+type cpuSnapshot struct {
+	A  uint8
+	X  uint8
+	Y  uint8
+	PC uint16
+	SP uint8
+
+	Flags cpu6502.Flags
+}
+
+type executionSnapshot struct {
+	cpu    cpuSnapshot
+	bus    busSnapshot
+	mapper any
+}
+
+type visitKey struct {
+	PC        uint16
+	MappingID uint64
+}
+
+type branchStateKey struct {
+	PC        uint16
+	MappingID uint64
+	A         uint8
+	X         uint8
+	Y         uint8
+	SP        uint8
+	Flags     uint8
 }
 
 // Run executes a bounded advisory 6502 trace over a NES cartridge using mapper-backed PRG reads.
@@ -118,35 +152,46 @@ func Run(ctx context.Context, cart *cartridge.Cartridge, mapper Mapper, cfg Conf
 		}),
 	)
 
-	visits := make(map[uint16]int, 4096)
+	visits := make(map[visitKey]int, 4096)
 	uniquePCs := make(map[uint16]struct{}, 4096)
 	uniqueMappings := make(map[uint64]struct{}, 64)
+	queuedBranches := make(map[branchStateKey]struct{}, cfg.MaxBranchStates)
+	frontier := make([]executionSnapshot, 0, cfg.MaxBranchStates)
+	lastHaltReason := ""
 
-	for i := 0; i < cfg.MaxInstructions; i++ {
+	for len(res.Steps) < cfg.MaxInstructions {
 		select {
 		case <-ctx.Done():
 			res.HaltReason = "context cancelled"
-			finalizeResult(res, cfg, uniquePCs, uniqueMappings)
+			finalizeResult(res, uniquePCs, uniqueMappings)
 			return res, nil
 		default:
 		}
 
-		pc := cpu.PC
-		visits[pc]++
-		if visits[pc] > cfg.MaxVisitsPerPC {
-			res.HaltReason = fmt.Sprintf("pc visit limit exceeded at $%04X", pc)
-			break
+		signatureBefore := mapper.MappingSignature()
+		vk := visitKey{PC: cpu.PC, MappingID: signatureBefore}
+		visits[vk]++
+		if visits[vk] > cfg.MaxVisitsPerPC {
+			lastHaltReason = fmt.Sprintf("pc visit limit exceeded at $%04X", cpu.PC)
+			if !restoreNextState(&frontier, cpu, bus, mapper, res) {
+				break
+			}
+			continue
 		}
 
+		pre := snapshotExecutionState(cpu, bus, mapper)
 		if err := cpu.Step(); err != nil {
-			res.HaltReason = err.Error()
-			break
+			lastHaltReason = err.Error()
+			if !restoreNextState(&frontier, cpu, bus, mapper, res) {
+				break
+			}
+			continue
 		}
 
 		ts := cpu.TraceStep
-		signature := mapper.MappingSignature()
+		signatureAfter := mapper.MappingSignature()
 		uniquePCs[ts.PC] = struct{}{}
-		uniqueMappings[signature] = struct{}{}
+		uniqueMappings[signatureAfter] = struct{}{}
 
 		bankID, physicalOffset, hasPhysical := mapper.ResolveAddress(ts.PC)
 
@@ -157,19 +202,71 @@ func Run(ctx context.Context, cart *cartridge.Cartridge, mapper Mapper, cfg Conf
 			PC:               ts.PC,
 			OpcodeName:       ts.Opcode.Instruction.Name,
 			OpcodeOperands:   operands,
-			MappingSignature: signature,
+			MappingSignature: signatureAfter,
 			BankID:           bankID,
 			PhysicalOffset:   physicalOffset,
 			HasPhysical:      hasPhysical,
 		}
 		res.Steps = append(res.Steps, step)
+
+		if !isConditionalBranch(step.OpcodeName) || len(step.OpcodeOperands) == 0 {
+			continue
+		}
+		res.ConditionalBranchCount++
+
+		if cfg.MaxBranchStates <= 0 {
+			continue
+		}
+
+		altPC, target, fallthroughPC, taken, ok := alternateBranchTarget(step, cpu.PC)
+		if !ok {
+			continue
+		}
+
+		branchSnapshot := pre
+		branchSnapshot.cpu.PC = altPC
+		key := branchStateKey{
+			PC:        altPC,
+			MappingID: signatureBefore,
+			A:         branchSnapshot.cpu.A,
+			X:         branchSnapshot.cpu.X,
+			Y:         branchSnapshot.cpu.Y,
+			SP:        branchSnapshot.cpu.SP,
+			Flags:     flagsByte(branchSnapshot.cpu.Flags),
+		}
+		if _, exists := queuedBranches[key]; exists {
+			continue
+		}
+		queuedBranches[key] = struct{}{}
+
+		if len(frontier) >= cfg.MaxBranchStates {
+			res.BranchAlternateBudgetDrops++
+			continue
+		}
+
+		frontier = append(frontier, branchSnapshot)
+		res.BranchAlternates = append(res.BranchAlternates, BranchAlternate{
+			FromPC:            step.PC,
+			Address:           altPC,
+			MappingSignature:  signatureBefore,
+			BranchTarget:      target,
+			FallthroughTarget: fallthroughPC,
+			Taken:             taken,
+		})
 	}
 
 	if res.HaltReason == "" {
-		res.HaltReason = "instruction budget exhausted"
+		switch {
+		case len(res.Steps) >= cfg.MaxInstructions:
+			res.HaltReason = "instruction budget exhausted"
+		case lastHaltReason != "":
+			res.HaltReason = lastHaltReason
+		default:
+			res.HaltReason = "trace halted"
+		}
 	}
 
-	finalizeResult(res, cfg, uniquePCs, uniqueMappings)
+	finalizeResult(res, uniquePCs, uniqueMappings)
 	return res, nil
 }
 
@@ -186,93 +283,11 @@ func normalizeConfig(cfg Config) Config {
 	return cfg
 }
 
-func finalizeResult(res *Result, cfg Config, uniquePCs map[uint16]struct{}, uniqueMappings map[uint64]struct{}) {
+func finalizeResult(res *Result, uniquePCs map[uint16]struct{}, uniqueMappings map[uint64]struct{}) {
 	res.Instructions = len(res.Steps)
 	res.UniquePCCount = len(uniquePCs)
 	res.UniqueMappingCount = len(uniqueMappings)
-
-	alternates, conditionalCount, budgetDrops := collectBranchAlternates(res.Steps, cfg.MaxBranchStates)
-	res.ConditionalBranchCount = conditionalCount
-	res.BranchAlternates = alternates
-	res.BranchAlternateCount = len(alternates)
-	res.BranchAlternateBudgetDrops = budgetDrops
-}
-
-func collectBranchAlternates(steps []TraceStep, maxBranchStates int) ([]BranchAlternate, int, int) {
-	var (
-		alternates []BranchAlternate
-		budgetDrop int
-	)
-
-	if len(steps) < 2 {
-		return alternates, 0, 0
-	}
-
-	type alternateKey struct {
-		PC        uint16
-		MappingID uint64
-	}
-	seen := map[alternateKey]struct{}{}
-
-	conditionalCount := 0
-	for i := 0; i < len(steps)-1; i++ {
-		step := steps[i]
-		if !isConditionalBranch(step.OpcodeName) || len(step.OpcodeOperands) < 1 {
-			continue
-		}
-		conditionalCount++
-		if maxBranchStates <= 0 {
-			continue
-		}
-
-		operand := step.OpcodeOperands[len(step.OpcodeOperands)-1]
-		fallthroughPC := step.PC + 2
-		target := uint16(int32(fallthroughPC) + int32(int8(operand)))
-		nextPC := steps[i+1].PC
-
-		var (
-			alternate uint16
-			ok        bool
-			taken     bool
-		)
-		switch nextPC {
-		case target:
-			alternate = fallthroughPC
-			ok = true
-			taken = true
-		case fallthroughPC:
-			alternate = target
-			ok = true
-		}
-		if !ok || alternate == nextPC {
-			continue
-		}
-
-		key := alternateKey{
-			PC:        alternate,
-			MappingID: step.MappingSignature,
-		}
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		seen[key] = struct{}{}
-
-		if len(alternates) >= maxBranchStates {
-			budgetDrop++
-			continue
-		}
-
-		alternates = append(alternates, BranchAlternate{
-			FromPC:            step.PC,
-			Address:           alternate,
-			MappingSignature:  step.MappingSignature,
-			BranchTarget:      target,
-			FallthroughTarget: fallthroughPC,
-			Taken:             taken,
-		})
-	}
-
-	return alternates, conditionalCount, budgetDrop
+	res.BranchAlternateCount = len(res.BranchAlternates)
 }
 
 func isConditionalBranch(opName string) bool {
@@ -282,4 +297,82 @@ func isConditionalBranch(opName string) bool {
 	default:
 		return false
 	}
+}
+
+func alternateBranchTarget(step TraceStep, nextPC uint16) (alternate, target, fallthroughPC uint16,
+	taken, ok bool) {
+	operand := step.OpcodeOperands[len(step.OpcodeOperands)-1]
+	fallthroughPC = step.PC + 2
+	target = uint16(int32(fallthroughPC) + int32(int8(operand)))
+
+	switch nextPC {
+	case target:
+		return fallthroughPC, target, fallthroughPC, true, true
+	case fallthroughPC:
+		return target, target, fallthroughPC, false, true
+	default:
+		return 0, target, fallthroughPC, false, false
+	}
+}
+
+func snapshotExecutionState(cpu *cpu6502.CPU, bus *nesBus, mapper Mapper) executionSnapshot {
+	return executionSnapshot{
+		cpu: cpuSnapshot{
+			A:  cpu.A,
+			X:  cpu.X,
+			Y:  cpu.Y,
+			PC: cpu.PC,
+			SP: cpu.SP,
+			Flags: cpu6502.Flags{
+				C: cpu.Flags.C,
+				Z: cpu.Flags.Z,
+				I: cpu.Flags.I,
+				D: cpu.Flags.D,
+				B: cpu.Flags.B,
+				U: cpu.Flags.U,
+				V: cpu.Flags.V,
+				N: cpu.Flags.N,
+			},
+		},
+		bus:    bus.snapshot(),
+		mapper: mapper.SnapshotRuntimeState(),
+	}
+}
+
+func restoreExecutionState(state executionSnapshot, cpu *cpu6502.CPU, bus *nesBus, mapper Mapper) bool {
+	if !mapper.RestoreRuntimeState(state.mapper) {
+		return false
+	}
+	bus.restore(state.bus)
+	cpu.A = state.cpu.A
+	cpu.X = state.cpu.X
+	cpu.Y = state.cpu.Y
+	cpu.PC = state.cpu.PC
+	cpu.SP = state.cpu.SP
+	cpu.Flags = state.cpu.Flags
+	return true
+}
+
+func restoreNextState(frontier *[]executionSnapshot, cpu *cpu6502.CPU, bus *nesBus, mapper Mapper, res *Result) bool {
+	if len(*frontier) == 0 {
+		return false
+	}
+	next := (*frontier)[0]
+	*frontier = (*frontier)[1:]
+	if !restoreExecutionState(next, cpu, bus, mapper) {
+		return false
+	}
+	res.BranchStatesExecuted++
+	return true
+}
+
+func flagsByte(flags cpu6502.Flags) uint8 {
+	return flags.C |
+		(flags.Z << 1) |
+		(flags.I << 2) |
+		(flags.D << 3) |
+		(flags.B << 4) |
+		(flags.U << 5) |
+		(flags.V << 6) |
+		(flags.N << 7)
 }

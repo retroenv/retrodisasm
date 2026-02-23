@@ -64,6 +64,7 @@ func (dis *Disasm) runAdvisoryEmuTrace(ctx context.Context) *m6502emu.Result {
 		log.Int("conditional_branches", result.ConditionalBranchCount),
 		log.Int("branch_alternates", result.BranchAlternateCount),
 		log.Int("branch_alternate_budget_drops", result.BranchAlternateBudgetDrops),
+		log.Int("branch_states_executed", result.BranchStatesExecuted),
 		log.String("halt_reason", result.HaltReason),
 		log.Duration("elapsed", result.Duration),
 	)

@@ -723,6 +723,81 @@ Post-phase note:
 
 - Earlier benchmark sections that reported universal pass rates were influenced by exit-code-only classification and should be treated as superseded by Phase 7 corrected metrics.
 
+### Phase 8: True Alternate-Path Execution (State Cloning)
+
+Status: Completed (2026-02-23)
+
+1. Replace inferred-only alternate branch handling with executable branch-state frontier.
+2. Snapshot and restore CPU, RAM, and mapper runtime state for alternate-path replay.
+3. Keep branch exploration bounded by existing budgets.
+
+Acceptance:
+
+1. Alternate branch states are actually executed, not only enqueued as inferred roots.
+2. Runtime-state restore is deterministic across mapper writes (including MMC1 shift state).
+3. Existing `-verify` working corpus behavior remains stable.
+
+Implementation notes:
+
+- Emulator trace frontier with true state replay:
+  - `internal/trace/m6502emu/trace.go`
+  - Added execution snapshots for:
+    - CPU register/flag state (`A/X/Y/PC/SP/Flags`)
+    - bus RAM/PRG-RAM state
+    - mapper runtime snapshot
+  - Conditional branches now enqueue executable alternate states, restored and stepped later.
+  - Visit throttling is now keyed by `(PC, MappingSignature)` to avoid over-collapsing multi-mapping loops.
+  - Added metric:
+    - `BranchStatesExecuted`
+- Bus snapshot/restore support:
+  - `internal/trace/m6502emu/bus.go`
+  - Added `snapshot()` and `restore()` for RAM/PRG-RAM.
+- Mapper runtime snapshot/restore support:
+  - `internal/mapper/runtime.go`
+  - Added:
+    - `SnapshotRuntimeState() any`
+    - `RestoreRuntimeState(snapshot any) bool`
+  - Snapshot includes mapping signature and MMC1 runtime registers (shift/control/PRG state).
+- Mapper runtime snapshot tests:
+  - `internal/mapper/mapper_test.go`
+  - Added:
+    - `TestSnapshotRestoreRuntimeState_UxROM`
+    - `TestSnapshotRestoreRuntimeState_MMC1ShiftState`
+- Trace execution test proving real alternate replay:
+  - `internal/trace/m6502emu/trace_test.go`
+  - Added:
+    - `TestRunExecutesQueuedBranchState`
+- Trace logging now reports executed branch states:
+  - `internal/disasm/emutrace.go`
+  - Added debug field:
+    - `branch_states_executed`
+
+Validation:
+
+- Unit/integration:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase8 go test ./...`
+  - Result: success.
+- Working mapper verification (CLI trace budgets enabled):
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase8 go run . -verify -q -a ca65 -s nes -trace-mode hybrid -trace-max-instr 200000 -trace-max-visits-per-state 32 -trace-max-branch-states 256 -o /tmp/phase8_bt_hybrid.asm "internal/testroms/commercial/working/Battletoads (USA).nes"`
+  - Result: success.
+- Battletoads debug sample (same budgets):
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase8 go run . -debug -q -a ca65 -s nes -trace-mode hybrid -trace-max-instr 200000 -trace-max-visits-per-state 32 -trace-max-branch-states 256 -o /tmp/phase8_bt_hybrid_debug.asm "internal/testroms/commercial/working/Battletoads (USA).nes"`
+  - Log highlights:
+    - `instructions=2108`
+    - `unique_pc=85`
+    - `unique_mapping=3`
+    - `branch_alternates=186`
+    - `branch_states_executed=186`
+- Mapper 1/2 sweep after state-clone implementation:
+  - `scripts/benchmark_trace_sweep.sh -g notworking -m 1,2 -i 200000 -v 8 -b 0,256 -o /tmp/phase8_trace_sweep_m12.csv`
+  - Summary:
+    - mapper `1`: `1/2` pass for branch `0` and `256`
+    - mapper `2`: `2/7` pass for branch `0` and `256`
+
+Post-phase note:
+
+- State cloning is now functional and validated, but current mapper 1/2 pass rates did not improve with this initial branch-frontier policy. Remaining gains likely require mapper-/I/O-specific path realism and/or targeted frontier heuristics.
+
 ## Testing Plan
 
 1. Unit tests
@@ -771,6 +846,6 @@ Post-phase note:
 
 ## Immediate Next Steps
 
-1. Implement true alternate-path execution (CPU+RAM+mapper state cloning) for selected high-value branch frontiers.
-2. Run larger sweep matrices (`max_visits` and `max_branch`) for mapper 1/2 and compare discovery vs runtime from Phase 7 baselines.
-3. Add per-ROM failure artifact capture (first mismatch offsets + emitted labels) to speed mapper-specific debugging.
+1. Run larger sweep matrices (`max_visits` and `max_branch`) for mapper 1/2 and quantify discovery/runtime tradeoffs from the new Phase 8 baseline.
+2. Add per-ROM failure artifact capture (first mismatch offsets + emitted labels) to speed mapper-specific debugging.
+3. Improve I/O stub realism (PPU/APU/controller hotspots) to reduce mapper-state divergence in startup/control loops.

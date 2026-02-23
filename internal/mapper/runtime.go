@@ -10,6 +10,51 @@ type mmc1Runtime struct {
 	prgBank  int
 }
 
+type runtimeSnapshot struct {
+	MappingSignature uint64
+
+	MMC1ShiftCount    byte
+	MMC1ShiftRegister byte
+	MMC1Control       byte
+	MMC1CHRBank0      int
+	MMC1CHRBank1      int
+	MMC1PRGBank       int
+}
+
+// SnapshotRuntimeState returns an opaque snapshot of mapper runtime state.
+func (m *Mapper) SnapshotRuntimeState() any {
+	return runtimeSnapshot{
+		MappingSignature: m.MappingSignature(),
+
+		MMC1ShiftCount:    m.mmc1.shiftCount,
+		MMC1ShiftRegister: m.mmc1.shiftRegister,
+		MMC1Control:       m.mmc1.control,
+		MMC1CHRBank0:      m.mmc1.chrBank0,
+		MMC1CHRBank1:      m.mmc1.chrBank1,
+		MMC1PRGBank:       m.mmc1.prgBank,
+	}
+}
+
+// RestoreRuntimeState restores a mapper runtime snapshot previously returned by SnapshotRuntimeState.
+func (m *Mapper) RestoreRuntimeState(snapshot any) bool {
+	state, ok := snapshot.(runtimeSnapshot)
+	if !ok {
+		return false
+	}
+
+	if !m.RestoreMappingSignature(state.MappingSignature) {
+		return false
+	}
+
+	m.mmc1.shiftCount = state.MMC1ShiftCount
+	m.mmc1.shiftRegister = state.MMC1ShiftRegister
+	m.mmc1.control = state.MMC1Control
+	m.mmc1.chrBank0 = state.MMC1CHRBank0
+	m.mmc1.chrBank1 = state.MMC1CHRBank1
+	m.mmc1.prgBank = state.MMC1PRGBank
+	return true
+}
+
 // RestoreMappingSignature restores a previously seen mapping snapshot by signature.
 func (m *Mapper) RestoreMappingSignature(signature uint64) bool {
 	if len(m.mappingSnapshots) == 0 {

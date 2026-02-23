@@ -368,6 +368,59 @@ func TestRestoreMappingSignature(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestSnapshotRestoreRuntimeState_UxROM(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		PRG:    make([]byte, 0xC000), // 3 x 16KB banks
+		Mapper: 2,
+	}
+	arch := &mockArchitecture{bankWindowSize: 0x2000}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+
+	snapshot := mapper.SnapshotRuntimeState()
+
+	changed := mapper.ApplyMapperWrite(0x8000, 0x01)
+	assert.True(t, changed)
+
+	ok := mapper.RestoreRuntimeState(snapshot)
+	assert.True(t, ok)
+
+	bankID, physicalOffset, valid := mapper.ResolveAddress(0x8000)
+	assert.True(t, valid)
+	assert.Equal(t, 0, bankID)
+	assert.Equal(t, uint32(0), physicalOffset)
+}
+
+func TestSnapshotRestoreRuntimeState_MMC1ShiftState(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		PRG:    make([]byte, 0x10000), // 4 x 16KB banks
+		Mapper: 1,
+	}
+	arch := &mockArchitecture{bankWindowSize: 0x2000}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+
+	// Two partial writes to leave non-zero shift state.
+	mapper.ApplyMapperWrite(0xE000, 0x01)
+	mapper.ApplyMapperWrite(0xE000, 0x01)
+
+	snapshot := mapper.SnapshotRuntimeState()
+	state, ok := snapshot.(runtimeSnapshot)
+	assert.True(t, ok)
+	assert.True(t, state.MMC1ShiftCount > 0)
+
+	// Disturb shift state.
+	mapper.ApplyMapperWrite(0xE000, 0x00)
+	mapper.ApplyMapperWrite(0xE000, 0x00)
+
+	ok = mapper.RestoreRuntimeState(snapshot)
+	assert.True(t, ok)
+	assert.Equal(t, state.MMC1ShiftCount, mapper.mmc1.shiftCount)
+	assert.Equal(t, state.MMC1ShiftRegister, mapper.mmc1.shiftRegister)
+}
+
 func TestApplyMapperWrite_AxROM(t *testing.T) {
 	cart := &cartridge.Cartridge{
 		PRG:    make([]byte, 0x10000), // 2 x 32KB banks

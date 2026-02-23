@@ -19,11 +19,28 @@ type nesBus struct {
 	onMapperWrite func(address uint16, value byte)
 }
 
+type busSnapshot struct {
+	ram    [ramSize]byte
+	prgRAM [prgRAMSize]byte
+}
+
 func newNesBus(cart *cartridge.Cartridge, mapper Mapper) *nesBus {
 	return &nesBus{
 		cart:   cart,
 		mapper: mapper,
 	}
+}
+
+func (b *nesBus) snapshot() busSnapshot {
+	return busSnapshot{
+		ram:    b.ram,
+		prgRAM: b.prgRAM,
+	}
+}
+
+func (b *nesBus) restore(state busSnapshot) {
+	b.ram = state.ram
+	b.prgRAM = state.prgRAM
 }
 
 func (b *nesBus) Read(address uint16) uint8 {
