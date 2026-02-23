@@ -798,6 +798,63 @@ Post-phase note:
 
 - State cloning is now functional and validated, but current mapper 1/2 pass rates did not improve with this initial branch-frontier policy. Remaining gains likely require mapper-/I/O-specific path realism and/or targeted frontier heuristics.
 
+### Phase 9: Failure Artifact Capture and Triage Acceleration
+
+Status: Completed (2026-02-23)
+
+1. Add per-ROM failure artifact capture to sweep and baseline benchmark harnesses.
+2. Persist first-pass triage artifacts (verification log, emitted labels, mismatch offsets).
+3. Emit artifact paths directly in CSV outputs for fast failure drill-down.
+
+Acceptance:
+
+1. Both benchmark scripts can write deterministic per-failure artifact directories.
+2. CSV outputs contain `artifact_path` for failed rows (empty for pass rows).
+3. Artifact bundles include enough context to inspect mapper-specific failures without rerunning immediately.
+
+Implementation notes:
+
+- Sweep harness artifact support:
+  - `scripts/benchmark_trace_sweep.sh`
+  - Added `-d <artifact_dir>` option.
+  - Added `artifact_path` CSV column.
+  - For each failed ROM/config, writes:
+    - `verify.log`
+    - `disasm.asm` (if produced)
+    - `labels.txt` (label definitions extracted from output asm)
+    - `mismatch_offsets.txt` (filtered mismatch/failure lines)
+    - `meta.txt` (ROM + trace budget metadata)
+  - Artifact layout:
+    - `<artifact_dir>/<rom_sanitized>/mode-<trace>_i<instr>_v<visits>_b<branch>/...`
+- Baseline harness artifact support:
+  - `scripts/benchmark_mapper_corpus.sh`
+  - Added `-d <artifact_dir>` option.
+  - Added `artifact_path` CSV column.
+  - Writes the same artifact files per failed ROM.
+  - Artifact layout:
+    - `<artifact_dir>/<rom_sanitized>/baseline_<assembler>/...`
+
+Validation:
+
+- Syntax sanity:
+  - `bash -n scripts/benchmark_trace_sweep.sh scripts/benchmark_mapper_corpus.sh`
+  - Result: success.
+- Sweep with artifact capture:
+  - `scripts/benchmark_trace_sweep.sh -g notworking -m 2 -i 200000 -v 8 -b 0 -d /tmp/phase9_artifacts -o /tmp/phase9_trace_sweep_m2.csv`
+  - Summary:
+    - mapper `2` hybrid (`i=200000`, `v=8`, `b=0`): `2 pass / 5 fail / 7 total`
+  - CSV confirms `artifact_path` values on failures.
+- Baseline with artifact capture:
+  - `scripts/benchmark_mapper_corpus.sh -g notworking -a ca65 -d /tmp/phase9_artifacts_base -o /tmp/phase9_mapper_corpus_notworking.csv`
+  - Summary:
+    - mapper `1`: `1 pass / 1 fail / 2 total`
+    - mapper `2`: `2 pass / 5 fail / 7 total`
+  - CSV confirms `artifact_path` values on failures.
+- Artifact bundle spot-check:
+  - `find /tmp/phase9_artifacts -maxdepth 3 -type f | head`
+  - `find /tmp/phase9_artifacts_base -maxdepth 3 -type f | head`
+  - Result: expected `verify.log`, `disasm.asm`, `labels.txt`, `mismatch_offsets.txt`, `meta.txt` present.
+
 ## Testing Plan
 
 1. Unit tests
@@ -847,5 +904,5 @@ Post-phase note:
 ## Immediate Next Steps
 
 1. Run larger sweep matrices (`max_visits` and `max_branch`) for mapper 1/2 and quantify discovery/runtime tradeoffs from the new Phase 8 baseline.
-2. Add per-ROM failure artifact capture (first mismatch offsets + emitted labels) to speed mapper-specific debugging.
+2. Use captured failure artifacts to cluster recurring mismatch offsets/labels by mapper and prioritize high-yield debug targets.
 3. Improve I/O stub realism (PPU/APU/controller hotspots) to reduce mapper-state divergence in startup/control loops.

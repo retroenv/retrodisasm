@@ -23,6 +23,7 @@ TRACE_MODE="hybrid"
 MAX_INSTR_CSV="200000"
 MAX_VISITS_CSV="8,32"
 MAX_BRANCH_CSV="0,64,128,256"
+ARTIFACT_DIR=""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -31,7 +32,7 @@ OUTPUT_CSV="${REPO_ROOT}/trace_sweep_${ASSEMBLER}.csv"
 
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [-a assembler] [-g group] [-m mappers] [-t trace_mode] [-i max_instr_csv] [-v max_visits_csv] [-b max_branch_csv] [-o output_csv]
+Usage: $(basename "$0") [-a assembler] [-g group] [-m mappers] [-t trace_mode] [-i max_instr_csv] [-v max_visits_csv] [-b max_branch_csv] [-o output_csv] [-d artifact_dir]
 
 Options:
   -a assembler      Assembler for -verify (default: ca65)
@@ -42,10 +43,11 @@ Options:
   -v max_visits_csv Comma-separated max visits budgets (default: 8,32)
   -b max_branch_csv Comma-separated max branch-state budgets (default: 0,64,128,256)
   -o output_csv     Output CSV path (default: ${REPO_ROOT}/trace_sweep_<assembler>.csv)
+  -d artifact_dir   Optional directory for per-failure artifacts
 EOF
 }
 
-while getopts ":a:g:m:t:i:v:b:o:h" opt; do
+while getopts ":a:g:m:t:i:v:b:o:d:h" opt; do
     case "$opt" in
         a) ASSEMBLER="$OPTARG" ;;
         g) GROUP="$OPTARG" ;;
@@ -55,6 +57,7 @@ while getopts ":a:g:m:t:i:v:b:o:h" opt; do
         v) MAX_VISITS_CSV="$OPTARG" ;;
         b) MAX_BRANCH_CSV="$OPTARG" ;;
         o) OUTPUT_CSV="$OPTARG" ;;
+        d) ARTIFACT_DIR="$OPTARG" ;;
         h)
             usage
             exit 0
@@ -119,6 +122,56 @@ verify_rom() {
     fi
 
     return 0
+}
+
+sanitize_name() {
+    local name="$1"
+    # Keep names filesystem-safe and deterministic.
+    name="$(echo "$name" | tr ' ' '_' | tr -cd '[:alnum:]_.-')"
+    if [[ -z "$name" ]]; then
+        name="unknown"
+    fi
+    echo "$name"
+}
+
+write_failure_artifacts() {
+    local rom="$1"
+    local rom_name="$2"
+    local max_instr="$3"
+    local max_visits="$4"
+    local max_branch="$5"
+    local log_file="$6"
+
+    if [[ -z "$ARTIFACT_DIR" ]]; then
+        echo ""
+        return 0
+    fi
+
+    local rom_stem cfg_slug artifact_path
+    rom_stem="$(sanitize_name "${rom_name%.nes}")"
+    cfg_slug="mode-${TRACE_MODE}_i${max_instr}_v${max_visits}_b${max_branch}"
+    artifact_path="${ARTIFACT_DIR}/${rom_stem}/${cfg_slug}"
+    mkdir -p "$artifact_path"
+
+    cp "$log_file" "${artifact_path}/verify.log"
+
+    if [[ -f "${tmp_dir}/out.asm" ]]; then
+        cp "${tmp_dir}/out.asm" "${artifact_path}/disasm.asm"
+        rg -n '^[A-Za-z_.][A-Za-z0-9_.]*:' "${artifact_path}/disasm.asm" > "${artifact_path}/labels.txt" || true
+    fi
+
+    rg -n "Offset mismatch|verification failed|Disassembling failed" "$log_file" > "${artifact_path}/mismatch_offsets.txt" || true
+    cat > "${artifact_path}/meta.txt" <<EOF
+rom=${rom}
+rom_name=${rom_name}
+trace_mode=${TRACE_MODE}
+max_instr=${max_instr}
+max_visits=${max_visits}
+max_branch=${max_branch}
+assembler=${ASSEMBLER}
+EOF
+
+    echo "$artifact_path"
 }
 
 collect_roms() {
@@ -193,7 +246,11 @@ validate_csv_ints "$MAX_VISITS_CSV" "max visits"
 validate_csv_ints "$MAX_BRANCH_CSV" "max branch states"
 
 mkdir -p "$(dirname "$OUTPUT_CSV")"
-echo "rom,set,mapper,trace_mode,max_instr,max_visits,max_branch,status,duration_ms" > "$OUTPUT_CSV"
+echo "rom,set,mapper,trace_mode,max_instr,max_visits,max_branch,status,duration_ms,artifact_path" > "$OUTPUT_CSV"
+
+if [[ -n "$ARTIFACT_DIR" ]]; then
+    mkdir -p "$ARTIFACT_DIR"
+fi
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -248,9 +305,11 @@ for max_instr in "${MAX_INSTR_LIST[@]}"; do
                 log_file="${tmp_dir}/run.log"
                 if verify_rom "$rom" "$log_file" "$TRACE_MODE" "$max_instr" "$max_visits" "$max_branch"; then
                     status="pass"
+                    artifact_path=""
                     PASS["$key"]=$(( ${PASS["$key"]:-0} + 1 ))
                 else
                     status="fail"
+                    artifact_path="$(write_failure_artifacts "$rom" "$rom_name" "$max_instr" "$max_visits" "$max_branch" "$log_file")"
                     FAIL["$key"]=$(( ${FAIL["$key"]:-0} + 1 ))
                 fi
                 end_ms="$(date +%s%3N)"
@@ -259,8 +318,8 @@ for max_instr in "${MAX_INSTR_LIST[@]}"; do
                 TOTAL["$key"]=$(( ${TOTAL["$key"]:-0} + 1 ))
                 DURATION["$key"]=$(( ${DURATION["$key"]:-0} + duration_ms ))
 
-                printf '"%s",%s,%s,%s,%s,%s,%s,%s,%s\n' \
-                    "$rom_name" "$set_name" "$mapper" "$TRACE_MODE" "$max_instr" "$max_visits" "$max_branch" "$status" "$duration_ms" >> "$OUTPUT_CSV"
+                printf '"%s",%s,%s,%s,%s,%s,%s,%s,%s,"%s"\n' \
+                    "$rom_name" "$set_name" "$mapper" "$TRACE_MODE" "$max_instr" "$max_visits" "$max_branch" "$status" "$duration_ms" "$artifact_path" >> "$OUTPUT_CSV"
                 printf '%-55s mapper=%-3s mode=%-6s instr=%-7s visits=%-4s branch=%-4s status=%s\n' \
                     "$rom_name" "$mapper" "$TRACE_MODE" "$max_instr" "$max_visits" "$max_branch" "$status"
             done

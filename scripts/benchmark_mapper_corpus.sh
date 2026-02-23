@@ -18,6 +18,7 @@ set -u
 
 ASSEMBLER="ca65"
 GROUP="all" # all|working|notworking
+ARTIFACT_DIR=""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -26,20 +27,22 @@ OUTPUT_CSV="${REPO_ROOT}/mapper_baseline_${ASSEMBLER}.csv"
 
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [-a assembler] [-g group] [-o output_csv]
+Usage: $(basename "$0") [-a assembler] [-g group] [-o output_csv] [-d artifact_dir]
 
 Options:
   -a assembler   Assembler for -verify (default: ca65)
   -g group       ROM group: all|working|notworking (default: all)
   -o output_csv  Output CSV path (default: ${REPO_ROOT}/mapper_baseline_<assembler>.csv)
+  -d artifact_dir Optional directory for per-failure artifacts
 EOF
 }
 
-while getopts ":a:g:o:h" opt; do
+while getopts ":a:g:o:d:h" opt; do
     case "$opt" in
         a) ASSEMBLER="$OPTARG" ;;
         g) GROUP="$OPTARG" ;;
         o) OUTPUT_CSV="$OPTARG" ;;
+        d) ARTIFACT_DIR="$OPTARG" ;;
         h)
             usage
             exit 0
@@ -90,6 +93,47 @@ verify_rom() {
     return 0
 }
 
+sanitize_name() {
+    local name="$1"
+    name="$(echo "$name" | tr ' ' '_' | tr -cd '[:alnum:]_.-')"
+    if [[ -z "$name" ]]; then
+        name="unknown"
+    fi
+    echo "$name"
+}
+
+write_failure_artifacts() {
+    local rom="$1"
+    local rom_name="$2"
+    local log_file="$3"
+
+    if [[ -z "$ARTIFACT_DIR" ]]; then
+        echo ""
+        return 0
+    fi
+
+    local rom_stem artifact_path
+    rom_stem="$(sanitize_name "${rom_name%.nes}")"
+    artifact_path="${ARTIFACT_DIR}/${rom_stem}/baseline_${ASSEMBLER}"
+    mkdir -p "$artifact_path"
+
+    cp "$log_file" "${artifact_path}/verify.log"
+    if [[ -f "${tmp_dir}/out.asm" ]]; then
+        cp "${tmp_dir}/out.asm" "${artifact_path}/disasm.asm"
+        rg -n '^[A-Za-z_.][A-Za-z0-9_.]*:' "${artifact_path}/disasm.asm" > "${artifact_path}/labels.txt" || true
+    fi
+
+    rg -n "Offset mismatch|verification failed|Disassembling failed" "$log_file" > "${artifact_path}/mismatch_offsets.txt" || true
+    cat > "${artifact_path}/meta.txt" <<EOF
+rom=${rom}
+rom_name=${rom_name}
+group=${GROUP}
+assembler=${ASSEMBLER}
+EOF
+
+    echo "$artifact_path"
+}
+
 collect_roms() {
     case "$GROUP" in
         working)
@@ -123,7 +167,11 @@ group_from_path() {
 }
 
 mkdir -p "$(dirname "$OUTPUT_CSV")"
-echo "rom,set,mapper,status,duration_ms" > "$OUTPUT_CSV"
+echo "rom,set,mapper,status,duration_ms,artifact_path" > "$OUTPUT_CSV"
+
+if [[ -n "$ARTIFACT_DIR" ]]; then
+    mkdir -p "$ARTIFACT_DIR"
+fi
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -163,9 +211,11 @@ for rom in "${ROMS[@]}"; do
     log_file="${tmp_dir}/run.log"
     if verify_rom "$rom" "$log_file"; then
         status="pass"
+        artifact_path=""
         PASS["$key"]=$(( ${PASS["$key"]:-0} + 1 ))
     else
         status="fail"
+        artifact_path="$(write_failure_artifacts "$rom" "$rom_name" "$log_file")"
         FAIL["$key"]=$(( ${FAIL["$key"]:-0} + 1 ))
     fi
     end_ms="$(date +%s%3N)"
@@ -173,8 +223,8 @@ for rom in "${ROMS[@]}"; do
 
     TOTAL["$key"]=$(( ${TOTAL["$key"]:-0} + 1 ))
 
-    printf '"%s",%s,%s,%s,%s\n' \
-        "$rom_name" "$set_name" "$mapper" "$status" "$duration_ms" >> "$OUTPUT_CSV"
+    printf '"%s",%s,%s,%s,%s,"%s"\n' \
+        "$rom_name" "$set_name" "$mapper" "$status" "$duration_ms" "$artifact_path" >> "$OUTPUT_CSV"
     printf '%-55s mapper=%-3s set=%-10s status=%s\n' "$rom_name" "$mapper" "$set_name" "$status"
 done
 
