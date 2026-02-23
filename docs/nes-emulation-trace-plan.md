@@ -223,6 +223,8 @@ This keeps rollout safe and benchmarkable.
 
 ### Phase 0: Instrumentation and Baseline
 
+Status: Completed (2026-02-23)
+
 1. Add trace stats struct and debug output.
 2. Add mapper corpus benchmark script (coverage/accuracy metrics).
 3. Document baseline pass/fail by mapper and ROM set.
@@ -231,6 +233,39 @@ Acceptance:
 
 1. Existing tests pass.
 2. Baseline metrics are reproducible.
+
+Implementation notes:
+
+- Trace stats added to disassembly flow:
+  - `internal/disasm/stats.go`
+  - `internal/disasm/disasm.go`
+  - `internal/disasm/parser.go`
+  - `internal/disasm/code.go`
+  - `internal/disasm/data.go`
+- New reproducible baseline script:
+  - `scripts/benchmark_mapper_corpus.sh`
+
+Repro command used:
+
+```bash
+scripts/benchmark_mapper_corpus.sh -g all -a ca65 -o /tmp/mapper_baseline_ca65_all.csv
+```
+
+Baseline summary captured (ca65, group=all):
+
+| Set | Mapper | Pass | Fail | Total |
+|-----|--------|------|------|-------|
+| notworking | 1 | 2 | 0 | 2 |
+| notworking | 2 | 7 | 0 | 7 |
+| working | 0 | 41 | 0 | 41 |
+| working | 3 | 6 | 0 | 6 |
+| working | 7 | 1 | 0 | 1 |
+
+Notes:
+
+- The `working` / `notworking` directory names are legacy corpus labels. Current baseline shows all ROMs in both sets passing verification with `ca65`.
+- Script sets `GOCACHE` to a temp directory for sandbox compatibility.
+- Trace stats are emitted at debug level at end of each `Process()` run under the log message `Trace stats`.
 
 ### Phase 0.5: Multi-Bank Vector Tracing
 
@@ -355,7 +390,6 @@ Acceptance:
 
 ## Immediate Next Steps
 
-1. Implement Phase 0 metrics scaffolding.
-2. Implement Phase 0.5 multi-bank vector tracing (using existing design from `.claude/retrodisasm-project.md`).
-3. Build `m6502emu` trace prototype with mapper 0/7 runtime bus.
-4. Land `ParseKey` refactor before expanding mapper coverage.
+1. Implement Phase 0.5 multi-bank vector tracing (using existing design from `.claude/retrodisasm-project.md`).
+2. Build `m6502emu` trace prototype with mapper 0/7 runtime bus.
+3. Land `ParseKey` refactor before expanding mapper coverage.

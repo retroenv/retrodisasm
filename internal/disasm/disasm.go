@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"time"
 
 	"github.com/retroenv/retrodisasm/internal/arch/chip8"
 	"github.com/retroenv/retrodisasm/internal/arch/m6502"
@@ -87,6 +88,7 @@ type Disasm struct {
 	functionReturnsToParseAdded set.Set[uint16]
 
 	mapper *mapper.Mapper
+	stats  traceStats
 }
 
 // New creates a new disassembler that uses the passed architecture to implement system
@@ -127,7 +129,13 @@ func New(logger *log.Logger, ar architecture, cart *cartridge.Cartridge,
 }
 
 // Process disassembles the cartridge.
-func (dis *Disasm) Process(ctx context.Context, mainWriter io.Writer, newBankWriter assembler.NewBankWriter) (*program.Program, error) {
+func (dis *Disasm) Process(ctx context.Context, mainWriter io.Writer, newBankWriter assembler.NewBankWriter) (app *program.Program, err error) {
+	dis.resetTraceStats()
+	start := time.Now()
+	defer func() {
+		dis.logTraceStats(start, err == nil)
+	}()
+
 	if err := dis.followExecutionFlow(ctx); err != nil {
 		return nil, err
 	}
@@ -144,7 +152,7 @@ func (dis *Disasm) Process(ctx context.Context, mainWriter io.Writer, newBankWri
 	dis.constants.Process()
 	dis.processJumpDestinations()
 
-	app, err := dis.convertToProgram()
+	app, err = dis.convertToProgram()
 	if err != nil {
 		return nil, err
 	}

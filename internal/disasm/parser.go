@@ -12,8 +12,10 @@ import (
 // AddAddressToParse adds an address to the list to be processed if the address has not been processed yet.
 func (dis *Disasm) AddAddressToParse(address, context, from uint16,
 	currentInstruction instruction.Instruction, isABranchDestination bool) {
+	dis.stats.queueRequests++
 
 	if !dis.isValidCodeAddress(address) {
+		dis.stats.queueRejectedInvalid++
 		return
 	}
 
@@ -38,9 +40,11 @@ func (dis *Disasm) AddAddressToParse(address, context, from uint16,
 		bankRef.ID = bankRef.Mapped.ID()
 		offsetInfo.BranchFrom = append(offsetInfo.BranchFrom, bankRef)
 		dis.branchDestinations.Add(address)
+		dis.stats.branchDestinationsAdded++
 	}
 
 	if dis.offsetsToParseAdded.Contains(address) {
+		dis.stats.queueRejectedDuplicate++
 		return
 	}
 	dis.offsetsToParseAdded.Add(address)
@@ -51,8 +55,10 @@ func (dis *Disasm) AddAddressToParse(address, context, from uint16,
 	if currentInstruction != nil && currentInstruction.IsCall() {
 		dis.functionReturnsToParse = append(dis.functionReturnsToParse, address)
 		dis.functionReturnsToParseAdded.Add(address)
+		dis.stats.queueAddedFunctionRet++
 	} else {
 		dis.offsetsToParse = append(dis.offsetsToParse, address)
+		dis.stats.queueAddedPrimary++
 	}
 }
 
@@ -106,9 +112,11 @@ func (dis *Disasm) followExecutionFlow(ctx context.Context) error {
 		address := uint16(addr)
 
 		if dis.offsetsParsed.Contains(address) {
+			dis.stats.alreadyParsedSkips++
 			continue
 		}
 		dis.offsetsParsed.Add(address)
+		dis.stats.parsedOffsets++
 
 		dis.pc = address
 		offsetInfo := dis.mapper.OffsetInfo(dis.pc)
@@ -118,12 +126,14 @@ func (dis *Disasm) followExecutionFlow(ctx context.Context) error {
 			return fmt.Errorf("error processing offset at address %04x: %w", address, err)
 		}
 		if !inspectCode {
+			dis.stats.inspectSkipped++
 			continue
 		}
 
 		dis.checkInstructionOverlap(address, offsetInfo)
 
 		if dis.arch.HandleDisambiguousInstructions(address, offsetInfo) {
+			dis.stats.disambiguousHandled++
 			continue
 		}
 
@@ -154,6 +164,7 @@ func (dis *Disasm) checkInstructionOverlap(address uint16, offsetInfo *offset.Di
 		offsetInfo.Code = ""
 		offsetInfo.ClearType(program.CodeOffset)
 		offsetInfo.SetType(program.CodeAsData | program.DataOffset)
+		dis.stats.overlapDetected++
 		return
 	}
 }
@@ -171,6 +182,7 @@ func (dis *Disasm) addressToDisassemble() (int, error) {
 		if len(dis.offsetsToParse) > 0 {
 			address := dis.offsetsToParse[0]
 			dis.offsetsToParse = dis.offsetsToParse[1:]
+			dis.stats.dequeuedPrimary++
 			return int(address), nil
 		}
 
@@ -185,12 +197,17 @@ func (dis *Disasm) addressToDisassemble() (int, error) {
 				continue
 			}
 			dis.functionReturnsToParseAdded.Remove(address)
+			dis.stats.dequeuedFunctionRet++
 			return int(address), nil
 		}
 
+		dis.stats.jumpEngineScanCalls++
 		isEntry, err := dis.jumpEngine.ScanForNewJumpEngineEntry(dis.codeBaseAddress)
 		if err != nil {
 			return 0, fmt.Errorf("scanning for new jump engine entry: %w", err)
+		}
+		if isEntry {
+			dis.stats.jumpEngineEntryFound++
 		}
 		if !isEntry {
 			return -1, nil

@@ -87,5 +87,6 @@ func (dis *Disasm) changeAddressRangeToCode(address uint16, data []byte) {
 	for i := 0; i < len(data) && int(address)+i < int(lastCodeAddress); i++ {
 		offsetInfo := dis.mapper.OffsetInfo(address + uint16(i))
 		offsetInfo.SetType(program.CodeOffset)
+		dis.stats.codeBytesMarked++
 	}
 }

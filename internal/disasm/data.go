@@ -28,6 +28,7 @@ func (dis *Disasm) ChangeAddressRangeToCodeAsData(address uint16, data []byte) {
 		offsetInfo.Data = data[i : i+noLabelOffsets]
 		offsetInfo.ClearType(program.CodeOffset)
 		offsetInfo.SetType(program.CodeAsData | program.DataOffset)
+		dis.stats.codeAsDataBytes += uint64(noLabelOffsets)
 		i += noLabelOffsets - 1
 	}
 }
