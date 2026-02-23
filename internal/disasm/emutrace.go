@@ -32,6 +32,14 @@ func (dis *Disasm) runAdvisoryEmuTrace(ctx context.Context) *m6502emu.Result {
 		MaxInstructions: envIntOrDefault(envEmuTraceMaxInstr, 100000),
 		MaxVisitsPerPC:  envIntOrDefault(envEmuTraceMaxVisits, 8),
 	}
+
+	startSignature := dis.mapper.MappingSignature()
+	defer func() {
+		if !dis.mapper.RestoreMappingSignature(startSignature) {
+			dis.mapper.RestoreDefaultMapping()
+		}
+	}()
+
 	result, err := m6502emu.Run(ctx, dis.cart, dis.mapper, cfg)
 	if err != nil {
 		dis.logger.Warn("Advisory emu trace failed", log.Err(err))
@@ -56,6 +64,31 @@ func (dis *Disasm) runAdvisoryEmuTrace(ctx context.Context) *m6502emu.Result {
 	)
 
 	return result
+}
+
+func (dis *Disasm) seedFromAdvisoryEmuTrace(result *m6502emu.Result) {
+	if result == nil {
+		return
+	}
+
+	seen := map[ParseKey]struct{}{}
+	for _, step := range result.Steps {
+		key := ParseKey{
+			PC:        step.PC,
+			MappingID: step.MappingSignature,
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+
+		if !dis.mapper.RestoreMappingSignature(step.MappingSignature) {
+			continue
+		}
+		dis.AddAddressToParse(step.PC, step.PC, 0, nil, false)
+	}
+
+	dis.mapper.RestoreDefaultMapping()
 }
 
 func (dis *Disasm) logAdvisoryEmuTraceComparison(result *m6502emu.Result) {

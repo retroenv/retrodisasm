@@ -116,6 +116,7 @@ func (dis *Disasm) followExecutionFlow(ctx context.Context) error {
 			break
 		}
 		address := key.PC
+		dis.mapper.RestoreMappingSignature(key.MappingID)
 
 		if dis.offsetsParsed.Contains(key) {
 			dis.stats.alreadyParsedSkips++

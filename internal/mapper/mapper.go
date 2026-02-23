@@ -15,9 +15,13 @@ type Mapper struct {
 	addressShifts   int
 	bankWindowSize  int
 	codeBaseAddress uint16 // Code base address for single-bank systems
+	mapperNumber    uint16
 
 	banksMapped []mappedBank
 	mapped      []mappedBank
+
+	mappingSnapshots map[uint64][]mappedBank
+	mmc1             mmc1Runtime
 
 	dis    disasm          // Reference to disasm for single-bank systems
 	vars   variableManager // Reference to variable manager
@@ -41,12 +45,16 @@ func New(ar architecture, cart *cartridge.Cartridge) (*Mapper, error) {
 func createSingleBankMapper(cart *cartridge.Cartridge) (*Mapper, error) {
 	bnk := newBank(cart.PRG)
 
-	return &Mapper{
+	m := &Mapper{
 		banks: []*bank{bnk},
 		mapped: []mappedBank{
 			{bank: bnk},
 		},
-	}, nil
+		mapperNumber:     cart.Mapper,
+		mappingSnapshots: make(map[uint64][]mappedBank, 1),
+	}
+	m.rememberCurrentMapping()
+	return m, nil
 }
 
 // createMultiBankMapper creates a mapper for multi-bank systems (e.g., NES)
@@ -56,10 +64,12 @@ func createMultiBankMapper(cart *cartridge.Cartridge, bankWindowSize int) (*Mapp
 	mappedWindows := 0x10000 / bankWindowSize
 
 	m := &Mapper{
-		addressShifts:  16 - log2(mappedWindows),
-		bankWindowSize: bankWindowSize,
-		banksMapped:    make([]mappedBank, mappedBanks),
-		mapped:         make([]mappedBank, mappedWindows),
+		addressShifts:    16 - log2(mappedWindows),
+		bankWindowSize:   bankWindowSize,
+		mapperNumber:     cart.Mapper,
+		banksMapped:      make([]mappedBank, mappedBanks),
+		mapped:           make([]mappedBank, mappedWindows),
+		mappingSnapshots: make(map[uint64][]mappedBank, 16),
 	}
 
 	m.initializeBanks(cart.PRG)
@@ -69,6 +79,8 @@ func createMultiBankMapper(cart *cartridge.Cartridge, bankWindowSize int) (*Mapp
 	}
 
 	m.configureDefaultBankMapping()
+	m.initializeRuntimeState()
+	m.rememberCurrentMapping()
 
 	return m, nil
 }
@@ -148,11 +160,13 @@ func (m *Mapper) MapBank(bankIndex int) {
 	for i, window := range prgWindowAddresses {
 		m.setMappedBank(window, entries[i%len(entries)])
 	}
+	m.rememberCurrentMapping()
 }
 
 // RestoreDefaultMapping restores the default PRG window mapping.
 func (m *Mapper) RestoreDefaultMapping() {
 	m.configureDefaultBankMapping()
+	m.rememberCurrentMapping()
 }
 
 func (m *Mapper) mappedEntriesForBank(bankIndex int) []mappedBank {

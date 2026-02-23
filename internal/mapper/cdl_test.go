@@ -95,9 +95,8 @@ func TestApplyCodeDataLog_BoundsCheck(t *testing.T) {
 	// Should not panic and should stop at bank boundary
 	mapper.ApplyCodeDataLog(prgFlags)
 
-	// Current behavior: processes until index > len(offsets)
-	// With 0x10 (16) offsets, processes indices 0-16 (17 addresses)
-	assert.Len(t, mockDis.addedAddresses, 0x11)
+	// Processes until bank boundary.
+	assert.Len(t, mockDis.addedAddresses, 0x10)
 }
 
 func TestApplyCodeDataLog_Empty(t *testing.T) {
@@ -121,4 +120,36 @@ func TestApplyCodeDataLog_Empty(t *testing.T) {
 
 	// Should not have added any addresses
 	assert.Len(t, mockDis.addedAddresses, 0)
+}
+
+func TestApplyCodeDataLog_MultiBank(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		PRG:    make([]byte, 0x10000), // 2 x 32KB
+		Mapper: 7,
+	}
+	arch := &mockArchitecture{bankWindowSize: 0x2000}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+	mapper.SetCodeBaseAddress(0x8000)
+
+	mockDis := &mockDisasm{}
+	mapper.InjectDependencies(Dependencies{
+		Disasm: mockDis,
+	})
+
+	// Mark code in bank 0 and bank 1 at CPU-relative offset 0.
+	prgFlags := make([]codedatalog.PrgFlag, len(cart.PRG))
+	prgFlags[0] = codedatalog.Code | codedatalog.SubEntryPoint
+	prgFlags[0x8000] = codedatalog.Code | codedatalog.SubEntryPoint
+
+	mapper.ApplyCodeDataLog(prgFlags)
+
+	// Both bank contexts map to CPU $8000 while different mappings are active.
+	assert.Len(t, mockDis.addedAddresses, 2)
+	assert.Equal(t, uint16(0x8000), mockDis.addedAddresses[0])
+	assert.Equal(t, uint16(0x8000), mockDis.addedAddresses[1])
+
+	assert.True(t, mapper.banks[0].offsets[0].IsType(program.CallDestination))
+	assert.True(t, mapper.banks[1].offsets[0].IsType(program.CallDestination))
 }

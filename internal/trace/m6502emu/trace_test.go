@@ -79,3 +79,11 @@ func (m *mockMapper) ResolveAddress(address uint16) (int, uint32, bool) {
 	}
 	return 0, uint32(address - 0x8000), true
 }
+
+func (m *mockMapper) ApplyMapperWrite(address uint16, _ byte) bool {
+	if address < 0x8000 {
+		return false
+	}
+	m.signature++
+	return true
+}

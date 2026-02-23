@@ -140,6 +140,7 @@ func (dis *Disasm) Process(ctx context.Context, mainWriter io.Writer, newBankWri
 	}()
 
 	emuTrace := dis.runAdvisoryEmuTrace(ctx)
+	dis.seedFromAdvisoryEmuTrace(emuTrace)
 
 	if err := dis.followExecutionFlow(ctx); err != nil {
 		return nil, err

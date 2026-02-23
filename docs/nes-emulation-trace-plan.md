@@ -420,6 +420,8 @@ Known limitation observed during phase validation:
 
 ### Phase 3: Mapper Runtime Integration
 
+Status: Completed (2026-02-23)
+
 1. Implement runtime writes for mapper 7 first, then mapper 2, then mapper 1.
    - Mapper 3 is excluded: it only switches CHR banks, not PRG.
 2. Feed emulator mapping snapshots into disasm reads (`OffsetInfo`/`ReadMemory` by snapshot).
@@ -429,6 +431,55 @@ Acceptance:
 
 1. Mapper 7 Battletoads path coverage improves across switched banks.
 2. Mapper 2/1 not-working sample set shows measurable progress.
+
+Implementation notes:
+
+- Mapper runtime emulation added for PRG bank writes:
+  - `internal/mapper/runtime.go`
+  - `internal/mapper/mapper.go`
+  - New APIs:
+    - `ApplyMapperWrite(address uint16, value byte) bool`
+    - `RestoreMappingSignature(signature uint64) bool`
+  - Implemented mapper-specific PRG behavior:
+    - Mapper `7` (AxROM): 32KB switch at `$8000-$FFFF`
+    - Mapper `2` (UxROM): switchable 16KB at `$8000-$BFFF`, fixed last 16KB at `$C000-$FFFF`
+    - Mapper `1` (MMC1): serial 5-bit writes with PRG mode handling (`0/1/2/3`)
+- Mapping snapshot store (`mappingSnapshots`) now captures/restores window assignments by signature.
+- Disassembly parse now restores mapper state per `ParseKey` before processing each queued item:
+  - `internal/disasm/parser.go`
+- Emulator trace now applies mapper writes (instead of just logging write addresses):
+  - `internal/trace/m6502emu/trace.go`
+  - `internal/trace/m6502emu/trace_test.go`
+- Emulator trace integration now seeds parse queue from emu-discovered `(PC, MappingSignature)` states:
+  - `internal/disasm/emutrace.go`
+  - `internal/disasm/disasm.go`
+- CDL handling is now multi-bank aware:
+  - `internal/mapper/cdl.go`
+  - `internal/mapper/cdl_test.go`
+  - Applies flags across all PRG banks and queues code addresses in the correct mapped bank context.
+- Added/updated mapper runtime tests:
+  - `internal/mapper/mapper_test.go`
+  - Coverage for signature restore and mapper `7/2/1` write semantics.
+
+Validation:
+
+- Unit/integration:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase3 go test ./...`
+  - Result: success.
+- Mapper 7 runtime-write proof (Battletoads debug trace):
+  - `RETRODISASM_EMU_TRACE=1 RETRODISASM_EMU_TRACE_MAX_INSTR=200000 RETRODISASM_EMU_TRACE_MAX_VISITS=32 GOCACHE=/tmp/retrodisasm_gocache_phase3 go run . -debug -q -o /tmp/phase3_bt_debug.asm "internal/testroms/commercial/working/Battletoads (USA).nes"`
+  - Log highlights:
+    - `unique_mapping=2`
+    - `mapper_writes=1`
+    - `mapping_changes=1`
+
+Known limitation after Phase 3:
+
+- `-verify` on mapper-heavy ROMs currently fails due duplicate symbol/alias definitions across multi-context output.
+- Repro:
+  - `RETRODISASM_EMU_TRACE=1 GOCACHE=/tmp/retrodisasm_gocache_phase3 go run . -verify -q -a ca65 -s nes -o /tmp/phase3_bt.asm "internal/testroms/commercial/working/Battletoads (USA).nes"`
+  - Result: fails with duplicate-symbol assembler errors.
+- This is tracked in **Phase 4: Symbol and Output Stabilization**.
 
 ### Phase 4: Symbol and Output Stabilization
 
@@ -502,6 +553,6 @@ Acceptance:
 
 ## Immediate Next Steps
 
-1. Add mapper runtime write integration for mapper 7, then 2, then 1 (Phase 3).
-2. Make disassembly reads/state restoration mapping-aware when consuming emulator snapshots (Phase 3 follow-up).
-3. Address multi-context symbol/alias collisions in generated assembler output (Phase 4).
+1. Implement bank-qualified symbol/alias fallback for collisions (Phase 4).
+2. Add regression tests for duplicate logical addresses across banks and assembler backends (Phase 4).
+3. Re-run `-verify` mapper corpus and capture post-Phase-4 pass/fail progression.

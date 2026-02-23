@@ -345,3 +345,98 @@ func TestMapBankAndRestoreDefaultMapping(t *testing.T) {
 	assert.Equal(t, 1, mapper.MappedBank(0xC000).ID())
 	assert.Equal(t, 1, mapper.MappedBank(0xE000).ID())
 }
+
+func TestRestoreMappingSignature(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		PRG: make([]byte, 0x10000), // 2 x 32KB banks
+	}
+	arch := &mockArchitecture{bankWindowSize: 0x2000}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+
+	defaultSig := mapper.MappingSignature()
+	mapper.MapBank(1)
+	mappedSig := mapper.MappingSignature()
+	assert.True(t, defaultSig != mappedSig)
+
+	ok := mapper.RestoreMappingSignature(defaultSig)
+	assert.True(t, ok)
+	assert.Equal(t, defaultSig, mapper.MappingSignature())
+
+	ok = mapper.RestoreMappingSignature(0xDEADBEEF)
+	assert.False(t, ok)
+}
+
+func TestApplyMapperWrite_AxROM(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		PRG:    make([]byte, 0x10000), // 2 x 32KB banks
+		Mapper: 7,
+	}
+	arch := &mockArchitecture{bankWindowSize: 0x2000}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+
+	changed := mapper.ApplyMapperWrite(0x8000, 0x01)
+	assert.True(t, changed)
+	assert.Equal(t, 1, mapper.MappedBank(0x8000).ID())
+	assert.Equal(t, 1, mapper.MappedBank(0xA000).ID())
+	assert.Equal(t, 1, mapper.MappedBank(0xC000).ID())
+	assert.Equal(t, 1, mapper.MappedBank(0xE000).ID())
+}
+
+func TestApplyMapperWrite_UxROM(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		PRG:    make([]byte, 0xC000), // 3 x 16KB banks
+		Mapper: 2,
+	}
+	arch := &mockArchitecture{bankWindowSize: 0x2000}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+
+	changed := mapper.ApplyMapperWrite(0x8000, 0x01)
+	assert.True(t, changed)
+
+	bankID, physicalOffset, ok := mapper.ResolveAddress(0x8000)
+	assert.True(t, ok)
+	assert.Equal(t, 0, bankID)
+	assert.Equal(t, uint32(0x4000), physicalOffset)
+
+	bankID, physicalOffset, ok = mapper.ResolveAddress(0xC000)
+	assert.True(t, ok)
+	assert.Equal(t, 1, bankID)
+	assert.Equal(t, uint32(0x0000), physicalOffset)
+}
+
+func TestApplyMapperWrite_MMC1(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		PRG:    make([]byte, 0x10000), // 4 x 16KB banks
+		Mapper: 1,
+	}
+	arch := &mockArchitecture{bankWindowSize: 0x2000}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+
+	// Write PRG bank register ($E000-$FFFF), value 1, LSB-first over 5 writes.
+	sequence := []byte{0x01, 0x00, 0x00, 0x00, 0x00}
+	for i := 0; i < len(sequence)-1; i++ {
+		changed := mapper.ApplyMapperWrite(0xE000, sequence[i])
+		assert.False(t, changed)
+	}
+	changed := mapper.ApplyMapperWrite(0xE000, sequence[len(sequence)-1])
+	assert.True(t, changed)
+
+	// MMC1 default PRG mode (3): switch 16KB at $8000, fix last 16KB at $C000.
+	bankID, physicalOffset, ok := mapper.ResolveAddress(0x8000)
+	assert.True(t, ok)
+	assert.Equal(t, 0, bankID)
+	assert.Equal(t, uint32(0x4000), physicalOffset)
+
+	bankID, physicalOffset, ok = mapper.ResolveAddress(0xC000)
+	assert.True(t, ok)
+	assert.Equal(t, 1, bankID)
+	assert.Equal(t, uint32(0x4000), physicalOffset)
+}

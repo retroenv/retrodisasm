@@ -20,6 +20,7 @@ type Mapper interface {
 	ReadMemory(address uint16) byte
 	MappingSignature() uint64
 	ResolveAddress(address uint16) (bankID int, physicalOffset uint32, ok bool)
+	ApplyMapperWrite(address uint16, value byte) bool
 }
 
 // Config controls advisory trace execution limits.
@@ -40,7 +41,6 @@ type TraceStep struct {
 }
 
 // BankSwitchWrite records a write in mapper register space.
-// In Phase 1 the mapping generally won't change yet; the event is still captured.
 type BankSwitchWrite struct {
 	PC            uint16
 	Address       uint16
@@ -77,6 +77,7 @@ func Run(ctx context.Context, cart *cartridge.Cartridge, mapper Mapper, cfg Conf
 
 	bus.onMapperWrite = func(address uint16, value byte) {
 		before := mapper.MappingSignature()
+		changed := mapper.ApplyMapperWrite(address, value)
 		after := mapper.MappingSignature()
 		res.BankSwitchWrites = append(res.BankSwitchWrites, BankSwitchWrite{
 			PC:            currentPC,
@@ -84,7 +85,7 @@ func Run(ctx context.Context, cart *cartridge.Cartridge, mapper Mapper, cfg Conf
 			Value:         value,
 			BeforeMapping: before,
 			AfterMapping:  after,
-			Changed:       before != after,
+			Changed:       changed || before != after,
 		})
 	}
 
