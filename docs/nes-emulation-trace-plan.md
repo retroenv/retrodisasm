@@ -6,6 +6,12 @@ Date: 2026-02-23
 
 Improve NES disassembly accuracy by simulating CPU execution and mapper state transitions so code discovery works across bank switches, not only within the default static mapping.
 
+## Prerequisites
+
+- Go 1.22+ (required for range-over-int and `min` builtin)
+- retrogolib CPU API surface: `m6502.New()`, `m6502.BasicMemory`, `Step()`, `TraceStep`, `WithTracing()`, `WithPreExecutionHook()`
+- iNES 2.0 mapper support (commit `1b3d48d`) — emulator should use the mapper number from the cartridge header, supporting extended mapper numbers
+
 ## Why This Is Needed
 
 Current tracing is primarily address-based and assumes one active mapping per CPU window during disassembly. That causes blind spots for mapper-driven code paths.
@@ -39,6 +45,52 @@ Current tracing is primarily address-based and assumes one active mapping per CP
    - Hook support exists (`.../arch/cpu/m6502/option.go:30`).
    - Custom bus is supported via `BasicMemory` (`.../arch/cpu/m6502/memory.go:21`).
 
+7. Multi-bank vector tracing design exists but is NOT implemented.
+   - `.claude/retrodisasm-project.md` lines 67-120 documents a complete design for per-bank vector tracing using `MapBank()`, `RestoreDefaultMapping()`, `BankCount()`, `BankVectors()`, `InitializeBankVectors()`.
+   - These mapper methods and architecture interfaces are designed but not yet in code.
+
+8. Mapper internal structure uses fixed 8KB windowing.
+   - `internal/mapper/mapper.go:16` — `bankWindowSize` is `0x2000` (8KB) for NES multi-bank.
+   - `internal/mapper/mapper.go:19` — `banksMapped` holds all possible 8KB bank mappings.
+   - `internal/mapper/mapper.go:20` — `mapped` holds the currently active 8KB slot assignments (8 slots for 64KB address space).
+   - Runtime mapper writes must update the correct number of 8KB slots per mapper type.
+
+## Mapper Emulation Scope
+
+### PRG Bank Switching Classification
+
+Not all mappers switch PRG banks. Only mappers that remap PRG code at runtime need emulator support:
+
+**Needs PRG runtime emulation:**
+- **Mapper 2 (UxROM)**: 16KB switchable bank at $8000-$BFFF, $C000-$FFFF fixed to last bank
+- **Mapper 7 (AxROM)**: 32KB switchable bank at $8000-$FFFF
+- **Mapper 1 (MMC1)**: 16KB or 32KB switchable via serial register
+
+**No PRG switching (mapper 0 equivalent for disassembly):**
+- **Mapper 0 (NROM)**: Fixed PRG, no bank switching
+- **Mapper 3 (CNROM)**: Switches CHR banks only; PRG is fixed — functionally identical to mapper 0 for disassembly
+
+### Mapper Register Specifications
+
+- **Mapper 0**: No writes (fixed)
+- **Mapper 2**: $8000-$FFFF write → low bits select 16KB bank at $8000-$BFFF; $C000-$FFFF fixed to last bank
+- **Mapper 3**: $8000-$FFFF write → CHR bank select only (ignore for PRG disassembly)
+- **Mapper 7**: $8000-$FFFF write → bits 0-2 select 32KB PRG bank; bit 4 = VRAM mirror (irrelevant for disassembly)
+- **Mapper 1 (MMC1)**: Serial 5-bit shift register at $8000-$FFFF; bit 7 resets; address bits 14-13 select target register (control, CHR0, CHR1, PRG)
+
+### Internal 8KB Windowing
+
+The `Mapper` struct uses a fixed `bankWindowSize` of `0x2000` (8KB) with 8 slots covering the full 64KB address space. Runtime mapper writes must update the correct number of 8KB slots:
+
+- **Mapper 7** (32KB switch): update all 4 PRG slots ($8000, $A000, $C000, $E000)
+- **Mapper 2** (16KB at $8000-$BFFF): update 2 slots ($8000, $A000); $C000/$E000 fixed to last bank
+- **Mapper 1** (variable): depends on PRG mode register (16KB or 32KB switching)
+
+### Working Corpus
+
+- Working corpus: mapper `0` (41 ROMs), `3` (6 ROMs), `7` (1 ROM)
+- Not-working corpus: mapper `1` (2 ROMs), `2` (7 ROMs)
+
 ## Proposed Architecture
 
 Use a hybrid model:
@@ -60,7 +112,9 @@ Use a hybrid model:
      - bank switch events (old/new mapping)
 
 2. `MapperRuntime` extension in `internal/mapper`
-   - Adds runtime bank-switch operations and immutable snapshot export.
+   - Builds on existing `banksMapped` (all possible mappings) and `setMappedBank()` (private slot assignment).
+   - "MapperRuntime" exposes public methods that reassign `mapped` slots from `banksMapped` entries.
+   - A "snapshot" is a copy of the `mapped` slice (8 entries). No new data structure needed.
    - Supports mapping signature/hash for dedupe and parse-keying.
    - Provides physical PRG resolution for each CPU read/write.
 
@@ -75,18 +129,47 @@ Use a hybrid model:
    - Parse queue and parsed-sets use `ParseKey`.
    - Prevents incorrect collapsing of same CPU address across distinct bank mappings.
 
-## Mapper Emulation Scope
+### NES Memory Map for Emulator Bus
 
-Implement incrementally by mapper priority already present in repo fixtures:
+The `BasicMemory` implementation needs this concrete address map:
 
-- Working corpus: mapper `0` (41 ROMs), `3` (6 ROMs), `7` (1 ROM)
-- Not-working corpus: mapper `1` (2 ROMs), `2` (7 ROMs)
+| Range | Implementation |
+|-------|---------------|
+| $0000-$07FF | 2KB RAM array |
+| $0800-$1FFF | Mirror → `address & 0x07FF` |
+| $2000-$3FFF | PPU stubs (mirror via `0x2000 + address & 0x07`) |
+| $4000-$401F | APU/IO stubs |
+| $4020-$5FFF | Return 0 (open bus) |
+| $6000-$7FFF | Optional 8KB PRG-RAM array |
+| $8000-$FFFF | Delegate to mapper (bank-switched) |
 
-Roadmap:
+### I/O Stub Strategy
 
-1. Phase A: Mapper 0 (NROM), mapper 3 (CNROM), mapper 7 (AxROM)
-2. Phase B: Mapper 2 (UxROM), mapper 1 (MMC1)
-3. Phase C: Additional mappers as needed
+- `$2002` (PPUSTATUS): Return `0x80` (VBlank set) — satisfies common `waitVBlank` loops
+- `$4016/$4017` (controllers): Return 0 (no input)
+- All other PPU/APU: Return 0
+- Rationale: explores "normal startup" path for most games
+
+### retrogolib API Usage Example
+
+```go
+bus := &TraceBus{...}  // implements m6502.BasicMemory
+mem, _ := m6502.NewMemory(bus)
+cpu := m6502.New(mem, m6502.WithTracing(), m6502.WithPreExecutionHook(onPreExec))
+for i := 0; i < maxInstructions; i++ {
+    if err := cpu.Step(); err != nil { break }
+    // record cpu.TraceStep
+}
+```
+
+### Integration API (Phase 3)
+
+How emulator trace feeds into disassembly:
+
+1. Emulator produces `[]TraceResult` with `(PC, mapped slot assignments)` per instruction.
+2. Before `followExecutionFlow()`, trace results are queued via `AddAddressToParse` with correct mapping state.
+3. Disassembler restores mapping before reading each `ParseKey`-keyed address.
+4. Integration point: `Process()` method in `disasm.go` (line ~130).
 
 ## Execution Strategy
 
@@ -100,6 +183,13 @@ Roadmap:
 3. Follow deterministic control flow.
 4. Record dynamic bank-switch writes and resulting mappings.
 
+### Halt and Termination Conditions
+
+- **JMP-to-self**: retrogolib already handles (step.go:97-98); detect via PC unchanged after `Step()`
+- **Invalid opcode**: `Step()` returns `ErrUnknownOpcode` — log and terminate that path
+- **Unmapped reads**: return 0 from bus, log warning
+- **Per-PC visit counter** (e.g., limit 8) to catch I/O-dependent infinite loops
+
 ### Controlled Path Expansion (second)
 
 For conditional branches, allow bounded exploration:
@@ -110,23 +200,13 @@ For conditional branches, allow bounded exploration:
 
 This gives meaningful extra coverage without full symbolic execution.
 
-## Data Model Changes
+### State Cloning Cost (for Phase 5)
 
-1. `internal/disasm`:
-   - Change parse queues/sets from `uint16` to `ParseKey`.
-   - Add mapping context to `AddAddressToParse`.
-
-2. `internal/offset`:
-   - Extend `BankReference` with mapping snapshot info (or mapping ID).
-
-3. `internal/mapper`:
-   - Add runtime write handling for mapper register ranges.
-   - Add snapshot create/apply/lookups.
-   - Add helpers to map CPU address to physical PRG offset under a given snapshot.
-
-4. Label naming:
-   - Add optional bank-qualified naming mode for collisions, e.g. `_func_b03_8000`.
-   - Keep current names for single-bank/simple cases.
+- CPU state: ~7 bytes registers + 8 mapper slot entries (~256 bytes total)
+- RAM: 2KB per cloned state
+- 100 queued states ≈ 200KB — acceptable
+- Bank PRG data is shared read-only, never cloned
+- Simple value copy, no copy-on-write needed
 
 ## CLI and Config Plan
 
@@ -152,15 +232,32 @@ Acceptance:
 1. Existing tests pass.
 2. Baseline metrics are reproducible.
 
-### Phase 1: Emulator Trace Prototype (Advisory Only)
+### Phase 0.5: Multi-Bank Vector Tracing
 
-1. Implement `internal/trace/m6502emu` with custom memory bus.
-2. Record executed `(pc, mapping_signature)` and bank-switch events.
-3. Do not alter disassembly output yet; log comparison only.
+Implement the multi-bank vector tracing design already documented in `.claude/retrodisasm-project.md` (lines 67-120). This is simpler than CPU emulation (no custom memory bus) and provides immediate multi-bank coverage.
+
+1. Implement `MapBank(bankIndex int)` and `RestoreDefaultMapping()` on `Mapper`.
+2. Implement `BankCount() int` and `BankVectors(bankIndex int) [3]uint16` on `Mapper`.
+3. Add `InitializeBankVectors(bankIndex int)` to the architecture interface.
+4. Add `processAdditionalBanks()` to disassembler flow: iterate non-last banks, map each, trace unique vectors, restore.
+5. Validate vector addresses and opcodes before tracing (see vector validation in design doc).
 
 Acceptance:
 
-1. Emulator trace runs on mapper 0/3/7 fixtures.
+1. Multi-bank ROMs (mapper 7) trace vectors from non-last banks.
+2. `setMappedBank()` works correctly for runtime remapping (validates foundation for emulator phases).
+3. Existing tests pass, `-verify` passes for working ROMs.
+
+### Phase 1: Emulator Trace Prototype (Advisory Only)
+
+1. Implement `internal/trace/m6502emu` with custom NES memory bus.
+2. Implement NES address map (RAM, mirrors, PPU/APU stubs, mapper delegation).
+3. Record executed `(pc, mapping_signature)` and bank-switch events.
+4. Do not alter disassembly output yet; log comparison only.
+
+Acceptance:
+
+1. Emulator trace runs on mapper 0/7 fixtures (mapper 3 needs no PRG runtime handling).
 2. No output regressions in current pipeline.
 
 ### Phase 2: Bank-Aware Parse Keys
@@ -176,7 +273,8 @@ Acceptance:
 
 ### Phase 3: Mapper Runtime Integration
 
-1. Implement runtime writes for mapper 2/3/7 first, then mapper 1.
+1. Implement runtime writes for mapper 7 first, then mapper 2, then mapper 1.
+   - Mapper 3 is excluded: it only switches CHR banks, not PRG.
 2. Feed emulator mapping snapshots into disasm reads (`OffsetInfo`/`ReadMemory` by snapshot).
 3. Fix CDL multi-bank handling while touching mapper internals.
 
@@ -201,6 +299,8 @@ Acceptance:
 1. Add optional bounded alternate-branch exploration.
 2. Introduce heuristics for loop throttling and state pruning.
 3. Measure incremental code discovery vs. runtime.
+
+State cloning cost is low (~2KB RAM + ~256 bytes CPU/mapper per state; 100 queued states ≈ 200KB). Bank PRG data is shared read-only. Simple value copy suffices — no copy-on-write needed.
 
 Acceptance:
 
@@ -237,9 +337,25 @@ Acceptance:
 4. Incorrect mapper write emulation.
    - Mitigation: mapper-specific unit tests and ROM-based regression tests.
 
+5. I/O-dependent infinite loops.
+   - Stub values may not satisfy wait conditions (e.g., polling $2002 for specific PPU state).
+   - Mitigation: per-PC visit limit (e.g., 8 visits) terminates stuck paths.
+
+6. Mapper state divergence.
+   - Stubs cause different code paths than real hardware, potentially missing or mis-tracing branches.
+   - Mitigation: trace is advisory; static heuristics remain as fallback. Compare coverage metrics.
+
+## Glossary
+
+- **Mapping Snapshot**: A copy of the `mapped` slice (8 entries) representing which physical 8KB bank is assigned to each CPU address window at a point in time.
+- **Mapping Signature/ID**: A hash or unique identifier derived from a mapping snapshot, used for deduplication and parse-keying.
+- **Parse Key**: `(PC, MappingID)` tuple that uniquely identifies an instruction in context. Replaces plain `uint16` PC for multi-bank awareness.
+- **Bank Window**: An 8KB region of CPU address space ($8000, $A000, $C000, $E000 for PRG). The mapper assigns a physical bank to each window.
+- **Physical PRG Offset**: The byte position within the ROM's PRG data. Computed from the bank's `dataStart` + address offset within the 8KB window.
+
 ## Immediate Next Steps
 
 1. Implement Phase 0 metrics scaffolding.
-2. Build `m6502emu` trace prototype with mapper 0/3/7 runtime bus.
-3. Land `ParseKey` refactor before expanding mapper coverage.
-
+2. Implement Phase 0.5 multi-bank vector tracing (using existing design from `.claude/retrodisasm-project.md`).
+3. Build `m6502emu` trace prototype with mapper 0/7 runtime bus.
+4. Land `ParseKey` refactor before expanding mapper coverage.
