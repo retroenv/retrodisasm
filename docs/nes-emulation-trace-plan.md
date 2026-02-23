@@ -483,6 +483,8 @@ Known limitation after Phase 3:
 
 ### Phase 4: Symbol and Output Stabilization
 
+Status: Completed (2026-02-23)
+
 1. Add bank-qualified symbol fallback for collisions.
 2. Ensure assembler outputs (`ca65`, `asm6`, `nesasm`, `retroasm`) remain valid.
 3. Add regression tests for duplicate logical addresses across banks.
@@ -491,6 +493,49 @@ Acceptance:
 
 1. `-verify` passes for unchanged working ROMs.
 2. No symbol collision regressions on multi-bank outputs.
+
+Implementation notes:
+
+- Label collision fallback added in jump-destination naming:
+  - `internal/disasm/code.go`
+  - `uniqueLabelName(...)` appends mapping-qualified suffixes (`_m%04x`) on name collisions.
+- Cross-bank alias re-emission dedupe added in shared writer:
+  - `internal/writer/writer.go`
+  - `OutputAliasMap(...)` now suppresses duplicate alias output across banks for identical `(name, address)`.
+- Missing-symbol fallback alias injection added and hardened:
+  - `internal/mapper/processor.go`
+  - Adds aliases for unresolved `_func_`, `_label_`, `_jump_engine_` references.
+  - Definition detection now considers only labels that are actually emitted by the writer traversal.
+  - Handles mapping-qualified symbol forms (e.g. `_func_ff79_m8d46`) when extracting target addresses.
+- Regression tests added:
+  - `internal/writer/writer_test.go`
+    - `TestOutputAliasMap_SkipsDuplicateReEmission`
+    - `TestOutputAliasMap_EmitsWhenAddressDiffers`
+  - `internal/disasm/code_test.go`
+    - `TestUniqueLabelName_CollisionUsesMappingSuffix`
+  - `internal/mapper/processor_test.go`
+    - `TestSetProgramBanks_AddsMissingSymbolAlias`
+    - `TestSetProgramBanks_AddsAliasWhenLabelIsInsideInstruction`
+    - `TestSymbolAddress_WithMappingSuffix`
+
+Validation:
+
+- Unit/integration:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase4 go test ./...`
+  - Result: success.
+- Mapper 7 repro verification:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase4 go run . -verify -q -a ca65 -s nes -o /tmp/phase4_bt.asm "internal/testroms/commercial/working/Battletoads (USA).nes"`
+  - Result: success (previous `_func_ff79` undefined-symbol failure resolved).
+- Working corpus verification benchmark:
+  - `scripts/benchmark_mapper_corpus.sh -g working -a ca65 -o /tmp/mapper_phase4_working.csv`
+  - Summary:
+    - `working mapper 0: 41/41 pass`
+    - `working mapper 3: 6/6 pass`
+    - `working mapper 7: 1/1 pass`
+
+Post-phase note:
+
+- Not-working mapper 1/2 samples still show PRG mismatch verification failures (content mismatch, not symbol-collision errors). This remains outside Phase 4 scope and is addressed by upcoming trace/path improvements.
 
 ### Phase 5: Controlled Branch Expansion
 
@@ -553,6 +598,6 @@ Acceptance:
 
 ## Immediate Next Steps
 
-1. Implement bank-qualified symbol/alias fallback for collisions (Phase 4).
-2. Add regression tests for duplicate logical addresses across banks and assembler backends (Phase 4).
-3. Re-run `-verify` mapper corpus and capture post-Phase-4 pass/fail progression.
+1. Start Phase 5 with bounded alternate-branch exploration behind optional controls.
+2. Add state-pruning heuristics (visit limits per `(PC, MappingID)`, frontier budget, loop throttling) and measure discovery/runtime deltas.
+3. Re-benchmark mapper 1/2 not-working corpus after Phase 5 to quantify PRG mismatch reduction.

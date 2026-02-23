@@ -366,3 +366,88 @@ func TestSetProgramBanks_FunctionReference(t *testing.T) {
 	// Verify function reference was formatted as .word
 	assert.Equal(t, ".word func_8100", app.PRG[0].Offsets[0].Code)
 }
+
+func TestSetProgramBanks_AddsMissingSymbolAlias(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		PRG: make([]byte, 0x10),
+	}
+	arch := &mockArchitecture{bankWindowSize: 0}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+	mapper.SetCodeBaseAddress(0x8000)
+
+	mockDis := &mockDisasm{
+		opts: options.Disassembler{},
+	}
+
+	mapper.InjectDependencies(Dependencies{
+		Disasm: mockDis,
+		Vars:   &mockVariableManager{},
+		Consts: &mockConstantManager{},
+	})
+	mapper.InitializeDependencyBanks()
+
+	mapper.banks[0].offsets[0].SetType(program.CodeOffset)
+	mapper.banks[0].offsets[0].Code = "jsr"
+	mapper.banks[0].offsets[0].BranchingTo = "_func_ff79"
+	mapper.banks[0].offsets[0].Data = []byte{0x20, 0x79, 0xFF}
+
+	app := &program.Program{
+		Constants: map[string]uint16{},
+	}
+	err = mapper.SetProgramBanks(app)
+	assert.NoError(t, err)
+
+	aliasAddress, ok := app.PRG[0].Constants["_func_ff79"]
+	assert.True(t, ok)
+	assert.Equal(t, uint16(0xFF79), aliasAddress)
+}
+
+func TestSetProgramBanks_AddsAliasWhenLabelIsInsideInstruction(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		PRG: make([]byte, 0x20),
+	}
+	arch := &mockArchitecture{bankWindowSize: 0}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+	mapper.SetCodeBaseAddress(0x8000)
+
+	mockDis := &mockDisasm{
+		opts: options.Disassembler{},
+	}
+
+	mapper.InjectDependencies(Dependencies{
+		Disasm: mockDis,
+		Vars:   &mockVariableManager{},
+		Consts: &mockConstantManager{},
+	})
+	mapper.InitializeDependencyBanks()
+
+	// A 3-byte instruction at $8000 that references $8001.
+	// $8001 is inside the instruction and its label cannot be emitted directly.
+	mapper.banks[0].offsets[0].SetType(program.CodeOffset)
+	mapper.banks[0].offsets[0].Code = "jsr"
+	mapper.banks[0].offsets[0].BranchingTo = "_func_8001"
+	mapper.banks[0].offsets[0].Data = []byte{0x20, 0x01, 0x80}
+
+	mapper.banks[0].offsets[1].SetType(program.CodeOffset)
+	mapper.banks[0].offsets[1].Label = "_func_8001"
+
+	app := &program.Program{
+		Constants: map[string]uint16{},
+	}
+	err = mapper.SetProgramBanks(app)
+	assert.NoError(t, err)
+
+	aliasAddress, ok := app.PRG[0].Constants["_func_8001"]
+	assert.True(t, ok)
+	assert.Equal(t, uint16(0x8001), aliasAddress)
+}
+
+func TestSymbolAddress_WithMappingSuffix(t *testing.T) {
+	address, ok := symbolAddress("_func_ff79_m8d46")
+	assert.True(t, ok)
+	assert.Equal(t, uint16(0xFF79), address)
+}

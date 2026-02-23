@@ -26,6 +26,8 @@ type Writer struct {
 	app     *program.Program
 	options Options
 	writer  io.Writer
+
+	emittedAliases map[string]uint16
 }
 
 // Options of the writer.
@@ -40,6 +42,8 @@ func New(app *program.Program, writer io.Writer, options Options) *Writer {
 		app:     app,
 		options: options,
 		writer:  writer,
+
+		emittedAliases: map[string]uint16{},
 	}
 }
 
@@ -119,22 +123,29 @@ func (w Writer) OutputAliasMap(aliases map[string]uint16) error {
 		return nil
 	}
 
+	// sort the aliases by name before outputting to avoid random map order
+	toEmit := make([]string, 0, len(aliases))
+	for name, address := range aliases {
+		if previousAddress, ok := w.emittedAliases[name]; ok && previousAddress == address {
+			continue
+		}
+		toEmit = append(toEmit, name)
+	}
+	if len(toEmit) == 0 {
+		return nil
+	}
+	slices.Sort(toEmit)
+
 	if _, err := fmt.Fprintln(w.writer); err != nil {
 		return fmt.Errorf("writing line: %w", err)
 	}
 
-	// sort the aliases by name before outputting to avoid random map order
-	names := make([]string, 0, len(aliases))
-	for constant := range aliases {
-		names = append(names, constant)
-	}
-	slices.Sort(names)
-
-	for _, constant := range names {
-		address := aliases[constant]
-		if _, err := fmt.Fprintf(w.writer, "%s = $%04X\n", constant, address); err != nil {
+	for _, name := range toEmit {
+		address := aliases[name]
+		if _, err := fmt.Fprintf(w.writer, "%s = $%04X\n", name, address); err != nil {
 			return fmt.Errorf("writing alias: %w", err)
 		}
+		w.emittedAliases[name] = address
 	}
 
 	if _, err := fmt.Fprintln(w.writer); err != nil {

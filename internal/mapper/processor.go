@@ -2,9 +2,11 @@ package mapper
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/retroenv/retrodisasm/internal/offset"
+	"github.com/retroenv/retrodisasm/internal/options"
 	"github.com/retroenv/retrodisasm/internal/program"
 )
 
@@ -50,7 +52,169 @@ func (m *Mapper) SetProgramBanks(app *program.Program) error {
 
 		app.PRG = append(app.PRG, prgBank)
 	}
+	m.addMissingSymbolAliases(app)
 	return nil
+}
+
+func (m *Mapper) addMissingSymbolAliases(app *program.Program) {
+	if len(app.PRG) == 0 {
+		return
+	}
+
+	defined := map[string]struct{}{}
+	for _, prgBank := range app.PRG {
+		for label := range emittedLabels(prgBank, m.dis.Options()) {
+			defined[label] = struct{}{}
+		}
+		for name := range prgBank.Constants {
+			defined[name] = struct{}{}
+		}
+		for name := range prgBank.Variables {
+			defined[name] = struct{}{}
+		}
+	}
+
+	missing := map[string]uint16{}
+	for _, prgBank := range app.PRG {
+		for _, off := range prgBank.Offsets {
+			symbol, ok := referencedSymbol(off.Code)
+			if !ok {
+				continue
+			}
+			if _, exists := defined[symbol]; exists {
+				continue
+			}
+			address, ok := symbolAddress(symbol)
+			if !ok {
+				continue
+			}
+			missing[symbol] = address
+		}
+	}
+
+	if len(missing) == 0 {
+		return
+	}
+	if app.PRG[0].Constants == nil {
+		app.PRG[0].Constants = map[string]uint16{}
+	}
+	if app.Constants == nil {
+		app.Constants = map[string]uint16{}
+	}
+	for name, address := range missing {
+		app.PRG[0].Constants[name] = address
+		app.Constants[name] = address
+	}
+}
+
+func emittedLabels(prgBank *program.PRGBank, opts options.Disassembler) map[string]struct{} {
+	labels := map[string]struct{}{}
+	endIndex := prgBank.LastNonZeroByte(opts)
+	for i := 0; i < endIndex; i++ {
+		offset := prgBank.Offsets[i]
+		if offset.Label != "" {
+			labels[offset.Label] = struct{}{}
+		}
+		i += emittedOffsetAdjustment(prgBank, i, endIndex, offset)
+	}
+	return labels
+}
+
+func emittedOffsetAdjustment(prgBank *program.PRGBank, startIndex, endIndex int, offset program.Offset) int {
+	if offset.IsType(program.CodeOffset) && len(offset.Data) == 0 {
+		return 0
+	}
+	if offset.IsType(program.FunctionReference) {
+		return 1
+	}
+	if offset.IsType(program.DataOffset) {
+		count := contiguousDataByteCount(prgBank, startIndex, endIndex)
+		if count > 0 {
+			return count - 1
+		}
+		return 0
+	}
+	if len(offset.Data) > 0 {
+		return len(offset.Data) - 1
+	}
+	return 0
+}
+
+func contiguousDataByteCount(prgBank *program.PRGBank, startIndex, endIndex int) int {
+	var count int
+	for i := startIndex; i < endIndex; i++ {
+		offset := prgBank.Offsets[i]
+		if !offset.IsType(program.DataOffset) || len(offset.Data) == 0 {
+			break
+		}
+		if i > startIndex && (offset.IsType(program.CodeOffset|program.CodeAsData) || offset.Label != "") {
+			break
+		}
+		if offset.WriteCallback != nil && i != startIndex {
+			break
+		}
+		count += len(offset.Data)
+	}
+	return count
+}
+
+func referencedSymbol(code string) (string, bool) {
+	fields := strings.Fields(code)
+	if len(fields) < 2 {
+		return "", false
+	}
+
+	operand := fields[1]
+	operand = strings.TrimPrefix(operand, "(")
+	operand = strings.TrimSuffix(operand, ")")
+	operand = strings.TrimSuffix(operand, ",X")
+	operand = strings.TrimSuffix(operand, ",Y")
+	if plus := strings.IndexByte(operand, '+'); plus > 0 {
+		operand = operand[:plus]
+	}
+	if operand == "" || operand[0] != '_' {
+		return "", false
+	}
+	return operand, true
+}
+
+func symbolAddress(symbol string) (uint16, bool) {
+	parse := func(prefix string) (uint16, bool) {
+		if !strings.HasPrefix(symbol, prefix) {
+			return 0, false
+		}
+
+		start := len(prefix)
+		if len(symbol) < start+4 {
+			return 0, false
+		}
+		hexPart := symbol[start : start+4]
+		for _, c := range hexPart {
+			isHex := (c >= '0' && c <= '9') ||
+				(c >= 'a' && c <= 'f') ||
+				(c >= 'A' && c <= 'F')
+			if !isHex {
+				return 0, false
+			}
+		}
+
+		value, err := strconv.ParseUint(hexPart, 16, 16)
+		if err != nil {
+			return 0, false
+		}
+		return uint16(value), true
+	}
+
+	if address, ok := parse("_func_"); ok {
+		return address, true
+	}
+	if address, ok := parse("_label_"); ok {
+		return address, true
+	}
+	if address, ok := parse("_jump_engine_"); ok {
+		return address, true
+	}
+	return 0, false
 }
 
 // getProgramOffset converts a disassembly offset to a program offset.

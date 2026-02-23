@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/retroenv/retrodisasm/internal/offset"
 	"github.com/retroenv/retrodisasm/internal/program"
 )
 
@@ -36,6 +37,8 @@ func (dis *Disasm) processJumpDestinations() {
 		return 0
 	})
 
+	labelOwners := map[string]*offset.DisasmOffset{}
+
 	for _, key := range branchDestinations {
 		address := key.PC
 		offsetInfo := dis.branchDestinationInfo[key]
@@ -53,8 +56,9 @@ func (dis *Disasm) processJumpDestinations() {
 			default:
 				name = fmt.Sprintf(labelNaming, address)
 			}
-			offsetInfo.Label = name
 		}
+		name = dis.uniqueLabelName(name, key, offsetInfo, labelOwners)
+		offsetInfo.Label = name
 
 		// if the offset is marked as code but does not have opcode bytes, the jump destination
 		// is inside the second or third byte of an instruction.
@@ -73,6 +77,24 @@ func (dis *Disasm) processJumpDestinations() {
 				offsetInfo.Code = offsetInfo.Opcode.Instruction().Name()
 			}
 		}
+	}
+}
+
+func (dis *Disasm) uniqueLabelName(base string, key ParseKey, owner *offset.DisasmOffset,
+	owners map[string]*offset.DisasmOffset) string {
+	if existingOwner, ok := owners[base]; !ok || existingOwner == owner {
+		owners[base] = owner
+		return base
+	}
+
+	qualified := fmt.Sprintf("%s_m%04x", base, uint16(key.MappingID))
+	name := qualified
+	for i := 1; ; i++ {
+		if existingOwner, ok := owners[name]; !ok || existingOwner == owner {
+			owners[name] = owner
+			return name
+		}
+		name = fmt.Sprintf("%s_%d", qualified, i)
 	}
 }
 
