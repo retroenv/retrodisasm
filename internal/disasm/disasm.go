@@ -138,12 +138,15 @@ func (dis *Disasm) Process(ctx context.Context, mainWriter io.Writer, newBankWri
 		dis.logTraceStats(start, err == nil)
 	}()
 
+	emuTrace := dis.runAdvisoryEmuTrace(ctx)
+
 	if err := dis.followExecutionFlow(ctx); err != nil {
 		return nil, err
 	}
 	if err := dis.processAdditionalBanks(ctx); err != nil {
 		return nil, err
 	}
+	dis.logAdvisoryEmuTraceComparison(emuTrace)
 
 	// Post-process architecture-specific patterns after all branch destinations are known
 	if err := dis.arch.PostProcessCode(); err != nil {

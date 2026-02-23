@@ -227,6 +227,57 @@ func (m *Mapper) ReadMemory(address uint16) byte {
 	return b
 }
 
+// MappingSignature returns a stable signature of the current mapped windows.
+func (m *Mapper) MappingSignature() uint64 {
+	var sig uint64 = 1469598103934665603 // FNV-1 offset basis
+	const prime uint64 = 1099511628211
+
+	for _, mapped := range m.mapped {
+		var id, start uint64
+		if mapped.bank != nil {
+			id = uint64(mapped.id + 1)
+			start = uint64(mapped.dataStart + 1)
+		}
+
+		sig ^= id
+		sig *= prime
+		sig ^= start
+		sig *= prime
+	}
+
+	return sig
+}
+
+// ResolveAddress resolves a CPU address to a mapped bank ID and physical PRG offset.
+func (m *Mapper) ResolveAddress(address uint16) (bankID int, physicalOffset uint32, ok bool) {
+	var bankWindow uint16
+	var index int
+
+	if m.bankWindowSize == 0 {
+		bankWindow = 0
+		index = int(address) - int(m.codeBaseAddress)
+	} else {
+		bankWindow = address >> m.addressShifts
+		index = int(address) % m.bankWindowSize
+	}
+
+	if int(bankWindow) >= len(m.mapped) {
+		return 0, 0, false
+	}
+
+	mapped := m.mapped[bankWindow]
+	if mapped.bank == nil {
+		return 0, 0, false
+	}
+
+	pointer := mapped.dataStart + index
+	if pointer < 0 || pointer >= len(mapped.bank.prg) {
+		return 0, 0, false
+	}
+
+	return mapped.id, uint32(pointer), true
+}
+
 func (m *Mapper) OffsetInfo(address uint16) *offset.DisasmOffset {
 	var bankWindow uint16
 	if m.bankWindowSize == 0 {

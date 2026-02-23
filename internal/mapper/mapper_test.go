@@ -241,6 +241,44 @@ func TestLog2(t *testing.T) {
 	}
 }
 
+func TestMappingSignature(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		PRG: make([]byte, 0x10000), // 2 x 32KB banks
+	}
+	arch := &mockArchitecture{bankWindowSize: 0x2000}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+
+	sigDefault := mapper.MappingSignature()
+	mapper.MapBank(1)
+	sigMapped := mapper.MappingSignature()
+	assert.True(t, sigDefault != sigMapped)
+
+	mapper.RestoreDefaultMapping()
+	assert.Equal(t, sigDefault, mapper.MappingSignature())
+}
+
+func TestResolveAddress(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		PRG: make([]byte, 0x10000), // 2 x 32KB banks
+	}
+	arch := &mockArchitecture{bankWindowSize: 0x2000}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+
+	bankID, physicalOffset, ok := mapper.ResolveAddress(0x8000)
+	assert.True(t, ok)
+	assert.Equal(t, 0, bankID)
+	assert.Equal(t, uint32(0), physicalOffset)
+
+	bankID, physicalOffset, ok = mapper.ResolveAddress(0xE000)
+	assert.True(t, ok)
+	assert.Equal(t, 1, bankID)
+	assert.True(t, physicalOffset >= uint32(0x6000))
+}
+
 func TestBankCount(t *testing.T) {
 	cart := &cartridge.Cartridge{
 		PRG: make([]byte, 0x10000), // 2 x 32KB banks

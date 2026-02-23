@@ -314,6 +314,8 @@ Notes:
 
 ### Phase 1: Emulator Trace Prototype (Advisory Only)
 
+Status: Completed (2026-02-23)
+
 1. Implement `internal/trace/m6502emu` with custom NES memory bus.
 2. Implement NES address map (RAM, mirrors, PPU/APU stubs, mapper delegation).
 3. Record executed `(pc, mapping_signature)` and bank-switch events.
@@ -323,6 +325,45 @@ Acceptance:
 
 1. Emulator trace runs on mapper 0/7 fixtures (mapper 3 needs no PRG runtime handling).
 2. No output regressions in current pipeline.
+
+Implementation notes:
+
+- New advisory emulator trace package:
+  - `internal/trace/m6502emu/trace.go`
+  - `internal/trace/m6502emu/bus.go`
+  - `internal/trace/m6502emu/trace_test.go`
+- Advisory integration in disassembly flow (no output mutation):
+  - `internal/disasm/emutrace.go`
+  - `internal/disasm/disasm.go`
+- Mapper introspection helpers for trace metadata:
+  - `internal/mapper/mapper.go`
+  - `internal/mapper/mapper_test.go`
+  - New methods: `MappingSignature()`, `ResolveAddress()`
+
+Advisory mode controls:
+
+- `RETRODISASM_EMU_TRACE=1` enables emulator trace.
+- `RETRODISASM_EMU_TRACE_MAX_INSTR=<N>` sets instruction budget (default `100000`).
+- `RETRODISASM_EMU_TRACE_MAX_VISITS=<N>` sets per-PC visit limit (default `8`).
+
+Validation:
+
+- Tests:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase1 go test ./internal/trace/m6502emu ./internal/mapper ./internal/disasm ./internal/pipeline`
+- Mapper 0 advisory trace logs:
+  - `RETRODISASM_EMU_TRACE=1 GOCACHE=/tmp/retrodisasm_gocache_phase1 go run . -debug -q -o /tmp/phase1_nestest.asm internal/testroms/commercial/working/nestest.nes`
+  - Logs include `Advisory emu trace` and `Advisory emu trace comparison`.
+- Mapper 7 advisory trace logs:
+  - `RETRODISASM_EMU_TRACE=1 RETRODISASM_EMU_TRACE_MAX_INSTR=200000 RETRODISASM_EMU_TRACE_MAX_VISITS=32 GOCACHE=/tmp/retrodisasm_gocache_phase1 go run . -debug -q -o /tmp/phase1_bt_debug.asm "internal/testroms/commercial/working/Battletoads (USA).nes"`
+  - Prototype captured mapper-register-space writes (`mapper_writes > 0`) while mapping changes remain `0` in this phase.
+- Output regression guard:
+  - `RETRODISASM_EMU_TRACE=1 GOCACHE=/tmp/retrodisasm_gocache_phase1 go run . -verify -q -a ca65 -s nes -o /tmp/phase1_bt.asm "internal/testroms/commercial/working/Battletoads (USA).nes"`
+  - Result: success (`EXIT:0`).
+
+Notes:
+
+- Phase 1 intentionally does not change disassembly classification or queueing decisions.
+- Trace output is advisory/debug data only; ParseKey and mapping-aware dedupe remain Phase 2.
 
 ### Phase 2: Bank-Aware Parse Keys
 
@@ -419,6 +460,6 @@ Acceptance:
 
 ## Immediate Next Steps
 
-1. Build `m6502emu` trace prototype with mapper 0/7 runtime bus (Phase 1).
-2. Land `ParseKey` refactor before expanding mapper coverage (Phase 2).
-3. Add mapper runtime write integration for mapper 7, then 2, then 1 (Phase 3).
+1. Land `ParseKey` refactor for `(PC, MappingID)` dedupe and queueing (Phase 2).
+2. Add mapper runtime write integration for mapper 7, then 2, then 1 (Phase 3).
+3. Make disassembly reads/state restoration mapping-aware when consuming emulator snapshots (Phase 3 follow-up).
