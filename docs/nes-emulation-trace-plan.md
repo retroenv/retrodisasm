@@ -660,6 +660,69 @@ Validation:
     - `branch_alternates=6`
     - `branch_alternate_budget_drops=0`
 
+### Phase 7: Benchmark Harness Hardening and Sweep Automation
+
+Status: Completed (2026-02-23)
+
+1. Add an explicit sweep harness for `-trace-*` budget tuning.
+2. Harden benchmark pass/fail detection so verification failures are not counted as passes.
+3. Re-baseline mapper 1/2 not-working set with corrected status detection.
+
+Acceptance:
+
+1. New sweep script can run mapper-filtered budget matrices and write CSV output.
+2. Benchmark scripts classify failures correctly even when tool output logs an error with exit code `0`.
+3. Re-baseline output produces defensible mapper 1/2 pass/fail numbers.
+
+Implementation notes:
+
+- New sweep automation script:
+  - `scripts/benchmark_trace_sweep.sh`
+  - Supports:
+    - group filter (`-g all|working|notworking`)
+    - mapper filter (`-m 1,2,...`)
+    - trace mode (`-t static|emu|hybrid`)
+    - budget CSVs (`-i`, `-v`, `-b`)
+  - Emits per-run CSV columns:
+    - `rom,set,mapper,trace_mode,max_instr,max_visits,max_branch,status,duration_ms`
+  - Emits aggregated summary by `(mapper,trace_mode,max_instr,max_visits,max_branch)`.
+- Existing baseline script hardened:
+  - `scripts/benchmark_mapper_corpus.sh`
+  - Added `verify_rom()` helper using both:
+    - process exit code
+    - output-text failure detection (`Disassembling failed|verification failed`)
+- CLI exit code semantics fixed:
+  - `main.go`
+  - If one or more files fail processing, process now exits with status `1`.
+  - This removes false-positive pass classification in automation that relies on return codes.
+
+Validation:
+
+- Full tests:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase7 go test ./...`
+  - Result: success.
+- Exit-code behavior sanity check:
+  - `go run . -verify ... "Alfred Chicken (USA).nes"` now returns `EXIT:1` on verification failure.
+- Mapper 1 focused sweep:
+  - `scripts/benchmark_trace_sweep.sh -g notworking -m 1 -i 200000 -v 8 -b 0,256 -o /tmp/phase7_trace_sweep_m1.csv`
+  - Summary:
+    - branch `0`: `1/2` pass
+    - branch `256`: `1/2` pass
+- Mapper 2 focused sweep:
+  - `scripts/benchmark_trace_sweep.sh -g notworking -m 2 -i 200000 -v 8 -b 0,256 -o /tmp/phase7_trace_sweep_m2.csv`
+  - Summary:
+    - branch `0`: `2/7` pass
+    - branch `256`: `2/7` pass
+- Corrected not-working baseline (legacy script, now hardened):
+  - `scripts/benchmark_mapper_corpus.sh -g notworking -a ca65 -o /tmp/phase7_mapper_corpus_notworking.csv`
+  - Summary:
+    - mapper `1`: `1/2` pass
+    - mapper `2`: `2/7` pass
+
+Post-phase note:
+
+- Earlier benchmark sections that reported universal pass rates were influenced by exit-code-only classification and should be treated as superseded by Phase 7 corrected metrics.
+
 ## Testing Plan
 
 1. Unit tests
@@ -708,6 +771,6 @@ Validation:
 
 ## Immediate Next Steps
 
-1. Run corpus-level benchmark with `-trace-mode hybrid` and `-trace-max-branch-states` enabled (mapper 1/2 focus) to quantify pass-rate and runtime deltas.
-2. Add true alternate-path execution support (CPU+RAM+mapper state cloning) for high-value branch frontiers where inferred-root seeding is insufficient.
-3. Add a benchmark mode that sweeps `-trace-max-branch-states` and `-trace-max-visits-per-state` to produce discovery-vs-runtime curves.
+1. Implement true alternate-path execution (CPU+RAM+mapper state cloning) for selected high-value branch frontiers.
+2. Run larger sweep matrices (`max_visits` and `max_branch`) for mapper 1/2 and compare discovery vs runtime from Phase 7 baselines.
+3. Add per-ROM failure artifact capture (first mismatch offsets + emitted labels) to speed mapper-specific debugging.

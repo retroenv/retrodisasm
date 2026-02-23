@@ -44,6 +44,7 @@ func main() {
 		logger.Fatal(err.Error())
 	}
 
+	var hadErrors bool
 	for _, file := range files {
 		opts.Input = file
 		if opts.Output != options.OutputStdout && (len(files) > 1 || opts.Output == "") {
@@ -57,6 +58,11 @@ func main() {
 				return
 			}
 			logger.Error("Disassembling failed", log.Err(err))
+			hadErrors = true
 		}
+	}
+
+	if hadErrors {
+		os.Exit(1)
 	}
 }

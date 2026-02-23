@@ -71,6 +71,25 @@ else
     RUNNER=(go run .)
 fi
 
+verify_rom() {
+    local rom="$1"
+    local log_file="$2"
+    shift 2
+
+    "${RUNNER[@]}" -verify -q -a "$ASSEMBLER" -s nes -o "${tmp_dir}/out.asm" "$@" "$rom" >"$log_file" 2>&1
+    local rc=$?
+    if [[ $rc -ne 0 ]]; then
+        return 1
+    fi
+
+    # Some flows may log verification failure while returning exit code 0.
+    if grep -Eiq "Disassembling failed|verification failed" "$log_file"; then
+        return 1
+    fi
+
+    return 0
+}
+
 collect_roms() {
     case "$GROUP" in
         working)
@@ -141,7 +160,8 @@ for rom in "${ROMS[@]}"; do
     key="${set_name},${mapper}"
 
     start_ms="$(date +%s%3N)"
-    if "${RUNNER[@]}" -verify -q -a "$ASSEMBLER" -s nes -o "${tmp_dir}/out.asm" "$rom" >/dev/null 2>&1; then
+    log_file="${tmp_dir}/run.log"
+    if verify_rom "$rom" "$log_file"; then
         status="pass"
         PASS["$key"]=$(( ${PASS["$key"]:-0} + 1 ))
     else
