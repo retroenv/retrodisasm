@@ -219,6 +219,8 @@ Add opt-in flags first, then evaluate defaulting:
 
 This keeps rollout safe and benchmarkable.
 
+Status update (2026-02-23): implemented in **Phase 6** with env fallback compatibility.
+
 ## Phased Implementation Plan
 
 ### Phase 0: Instrumentation and Baseline
@@ -594,6 +596,70 @@ Validation:
     - `conditional_branches=9`, `branch_alternates=3`, `branch_alternate_budget_drops=0`
 - Not-working mapper 1 sample (Alfred) remains failing with large PRG mismatch, indicating this phase is stable but not sufficient alone for mapper 1/2 recovery.
 
+### Phase 6: CLI Trace Controls and Config Hardening
+
+Status: Completed (2026-02-23)
+
+1. Promote env-based trace controls to explicit CLI flags.
+2. Keep backward-compatible env fallback for existing automation.
+3. Validate trace-mode parsing and budget propagation end-to-end.
+
+Acceptance:
+
+1. `-trace-*` flags control advisory emu-trace behavior without env variables.
+2. Existing env-based workflows remain functional.
+3. Working mapper verification remains green with CLI trace controls enabled.
+
+Implementation notes:
+
+- New user-facing flags in `options.Flags`:
+  - `-trace-mode static|emu|hybrid`
+  - `-trace-max-instr`
+  - `-trace-max-visits-per-state`
+  - `-trace-max-branch-states`
+  - Files:
+    - `internal/options/options.go`
+    - `internal/cli/cli.go`
+- Disassembler options extended to carry trace settings:
+  - `TraceMode`
+  - `TraceMaxInstructions`
+  - `TraceMaxVisitsPerPC`
+  - `TraceMaxBranchStates`
+  - Files:
+    - `internal/options/options.go`
+    - `internal/cli/cli.go`
+- Validation/normalization:
+  - `trace-mode` is normalized to lowercase and validated against `static|emu|hybrid`.
+  - Invalid values return a parse error.
+  - File:
+    - `internal/cli/cli.go`
+- Runtime integration:
+  - `runAdvisoryEmuTrace()` now consumes CLI values first, then env fallback.
+  - `shouldRunAdvisoryEmuTrace()` enables trace for CLI modes `emu|hybrid`; env `RETRODISASM_EMU_TRACE` remains fallback for compatibility.
+  - File:
+    - `internal/disasm/emutrace.go`
+- Test coverage:
+  - `internal/cli/cli_test.go`
+  - Added:
+    - `trace flags` parse test
+    - invalid `-trace-mode` parse failure test
+
+Validation:
+
+- Unit/integration:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase6 go test ./...`
+  - Result: success.
+- Mapper 7 verification using CLI flags only (no env toggles):
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase6 go run . -verify -q -a ca65 -s nes -trace-mode hybrid -trace-max-branch-states 256 -trace-max-instr 200000 -trace-max-visits-per-state 32 -o /tmp/phase6_bt_hybrid.asm "internal/testroms/commercial/working/Battletoads (USA).nes"`
+  - Result: success.
+- Mapper 7 debug sample with CLI budgets:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase6 go run . -debug -q -trace-mode hybrid -trace-max-branch-states 256 -trace-max-instr 200000 -trace-max-visits-per-state 32 -o /tmp/phase6_bt_hybrid_debug.asm "internal/testroms/commercial/working/Battletoads (USA).nes"`
+  - Log highlights:
+    - `instructions=482`
+    - `conditional_branches=89`
+    - `branch_alternates=6`
+    - `branch_alternate_budget_drops=0`
+
 ## Testing Plan
 
 1. Unit tests
@@ -642,6 +708,6 @@ Validation:
 
 ## Immediate Next Steps
 
-1. Run corpus-level benchmark with `RETRODISASM_EMU_TRACE_MAX_BRANCH_STATES` enabled (mapper 1/2 focus) to quantify pass-rate and runtime deltas.
+1. Run corpus-level benchmark with `-trace-mode hybrid` and `-trace-max-branch-states` enabled (mapper 1/2 focus) to quantify pass-rate and runtime deltas.
 2. Add true alternate-path execution support (CPU+RAM+mapper state cloning) for high-value branch frontiers where inferred-root seeding is insufficient.
-3. Promote current env-based trace controls to explicit CLI flags (`-trace-*`) for repeatable benchmarking workflows.
+3. Add a benchmark mode that sweeps `-trace-max-branch-states` and `-trace-max-visits-per-state` to produce discovery-vs-runtime curves.

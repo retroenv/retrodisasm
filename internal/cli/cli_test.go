@@ -39,6 +39,25 @@ func TestParseFlags_DisasmOptions(t *testing.T) {
 			args: []string{"prog", "-nohexcomments", "-nooffsets", "-z", "test.nes"},
 			want: options.Disassembler{ZeroBytes: true},
 		},
+		{
+			name: "trace flags",
+			args: []string{
+				"prog",
+				"-trace-mode", "hybrid",
+				"-trace-max-instr", "12345",
+				"-trace-max-visits-per-state", "12",
+				"-trace-max-branch-states", "99",
+				"test.nes",
+			},
+			want: options.Disassembler{
+				HexComments:          true,
+				OffsetComments:       true,
+				TraceMode:            "hybrid",
+				TraceMaxInstructions: 12345,
+				TraceMaxVisitsPerPC:  12,
+				TraceMaxBranchStates: 99,
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -53,8 +72,26 @@ func TestParseFlags_DisasmOptions(t *testing.T) {
 			assert.Equal(t, tt.want.HexComments, got.HexComments)
 			assert.Equal(t, tt.want.OffsetComments, got.OffsetComments)
 			assert.Equal(t, tt.want.ZeroBytes, got.ZeroBytes)
+			expectedTraceMode := tt.want.TraceMode
+			if expectedTraceMode == "" {
+				expectedTraceMode = "static"
+			}
+			assert.Equal(t, expectedTraceMode, got.TraceMode)
+			assert.Equal(t, tt.want.TraceMaxInstructions, got.TraceMaxInstructions)
+			assert.Equal(t, tt.want.TraceMaxVisitsPerPC, got.TraceMaxVisitsPerPC)
+			assert.Equal(t, tt.want.TraceMaxBranchStates, got.TraceMaxBranchStates)
 		})
 	}
+}
+
+func TestParseFlags_InvalidTraceMode(t *testing.T) {
+	oldArgs := os.Args
+	t.Cleanup(func() { os.Args = oldArgs })
+
+	os.Args = []string{"prog", "-trace-mode", "badmode", "test.nes"}
+
+	_, _, err := ParseFlags()
+	assert.True(t, err != nil)
 }
 
 func TestValidateOptionCombinations(t *testing.T) {

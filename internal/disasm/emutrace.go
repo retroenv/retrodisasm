@@ -30,9 +30,9 @@ func (dis *Disasm) runAdvisoryEmuTrace(ctx context.Context) *m6502emu.Result {
 	}
 
 	cfg := m6502emu.Config{
-		MaxInstructions: envIntOrDefault(envEmuTraceMaxInstr, 100000),
-		MaxVisitsPerPC:  envIntOrDefault(envEmuTraceMaxVisits, 8),
-		MaxBranchStates: envIntOrDefault(envEmuTraceMaxBranch, 0),
+		MaxInstructions: intSetting(dis.options.TraceMaxInstructions, envEmuTraceMaxInstr, 100000),
+		MaxVisitsPerPC:  intSetting(dis.options.TraceMaxVisitsPerPC, envEmuTraceMaxVisits, 8),
+		MaxBranchStates: intSetting(dis.options.TraceMaxBranchStates, envEmuTraceMaxBranch, 0),
 	}
 
 	startSignature := dis.mapper.MappingSignature()
@@ -166,6 +166,12 @@ func (dis *Disasm) staticParsedPCSet() map[uint16]struct{} {
 }
 
 func (dis *Disasm) shouldRunAdvisoryEmuTrace() bool {
+	switch strings.ToLower(strings.TrimSpace(dis.options.TraceMode)) {
+	case "emu", "hybrid":
+		return true
+	}
+
+	// Backward compatibility for existing env-based flows.
 	return envBoolEnabled(envEmuTraceEnable)
 }
 
@@ -192,4 +198,11 @@ func envIntOrDefault(key string, defaultValue int) int {
 		return defaultValue
 	}
 	return parsed
+}
+
+func intSetting(cliValue int, envKey string, defaultValue int) int {
+	if cliValue > 0 {
+		return cliValue
+	}
+	return envIntOrDefault(envKey, defaultValue)
 }

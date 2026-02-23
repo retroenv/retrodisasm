@@ -15,6 +15,7 @@ import (
 )
 
 var validAssemblers = []string{"asm6", "ca65", "nesasm", "retroasm"}
+var validTraceModes = []string{"static", "emu", "hybrid"}
 
 // ParseFlags parses command line flags and returns program and disassembler options.
 func ParseFlags() (options.Program, options.Disassembler, error) {
@@ -89,6 +90,15 @@ func normalizeOptions(opts *options.Program) error {
 			opts.Assembler, strings.Join(validAssemblers, ", "))
 	}
 
+	opts.TraceMode = strings.ToLower(strings.TrimSpace(opts.TraceMode))
+	if opts.TraceMode == "" {
+		opts.TraceMode = "static"
+	}
+	if !slices.Contains(validTraceModes, opts.TraceMode) {
+		return fmt.Errorf("unsupported trace mode: %s. Valid options: %s",
+			opts.TraceMode, strings.Join(validTraceModes, ", "))
+	}
+
 	return nil
 }
 
@@ -124,6 +134,10 @@ func createDisasmOptions(opts options.Program) options.Disassembler {
 	disasmOptions.OutputUnofficialAsMnemonics = opts.OutputUnofficial
 	disasmOptions.StopAtUnofficial = opts.StopAtUnofficial
 	disasmOptions.ZeroBytes = opts.ZeroBytes
+	disasmOptions.TraceMode = opts.TraceMode
+	disasmOptions.TraceMaxInstructions = opts.TraceMaxInstr
+	disasmOptions.TraceMaxVisitsPerPC = opts.TraceMaxVisits
+	disasmOptions.TraceMaxBranchStates = opts.TraceMaxBranch
 
 	return disasmOptions
 }
