@@ -78,16 +78,16 @@ type Disasm struct {
 	jumpEngine *jumpengine.JumpEngine
 	vars       *vars.Vars
 
-	branchDestinations   set.Set[uint16] // set of all addresses that are branched to
-	unreachableAddresses set.Set[uint16] // set of addresses marked as unreachable (dead code)
+	branchDestinations    set.Set[ParseKey] // set of all branch destination contexts
+	branchDestinationInfo map[ParseKey]*offset.DisasmOffset
+	unreachableAddresses  set.Set[uint16] // set of addresses marked as unreachable (dead code)
 
-	// TODO handle bank switch
-	offsetsToParse      []uint16
-	offsetsToParseAdded set.Set[uint16]
-	offsetsParsed       set.Set[uint16]
+	offsetsToParse      []ParseKey
+	offsetsToParseAdded set.Set[ParseKey]
+	offsetsParsed       set.Set[ParseKey]
 
-	functionReturnsToParse      []uint16
-	functionReturnsToParseAdded set.Set[uint16]
+	functionReturnsToParse      []ParseKey
+	functionReturnsToParseAdded set.Set[ParseKey]
 
 	mapper *mapper.Mapper
 	stats  traceStats
@@ -104,11 +104,12 @@ func New(logger *log.Logger, ar architecture, cart *cartridge.Cartridge,
 		options:                     options,
 		cart:                        cart,
 		fileWriterConstructor:       fileWriterConstructor,
-		branchDestinations:          set.New[uint16](),
+		branchDestinations:          set.New[ParseKey](),
+		branchDestinationInfo:       map[ParseKey]*offset.DisasmOffset{},
 		unreachableAddresses:        set.New[uint16](),
-		offsetsToParseAdded:         set.New[uint16](),
-		offsetsParsed:               set.New[uint16](),
-		functionReturnsToParseAdded: set.New[uint16](),
+		offsetsToParseAdded:         set.New[ParseKey](),
+		offsetsParsed:               set.New[ParseKey](),
+		functionReturnsToParseAdded: set.New[ParseKey](),
 	}
 
 	var err error
@@ -233,7 +234,7 @@ func (dis *Disasm) ReadMemoryWord(address uint16) (uint16, error) {
 
 // IsBranchDestination checks if an address is a branch destination.
 func (dis *Disasm) IsBranchDestination(address uint16) bool {
-	return dis.branchDestinations.Contains(address)
+	return dis.branchDestinations.Contains(dis.currentParseKey(address))
 }
 
 // MarkAddressAsUnreachable marks an address as unreachable code.

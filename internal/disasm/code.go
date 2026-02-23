@@ -16,14 +16,32 @@ const (
 // processJumpDestinations processes all jump destinations and updates the callers with
 // the generated jump destination label name.
 func (dis *Disasm) processJumpDestinations() {
-	branchDestinations := make([]uint16, 0, len(dis.branchDestinations))
-	for dest := range dis.branchDestinations {
-		branchDestinations = append(branchDestinations, dest)
+	branchDestinations := make([]ParseKey, 0, len(dis.branchDestinations))
+	for key := range dis.branchDestinations {
+		branchDestinations = append(branchDestinations, key)
 	}
-	slices.Sort(branchDestinations)
+	slices.SortFunc(branchDestinations, func(a, b ParseKey) int {
+		if a.PC < b.PC {
+			return -1
+		}
+		if a.PC > b.PC {
+			return 1
+		}
+		if a.MappingID < b.MappingID {
+			return -1
+		}
+		if a.MappingID > b.MappingID {
+			return 1
+		}
+		return 0
+	})
 
-	for _, address := range branchDestinations {
-		offsetInfo := dis.mapper.OffsetInfo(address)
+	for _, key := range branchDestinations {
+		address := key.PC
+		offsetInfo := dis.branchDestinationInfo[key]
+		if offsetInfo == nil {
+			continue
+		}
 
 		name := offsetInfo.Label
 		if name == "" {

@@ -367,6 +367,8 @@ Notes:
 
 ### Phase 2: Bank-Aware Parse Keys
 
+Status: Completed (2026-02-23)
+
 1. Introduce `ParseKey` and update parse queues/dedupe.
 2. Thread mapping ID through parse API and branch bookkeeping.
 3. Add tests for same `PC` parsed in multiple mapping contexts.
@@ -375,6 +377,46 @@ Acceptance:
 
 1. New tests cover duplicate-CPU-address multi-bank scenarios.
 2. Existing tests remain green.
+
+Implementation notes:
+
+- Added parse-key model and mapping-aware queueing in disassembler core:
+  - `internal/disasm/parsekey.go`
+  - `internal/disasm/disasm.go`
+  - `internal/disasm/parser.go`
+  - `internal/disasm/data.go`
+  - `internal/disasm/code.go`
+  - `internal/disasm/emutrace.go`
+- `ParseKey` is now `(PC, MappingID)` where `MappingID` is sourced from `Mapper.MappingSignature()`.
+- Updated dedupe/parsed bookkeeping to be key-based:
+  - `offsetsToParse`
+  - `offsetsToParseAdded`
+  - `offsetsParsed`
+  - `functionReturnsToParse`
+  - `functionReturnsToParseAdded`
+- Branch destination tracking is now mapping-aware (`set.Set[ParseKey]`) with per-key destination offset bookkeeping.
+- Function-return invalidation (`DeleteFunctionReturnToParse`) now removes all queued mapping variants for a given CPU address.
+- Added targeted phase tests:
+  - `internal/disasm/parsekey_test.go`
+  - `TestAddAddressToParse_AllowsSameAddressAcrossMappings`
+  - `TestFollowExecutionFlow_ParsesSamePCAcrossMappings`
+
+Validation:
+
+- Full test suite:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase2 go test ./...`
+  - Result: success.
+- Focused integration set:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase2 go test ./internal/disasm ./internal/arch/m6502 ./internal/jumpengine ./internal/mapper ./internal/pipeline`
+  - Result: success.
+
+Known limitation observed during phase validation:
+
+- Mapper 7 `-verify` run shows duplicate symbol definitions in generated `ca65` output when additional bank contexts are parsed (e.g. repeated PPU/OAM aliases).
+- Repro:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase2 go run . -verify -q -a ca65 -s nes -o /tmp/phase2_bt.asm "internal/testroms/commercial/working/Battletoads (USA).nes"`
+  - Result: fails with duplicate-symbol assembler errors.
+- This aligns with Phase 4 scope (**Symbol and Output Stabilization**) and is tracked there.
 
 ### Phase 3: Mapper Runtime Integration
 
@@ -460,6 +502,6 @@ Acceptance:
 
 ## Immediate Next Steps
 
-1. Land `ParseKey` refactor for `(PC, MappingID)` dedupe and queueing (Phase 2).
-2. Add mapper runtime write integration for mapper 7, then 2, then 1 (Phase 3).
-3. Make disassembly reads/state restoration mapping-aware when consuming emulator snapshots (Phase 3 follow-up).
+1. Add mapper runtime write integration for mapper 7, then 2, then 1 (Phase 3).
+2. Make disassembly reads/state restoration mapping-aware when consuming emulator snapshots (Phase 3 follow-up).
+3. Address multi-context symbol/alias collisions in generated assembler output (Phase 4).

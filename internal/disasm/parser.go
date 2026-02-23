@@ -20,6 +20,7 @@ func (dis *Disasm) AddAddressToParse(address, context, from uint16,
 	}
 
 	offsetInfo := dis.mapper.OffsetInfo(address)
+	key := dis.currentParseKey(address)
 	if isABranchDestination && currentInstruction != nil && currentInstruction.IsCall() {
 		offsetInfo.SetType(program.CallDestination)
 		if offsetInfo.Context == 0 {
@@ -39,32 +40,37 @@ func (dis *Disasm) AddAddressToParse(address, context, from uint16,
 		}
 		bankRef.ID = bankRef.Mapped.ID()
 		offsetInfo.BranchFrom = append(offsetInfo.BranchFrom, bankRef)
-		dis.branchDestinations.Add(address)
+		dis.branchDestinations.Add(key)
+		dis.branchDestinationInfo[key] = offsetInfo
 		dis.stats.branchDestinationsAdded++
 	}
 
-	if dis.offsetsToParseAdded.Contains(address) {
+	if dis.offsetsToParseAdded.Contains(key) {
 		dis.stats.queueRejectedDuplicate++
 		return
 	}
-	dis.offsetsToParseAdded.Add(address)
+	dis.offsetsToParseAdded.Add(key)
 
 	// add instructions that follow a function call to a special queue with lower priority, to allow the
 	// jump engine be detected before trying to parse the data following the call, which in case of a jump
 	// engine is not code but pointers to functions.
 	if currentInstruction != nil && currentInstruction.IsCall() {
-		dis.functionReturnsToParse = append(dis.functionReturnsToParse, address)
-		dis.functionReturnsToParseAdded.Add(address)
+		dis.functionReturnsToParse = append(dis.functionReturnsToParse, key)
+		dis.functionReturnsToParseAdded.Add(key)
 		dis.stats.queueAddedFunctionRet++
 	} else {
-		dis.offsetsToParse = append(dis.offsetsToParse, address)
+		dis.offsetsToParse = append(dis.offsetsToParse, key)
 		dis.stats.queueAddedPrimary++
 	}
 }
 
 // DeleteFunctionReturnToParse deletes a function return address from the list of addresses to parse.
 func (dis *Disasm) DeleteFunctionReturnToParse(address uint16) {
-	dis.functionReturnsToParseAdded.Remove(address)
+	for key := range dis.functionReturnsToParseAdded {
+		if key.PC == address {
+			dis.functionReturnsToParseAdded.Remove(key)
+		}
+	}
 }
 
 // isValidCodeAddress checks if an address is within valid code bounds.
@@ -102,20 +108,20 @@ func (dis *Disasm) followExecutionFlow(ctx context.Context) error {
 			// Continue processing
 		}
 
-		addr, err := dis.addressToDisassemble()
+		key, ok, err := dis.addressToDisassemble()
 		if err != nil {
 			return err
 		}
-		if addr == -1 {
+		if !ok {
 			break
 		}
-		address := uint16(addr)
+		address := key.PC
 
-		if dis.offsetsParsed.Contains(address) {
+		if dis.offsetsParsed.Contains(key) {
 			dis.stats.alreadyParsedSkips++
 			continue
 		}
-		dis.offsetsParsed.Add(address)
+		dis.offsetsParsed.Add(key)
 		dis.stats.parsedOffsets++
 
 		dis.pc = address
@@ -171,46 +177,46 @@ func (dis *Disasm) checkInstructionOverlap(address uint16, offsetInfo *offset.Di
 
 // isBranchDestination checks if an address is a branch destination.
 func (dis *Disasm) isBranchDestination(address uint16) bool {
-	return dis.branchDestinations.Contains(address)
+	return dis.branchDestinations.Contains(dis.currentParseKey(address))
 }
 
-// addressToDisassemble returns the next address to disassemble, if there are no more addresses to parse,
-// -1 will be returned. Return address from function addresses have the lowest priority, to be able to
+// addressToDisassemble returns the next parse key to disassemble.
+// Return addresses from function calls have the lowest priority, to be able to
 // handle jump table functions correctly.
-func (dis *Disasm) addressToDisassemble() (int, error) {
+func (dis *Disasm) addressToDisassemble() (ParseKey, bool, error) {
 	for {
 		if len(dis.offsetsToParse) > 0 {
-			address := dis.offsetsToParse[0]
+			key := dis.offsetsToParse[0]
 			dis.offsetsToParse = dis.offsetsToParse[1:]
 			dis.stats.dequeuedPrimary++
-			return int(address), nil
+			return key, true, nil
 		}
 
 		for len(dis.functionReturnsToParse) > 0 {
-			address := dis.functionReturnsToParse[0]
+			key := dis.functionReturnsToParse[0]
 			dis.functionReturnsToParse = dis.functionReturnsToParse[1:]
 
-			ok := dis.functionReturnsToParseAdded.Contains(address)
+			ok := dis.functionReturnsToParseAdded.Contains(key)
 			// if the address was removed from the set it marks the address as not being parsed anymore,
 			// this way is more efficient than iterating the slice to delete the element
 			if !ok {
 				continue
 			}
-			dis.functionReturnsToParseAdded.Remove(address)
+			dis.functionReturnsToParseAdded.Remove(key)
 			dis.stats.dequeuedFunctionRet++
-			return int(address), nil
+			return key, true, nil
 		}
 
 		dis.stats.jumpEngineScanCalls++
 		isEntry, err := dis.jumpEngine.ScanForNewJumpEngineEntry(dis.codeBaseAddress)
 		if err != nil {
-			return 0, fmt.Errorf("scanning for new jump engine entry: %w", err)
+			return ParseKey{}, false, fmt.Errorf("scanning for new jump engine entry: %w", err)
 		}
 		if isEntry {
 			dis.stats.jumpEngineEntryFound++
 		}
 		if !isEntry {
-			return -1, nil
+			return ParseKey{}, false, nil
 		}
 	}
 }

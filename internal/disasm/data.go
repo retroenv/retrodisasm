@@ -19,7 +19,7 @@ func (dis *Disasm) ChangeAddressRangeToCodeAsData(address uint16, data []byte) {
 				noLabelOffsets++
 
 				skipAddressToParse := address + uint16(j)
-				dis.offsetsParsed.Add(skipAddressToParse)
+				dis.offsetsParsed.Add(dis.currentParseKey(skipAddressToParse))
 				continue
 			}
 			break

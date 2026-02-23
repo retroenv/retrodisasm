@@ -70,13 +70,14 @@ func (dis *Disasm) logAdvisoryEmuTraceComparison(result *m6502emu.Result) {
 
 	emuOnly := 0
 	for pc := range emuPCs {
-		if !dis.offsetsParsed.Contains(pc) {
+		if !dis.hasParsedPC(pc) {
 			emuOnly++
 		}
 	}
 
+	staticPCs := dis.staticParsedPCSet()
 	staticOnly := 0
-	for pc := range dis.offsetsParsed {
+	for pc := range staticPCs {
 		if _, ok := emuPCs[pc]; !ok {
 			staticOnly++
 		}
@@ -84,10 +85,27 @@ func (dis *Disasm) logAdvisoryEmuTraceComparison(result *m6502emu.Result) {
 
 	dis.logger.Debug("Advisory emu trace comparison",
 		log.Int("emu_unique_pc", len(emuPCs)),
-		log.Int("static_unique_pc", len(dis.offsetsParsed)),
+		log.Int("static_unique_pc", len(staticPCs)),
 		log.Int("emu_only_pc", emuOnly),
 		log.Int("static_only_pc", staticOnly),
 	)
+}
+
+func (dis *Disasm) hasParsedPC(pc uint16) bool {
+	for key := range dis.offsetsParsed {
+		if key.PC == pc {
+			return true
+		}
+	}
+	return false
+}
+
+func (dis *Disasm) staticParsedPCSet() map[uint16]struct{} {
+	pcs := make(map[uint16]struct{}, len(dis.offsetsParsed))
+	for key := range dis.offsetsParsed {
+		pcs[key.PC] = struct{}{}
+	}
+	return pcs
 }
 
 func (dis *Disasm) shouldRunAdvisoryEmuTrace() bool {
