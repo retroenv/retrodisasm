@@ -116,6 +116,11 @@ func (c *Chip8) Initialize() error {
 	return nil
 }
 
+// InitializeBankVectors is a no-op for CHIP-8, which has no banked vectors.
+func (c *Chip8) InitializeBankVectors(_ int) error {
+	return nil
+}
+
 // IsAddressingIndexed determines if an opcode uses indexed addressing.
 // CHIP-8 uses register-based addressing rather than indexed addressing.
 func (c *Chip8) IsAddressingIndexed(_ instruction.Opcode) bool {

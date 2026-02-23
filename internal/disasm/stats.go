@@ -19,6 +19,10 @@ type traceStats struct {
 	jumpEngineScanCalls  uint64
 	jumpEngineEntryFound uint64
 
+	additionalBanksConsidered uint64
+	additionalBanksProcessed  uint64
+	additionalBankQueueGrowth uint64
+
 	parsedOffsets       uint64
 	alreadyParsedSkips  uint64
 	inspectSkipped      uint64
@@ -46,6 +50,9 @@ func (dis *Disasm) logTraceStats(start time.Time, completed bool) {
 		log.Uint64("dequeued_function_return", dis.stats.dequeuedFunctionRet),
 		log.Uint64("jump_engine_scan_calls", dis.stats.jumpEngineScanCalls),
 		log.Uint64("jump_engine_entry_found", dis.stats.jumpEngineEntryFound),
+		log.Uint64("additional_banks_considered", dis.stats.additionalBanksConsidered),
+		log.Uint64("additional_banks_processed", dis.stats.additionalBanksProcessed),
+		log.Uint64("additional_bank_queue_growth", dis.stats.additionalBankQueueGrowth),
 		log.Uint64("parsed_offsets", dis.stats.parsedOffsets),
 		log.Uint64("already_parsed_skips", dis.stats.alreadyParsedSkips),
 		log.Uint64("inspect_skipped", dis.stats.inspectSkipped),

@@ -12,10 +12,63 @@ import (
 
 const resetLabel = "Reset"
 
+var vectorLabels = [3]string{"NMI", resetLabel, "IRQ"}
+
 func (ar *Arch6502) Initialize() error {
 	if err := ar.initializeIrqHandlers(); err != nil {
 		return fmt.Errorf("initializing IRQ handlers: %w", err)
 	}
+	return nil
+}
+
+// InitializeBankVectors initializes and queues unique vector handlers for a non-last PRG bank.
+// Only vectors that differ from the last bank are traced.
+func (ar *Arch6502) InitializeBankVectors(bankIndex int) error {
+	type bankVectorProvider interface {
+		BankCount() int
+		BankVectors(bankIndex int) [3]uint16
+	}
+
+	provider, ok := ar.mapper.(bankVectorProvider)
+	if !ok {
+		return nil
+	}
+
+	bankCount := provider.BankCount()
+	if bankCount <= 1 || bankIndex < 0 || bankIndex >= bankCount-1 {
+		return nil
+	}
+
+	vectors := provider.BankVectors(bankIndex)
+	lastVectors := provider.BankVectors(bankCount - 1)
+
+	for i, address := range vectors {
+		if address == lastVectors[i] {
+			continue
+		}
+		if !isValidVectorAddress(address) {
+			continue
+		}
+		if !ar.isValidOpcodeAt(address) {
+			continue
+		}
+
+		label := fmt.Sprintf("%s_Bank%d", vectorLabels[i], bankIndex)
+		offsetInfo := ar.mapper.OffsetInfo(address)
+		if offsetInfo != nil {
+			if offsetInfo.Label == "" {
+				offsetInfo.Label = label
+			}
+			offsetInfo.SetType(program.CallDestination)
+		}
+
+		ar.dis.AddAddressToParse(address, address, 0, nil, false)
+		ar.logger.Debug("Queued bank vector handler",
+			log.Int("bank", bankIndex),
+			log.String("vector", vectorLabels[i]),
+			log.Hex("address", address))
+	}
+
 	return nil
 }
 
@@ -204,4 +257,22 @@ func (ar *Arch6502) calculateCodeBaseAddress(resetHandler uint16) {
 
 	ar.dis.SetCodeBaseAddress(codeBaseAddress)
 	ar.dis.SetVectorsStartAddress(vectorsStartAddress)
+}
+
+func isValidVectorAddress(address uint16) bool {
+	if address == 0x0000 || address == 0xFFFF {
+		return false
+	}
+	if address < 0x8000 {
+		return false
+	}
+	if address >= m6502.InterruptVectorStartAddress {
+		return false
+	}
+	return true
+}
+
+func (ar *Arch6502) isValidOpcodeAt(address uint16) bool {
+	opcode := ar.mapper.ReadMemory(address)
+	return m6502.Opcodes[opcode].Instruction != nil
 }

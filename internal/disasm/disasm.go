@@ -41,6 +41,8 @@ type architecture interface {
 	HandleDisambiguousInstructions(address uint16, offsetInfo *offset.DisasmOffset) bool
 	// Initialize the architecture.
 	Initialize() error
+	// InitializeBankVectors initializes unique vector handlers for the given bank.
+	InitializeBankVectors(bankIndex int) error
 	// IsAddressingIndexed returns if the opcode is using indexed addressing.
 	IsAddressingIndexed(opcode instruction.Opcode) bool
 	// LastCodeAddress returns the last possible address of code.
@@ -137,6 +139,9 @@ func (dis *Disasm) Process(ctx context.Context, mainWriter io.Writer, newBankWri
 	}()
 
 	if err := dis.followExecutionFlow(ctx); err != nil {
+		return nil, err
+	}
+	if err := dis.processAdditionalBanks(ctx); err != nil {
 		return nil, err
 	}
 

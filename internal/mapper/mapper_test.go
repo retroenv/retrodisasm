@@ -240,3 +240,70 @@ func TestLog2(t *testing.T) {
 		assert.Equal(t, tt.expected, result)
 	}
 }
+
+func TestBankCount(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		PRG: make([]byte, 0x10000), // 2 x 32KB banks
+	}
+	arch := &mockArchitecture{bankWindowSize: 0x2000}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, mapper.BankCount())
+}
+
+func TestBankVectors(t *testing.T) {
+	prg := make([]byte, 0x8000)
+	// NMI=$8123 Reset=$9456 IRQ=$A789
+	prg[len(prg)-6] = 0x23
+	prg[len(prg)-5] = 0x81
+	prg[len(prg)-4] = 0x56
+	prg[len(prg)-3] = 0x94
+	prg[len(prg)-2] = 0x89
+	prg[len(prg)-1] = 0xA7
+
+	cart := &cartridge.Cartridge{PRG: prg}
+	arch := &mockArchitecture{bankWindowSize: 0x2000}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+
+	vectors := mapper.BankVectors(0)
+	assert.Equal(t, uint16(0x8123), vectors[0])
+	assert.Equal(t, uint16(0x9456), vectors[1])
+	assert.Equal(t, uint16(0xA789), vectors[2])
+}
+
+func TestMapBankAndRestoreDefaultMapping(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		PRG: make([]byte, 0x10000), // 2 x 32KB banks
+	}
+	arch := &mockArchitecture{bankWindowSize: 0x2000}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+
+	// Default mapping: first two windows from bank 0, last two from bank 1
+	assert.Equal(t, 0, mapper.MappedBank(0x8000).ID())
+	assert.Equal(t, 0, mapper.MappedBank(0xA000).ID())
+	assert.Equal(t, 1, mapper.MappedBank(0xC000).ID())
+	assert.Equal(t, 1, mapper.MappedBank(0xE000).ID())
+
+	mapper.MapBank(0)
+	assert.Equal(t, 0, mapper.MappedBank(0x8000).ID())
+	assert.Equal(t, 0, mapper.MappedBank(0xA000).ID())
+	assert.Equal(t, 0, mapper.MappedBank(0xC000).ID())
+	assert.Equal(t, 0, mapper.MappedBank(0xE000).ID())
+
+	mapper.MapBank(1)
+	assert.Equal(t, 1, mapper.MappedBank(0x8000).ID())
+	assert.Equal(t, 1, mapper.MappedBank(0xA000).ID())
+	assert.Equal(t, 1, mapper.MappedBank(0xC000).ID())
+	assert.Equal(t, 1, mapper.MappedBank(0xE000).ID())
+
+	mapper.RestoreDefaultMapping()
+	assert.Equal(t, 0, mapper.MappedBank(0x8000).ID())
+	assert.Equal(t, 0, mapper.MappedBank(0xA000).ID())
+	assert.Equal(t, 1, mapper.MappedBank(0xC000).ID())
+	assert.Equal(t, 1, mapper.MappedBank(0xE000).ID())
+}

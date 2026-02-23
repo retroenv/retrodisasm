@@ -24,6 +24,8 @@ type Mapper struct {
 	consts constantManager // Reference to constant manager
 }
 
+var prgWindowAddresses = []uint16{0x8000, 0xA000, 0xC000, 0xE000}
+
 // New creates a new mapper manager.
 func New(ar architecture, cart *cartridge.Cartridge) (*Mapper, error) {
 	bankWindowSize := ar.BankWindowSize(cart)
@@ -100,6 +102,67 @@ func (m *Mapper) configureDefaultBankMapping() {
 		m.setMappedBank(0xc000, m.banksMapped[len(m.banksMapped)-2])
 		m.setMappedBank(0xe000, m.banksMapped[len(m.banksMapped)-1])
 	}
+}
+
+// BankCount returns the amount of PRG banks.
+func (m *Mapper) BankCount() int {
+	return len(m.banks)
+}
+
+// BankVectors reads the NMI/Reset/IRQ vectors from the raw PRG bank data.
+// If the bank index is invalid or the bank is too small, zero vectors are returned.
+func (m *Mapper) BankVectors(bankIndex int) [3]uint16 {
+	var vectors [3]uint16
+	if bankIndex < 0 || bankIndex >= len(m.banks) {
+		return vectors
+	}
+
+	prg := m.banks[bankIndex].prg
+	if len(prg) < 6 {
+		return vectors
+	}
+
+	idx := len(prg) - 6
+	for i := range 3 {
+		low := uint16(prg[idx])
+		idx++
+		high := uint16(prg[idx])
+		idx++
+		vectors[i] = (high << 8) | low
+	}
+	return vectors
+}
+
+// MapBank maps the provided PRG bank into the full $8000-$FFFF CPU range.
+// For 16KB banks this mirrors the bank as needed to cover all 4 8KB windows.
+func (m *Mapper) MapBank(bankIndex int) {
+	if m.bankWindowSize != 0x2000 || bankIndex < 0 || bankIndex >= len(m.banks) {
+		return
+	}
+
+	entries := m.mappedEntriesForBank(bankIndex)
+	if len(entries) == 0 {
+		return
+	}
+
+	for i, window := range prgWindowAddresses {
+		m.setMappedBank(window, entries[i%len(entries)])
+	}
+}
+
+// RestoreDefaultMapping restores the default PRG window mapping.
+func (m *Mapper) RestoreDefaultMapping() {
+	m.configureDefaultBankMapping()
+}
+
+func (m *Mapper) mappedEntriesForBank(bankIndex int) []mappedBank {
+	entries := make([]mappedBank, 0, 4)
+	for _, entry := range m.banksMapped {
+		if entry.id == bankIndex {
+			entries = append(entries, entry)
+		}
+	}
+	return entries
 }
 
 // SetCodeBaseAddress sets the code base address for single-bank systems.

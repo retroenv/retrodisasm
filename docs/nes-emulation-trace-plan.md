@@ -269,6 +269,8 @@ Notes:
 
 ### Phase 0.5: Multi-Bank Vector Tracing
 
+Status: Completed (2026-02-23)
+
 Implement the multi-bank vector tracing design already documented in `.claude/retrodisasm-project.md` (lines 67-120). This is simpler than CPU emulation (no custom memory bus) and provides immediate multi-bank coverage.
 
 1. Implement `MapBank(bankIndex int)` and `RestoreDefaultMapping()` on `Mapper`.
@@ -282,6 +284,33 @@ Acceptance:
 1. Multi-bank ROMs (mapper 7) trace vectors from non-last banks.
 2. `setMappedBank()` works correctly for runtime remapping (validates foundation for emulator phases).
 3. Existing tests pass, `-verify` passes for working ROMs.
+
+Implementation notes:
+
+- Mapper remapping/vector APIs added:
+  - `internal/mapper/mapper.go`
+  - `internal/mapper/mapper_test.go`
+  - New methods: `BankCount()`, `BankVectors()`, `MapBank()`, `RestoreDefaultMapping()`
+- Architecture interface extended with per-bank vector initialization:
+  - `internal/disasm/disasm.go` (architecture interface)
+  - `internal/arch/m6502/vectors.go` (`InitializeBankVectors`)
+  - `internal/arch/chip8/chip8.go` (no-op `InitializeBankVectors`)
+- Disassembler flow now traces additional mapped banks before post-processing:
+  - `internal/disasm/banks.go`
+  - `internal/disasm/disasm.go`
+
+Validation:
+
+- Unit/integration tests:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase05 go test ./internal/mapper ./internal/arch/m6502 ./internal/disasm ./internal/pipeline`
+- Mapper 7 verification sample:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase05 go run . -verify -q -a ca65 -s nes -o /tmp/bt_phase05.asm "internal/testroms/commercial/working/Battletoads (USA).nes"`
+  - Result: success (`EXIT:0`)
+
+Notes:
+
+- Current implementation maps each non-last 32KB PRG bank to `$8000-$FFFF`, queues only vectors that differ from the last bank, validates vector address and opcode, then traces that context.
+- This phase improves multi-bank coverage while preserving the existing address-only parse key model. Full `(PC, MappingID)` dedupe remains in Phase 2.
 
 ### Phase 1: Emulator Trace Prototype (Advisory Only)
 
@@ -390,6 +419,6 @@ Acceptance:
 
 ## Immediate Next Steps
 
-1. Implement Phase 0.5 multi-bank vector tracing (using existing design from `.claude/retrodisasm-project.md`).
-2. Build `m6502emu` trace prototype with mapper 0/7 runtime bus.
-3. Land `ParseKey` refactor before expanding mapper coverage.
+1. Build `m6502emu` trace prototype with mapper 0/7 runtime bus (Phase 1).
+2. Land `ParseKey` refactor before expanding mapper coverage (Phase 2).
+3. Add mapper runtime write integration for mapper 7, then 2, then 1 (Phase 3).
