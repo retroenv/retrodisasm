@@ -4,6 +4,7 @@ package m6502emu
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	cpu6502 "github.com/retroenv/retrogolib/arch/cpu/m6502"
@@ -13,6 +14,7 @@ import (
 const (
 	defaultMaxInstructions = 100000
 	defaultMaxVisitsPerPC  = 8
+	defaultMaxBranchStates = 0
 )
 
 // Mapper defines the mapper functions needed by the emulator trace.
@@ -27,6 +29,7 @@ type Mapper interface {
 type Config struct {
 	MaxInstructions int
 	MaxVisitsPerPC  int
+	MaxBranchStates int
 }
 
 // TraceStep contains a single executed instruction with mapping metadata.
@@ -38,6 +41,16 @@ type TraceStep struct {
 	BankID           int
 	PhysicalOffset   uint32
 	HasPhysical      bool
+}
+
+// BranchAlternate records a conditional-branch alternate destination inferred from trace flow.
+type BranchAlternate struct {
+	FromPC            uint16
+	Address           uint16
+	MappingSignature  uint64
+	BranchTarget      uint16
+	FallthroughTarget uint16
+	Taken             bool
 }
 
 // BankSwitchWrite records a write in mapper register space.
@@ -54,12 +67,16 @@ type BankSwitchWrite struct {
 type Result struct {
 	Steps            []TraceStep
 	BankSwitchWrites []BankSwitchWrite
+	BranchAlternates []BranchAlternate
 
-	UniquePCCount      int
-	UniqueMappingCount int
-	Instructions       int
-	HaltReason         string
-	Duration           time.Duration
+	UniquePCCount              int
+	UniqueMappingCount         int
+	ConditionalBranchCount     int
+	BranchAlternateCount       int
+	BranchAlternateBudgetDrops int
+	Instructions               int
+	HaltReason                 string
+	Duration                   time.Duration
 }
 
 // Run executes a bounded advisory 6502 trace over a NES cartridge using mapper-backed PRG reads.
@@ -109,9 +126,7 @@ func Run(ctx context.Context, cart *cartridge.Cartridge, mapper Mapper, cfg Conf
 		select {
 		case <-ctx.Done():
 			res.HaltReason = "context cancelled"
-			res.Instructions = len(res.Steps)
-			res.UniquePCCount = len(uniquePCs)
-			res.UniqueMappingCount = len(uniqueMappings)
+			finalizeResult(res, cfg, uniquePCs, uniqueMappings)
 			return res, nil
 		default:
 		}
@@ -154,9 +169,7 @@ func Run(ctx context.Context, cart *cartridge.Cartridge, mapper Mapper, cfg Conf
 		res.HaltReason = "instruction budget exhausted"
 	}
 
-	res.Instructions = len(res.Steps)
-	res.UniquePCCount = len(uniquePCs)
-	res.UniqueMappingCount = len(uniqueMappings)
+	finalizeResult(res, cfg, uniquePCs, uniqueMappings)
 	return res, nil
 }
 
@@ -167,5 +180,106 @@ func normalizeConfig(cfg Config) Config {
 	if cfg.MaxVisitsPerPC <= 0 {
 		cfg.MaxVisitsPerPC = defaultMaxVisitsPerPC
 	}
+	if cfg.MaxBranchStates < 0 {
+		cfg.MaxBranchStates = defaultMaxBranchStates
+	}
 	return cfg
+}
+
+func finalizeResult(res *Result, cfg Config, uniquePCs map[uint16]struct{}, uniqueMappings map[uint64]struct{}) {
+	res.Instructions = len(res.Steps)
+	res.UniquePCCount = len(uniquePCs)
+	res.UniqueMappingCount = len(uniqueMappings)
+
+	alternates, conditionalCount, budgetDrops := collectBranchAlternates(res.Steps, cfg.MaxBranchStates)
+	res.ConditionalBranchCount = conditionalCount
+	res.BranchAlternates = alternates
+	res.BranchAlternateCount = len(alternates)
+	res.BranchAlternateBudgetDrops = budgetDrops
+}
+
+func collectBranchAlternates(steps []TraceStep, maxBranchStates int) ([]BranchAlternate, int, int) {
+	var (
+		alternates []BranchAlternate
+		budgetDrop int
+	)
+
+	if len(steps) < 2 {
+		return alternates, 0, 0
+	}
+
+	type alternateKey struct {
+		PC        uint16
+		MappingID uint64
+	}
+	seen := map[alternateKey]struct{}{}
+
+	conditionalCount := 0
+	for i := 0; i < len(steps)-1; i++ {
+		step := steps[i]
+		if !isConditionalBranch(step.OpcodeName) || len(step.OpcodeOperands) < 1 {
+			continue
+		}
+		conditionalCount++
+		if maxBranchStates <= 0 {
+			continue
+		}
+
+		operand := step.OpcodeOperands[len(step.OpcodeOperands)-1]
+		fallthroughPC := step.PC + 2
+		target := uint16(int32(fallthroughPC) + int32(int8(operand)))
+		nextPC := steps[i+1].PC
+
+		var (
+			alternate uint16
+			ok        bool
+			taken     bool
+		)
+		switch nextPC {
+		case target:
+			alternate = fallthroughPC
+			ok = true
+			taken = true
+		case fallthroughPC:
+			alternate = target
+			ok = true
+		}
+		if !ok || alternate == nextPC {
+			continue
+		}
+
+		key := alternateKey{
+			PC:        alternate,
+			MappingID: step.MappingSignature,
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+
+		if len(alternates) >= maxBranchStates {
+			budgetDrop++
+			continue
+		}
+
+		alternates = append(alternates, BranchAlternate{
+			FromPC:            step.PC,
+			Address:           alternate,
+			MappingSignature:  step.MappingSignature,
+			BranchTarget:      target,
+			FallthroughTarget: fallthroughPC,
+			Taken:             taken,
+		})
+	}
+
+	return alternates, conditionalCount, budgetDrop
+}
+
+func isConditionalBranch(opName string) bool {
+	switch strings.ToUpper(opName) {
+	case "BCC", "BCS", "BEQ", "BMI", "BNE", "BPL", "BVC", "BVS":
+		return true
+	default:
+		return false
+	}
 }

@@ -15,6 +15,7 @@ const (
 	envEmuTraceEnable    = "RETRODISASM_EMU_TRACE"
 	envEmuTraceMaxInstr  = "RETRODISASM_EMU_TRACE_MAX_INSTR"
 	envEmuTraceMaxVisits = "RETRODISASM_EMU_TRACE_MAX_VISITS"
+	envEmuTraceMaxBranch = "RETRODISASM_EMU_TRACE_MAX_BRANCH_STATES"
 )
 
 func (dis *Disasm) runAdvisoryEmuTrace(ctx context.Context) *m6502emu.Result {
@@ -31,6 +32,7 @@ func (dis *Disasm) runAdvisoryEmuTrace(ctx context.Context) *m6502emu.Result {
 	cfg := m6502emu.Config{
 		MaxInstructions: envIntOrDefault(envEmuTraceMaxInstr, 100000),
 		MaxVisitsPerPC:  envIntOrDefault(envEmuTraceMaxVisits, 8),
+		MaxBranchStates: envIntOrDefault(envEmuTraceMaxBranch, 0),
 	}
 
 	startSignature := dis.mapper.MappingSignature()
@@ -59,6 +61,9 @@ func (dis *Disasm) runAdvisoryEmuTrace(ctx context.Context) *m6502emu.Result {
 		log.Int("unique_mapping", result.UniqueMappingCount),
 		log.Int("mapper_writes", len(result.BankSwitchWrites)),
 		log.Int("mapping_changes", changed),
+		log.Int("conditional_branches", result.ConditionalBranchCount),
+		log.Int("branch_alternates", result.BranchAlternateCount),
+		log.Int("branch_alternate_budget_drops", result.BranchAlternateBudgetDrops),
 		log.String("halt_reason", result.HaltReason),
 		log.Duration("elapsed", result.Duration),
 	)
@@ -86,6 +91,25 @@ func (dis *Disasm) seedFromAdvisoryEmuTrace(result *m6502emu.Result) {
 			continue
 		}
 		dis.AddAddressToParse(step.PC, step.PC, 0, nil, false)
+	}
+
+	for _, alt := range result.BranchAlternates {
+		key := ParseKey{
+			PC:        alt.Address,
+			MappingID: alt.MappingSignature,
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+
+		if !dis.mapper.RestoreMappingSignature(alt.MappingSignature) {
+			continue
+		}
+		// Alternate branch states are exploratory roots. They intentionally do not
+		// register as authoritative branch destinations to avoid rewriting the
+		// original branch operand target during jump-destination post-processing.
+		dis.AddAddressToParse(alt.Address, alt.FromPC, 0, nil, false)
 	}
 
 	dis.mapper.RestoreDefaultMapping()

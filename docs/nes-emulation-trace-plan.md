@@ -539,6 +539,8 @@ Post-phase note:
 
 ### Phase 5: Controlled Branch Expansion
 
+Status: Completed (2026-02-23)
+
 1. Add optional bounded alternate-branch exploration.
 2. Introduce heuristics for loop throttling and state pruning.
 3. Measure incremental code discovery vs. runtime.
@@ -549,6 +551,48 @@ Acceptance:
 
 1. Coverage gain on mapper-heavy ROMs with bounded runtime overhead.
 2. Feature remains optional behind CLI controls.
+
+Implementation notes:
+
+- Advisory emulator trace now supports bounded branch-state exploration:
+  - `internal/trace/m6502emu/trace.go`
+  - `Config.MaxBranchStates` added.
+  - New inferred state model: `BranchAlternate` with `(FromPC, Address, MappingSignature, BranchTarget, FallthroughTarget, Taken)`.
+  - Conditional branches (`BCC/BCS/BEQ/BMI/BNE/BPL/BVC/BVS`) are detected from traced instructions.
+  - Alternate destination is inferred from the observed next PC and relative branch operand.
+- State pruning and throttling controls:
+  - Existing per-PC loop throttle remains (`MaxVisitsPerPC`).
+  - Alternate states dedupe by `(Address, MappingSignature)`.
+  - Frontier budget enforced via `MaxBranchStates`; excess states are dropped and counted.
+- New advisory trace diagnostics:
+  - `ConditionalBranchCount`
+  - `BranchAlternateCount`
+  - `BranchAlternateBudgetDrops`
+- Disasm integration:
+  - `internal/disasm/emutrace.go`
+  - New env control: `RETRODISASM_EMU_TRACE_MAX_BRANCH_STATES`.
+  - Inferred alternates are seeded as exploratory parse roots in the mapped context.
+  - Important hardening: alternates are **not** registered as authoritative branch destinations, preventing branch-operand target rewrites in jump-destination post-processing.
+- Regression tests added:
+  - `internal/trace/m6502emu/trace_test.go`
+    - `TestRunCollectsBranchAlternatesForNotTakenBranch`
+    - `TestRunCollectsBranchAlternatesForTakenBranch`
+    - `TestRunBranchAlternatesBudget`
+
+Validation:
+
+- Unit/integration:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase5 go test ./...`
+  - Result: success.
+- Mapper 7 verification with branch expansion enabled:
+  - `RETRODISASM_EMU_TRACE=1 RETRODISASM_EMU_TRACE_MAX_BRANCH_STATES=256 GOCACHE=/tmp/retrodisasm_gocache_phase5 go run . -verify -q -a ca65 -s nes -o /tmp/phase5_bt.asm "internal/testroms/commercial/working/Battletoads (USA).nes"`
+  - Result: success.
+- Mapper 7 debug comparison sample:
+  - With `RETRODISASM_EMU_TRACE_MAX_BRANCH_STATES=0`:
+    - `conditional_branches=9`, `branch_alternates=0`
+  - With `RETRODISASM_EMU_TRACE_MAX_BRANCH_STATES=256`:
+    - `conditional_branches=9`, `branch_alternates=3`, `branch_alternate_budget_drops=0`
+- Not-working mapper 1 sample (Alfred) remains failing with large PRG mismatch, indicating this phase is stable but not sufficient alone for mapper 1/2 recovery.
 
 ## Testing Plan
 
@@ -598,6 +642,6 @@ Acceptance:
 
 ## Immediate Next Steps
 
-1. Start Phase 5 with bounded alternate-branch exploration behind optional controls.
-2. Add state-pruning heuristics (visit limits per `(PC, MappingID)`, frontier budget, loop throttling) and measure discovery/runtime deltas.
-3. Re-benchmark mapper 1/2 not-working corpus after Phase 5 to quantify PRG mismatch reduction.
+1. Run corpus-level benchmark with `RETRODISASM_EMU_TRACE_MAX_BRANCH_STATES` enabled (mapper 1/2 focus) to quantify pass-rate and runtime deltas.
+2. Add true alternate-path execution support (CPU+RAM+mapper state cloning) for high-value branch frontiers where inferred-root seeding is insufficient.
+3. Promote current env-based trace controls to explicit CLI flags (`-trace-*`) for repeatable benchmarking workflows.
