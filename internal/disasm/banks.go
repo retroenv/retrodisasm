@@ -3,6 +3,8 @@ package disasm
 import (
 	"context"
 	"fmt"
+
+	cpum6502 "github.com/retroenv/retrogolib/arch/cpu/m6502"
 )
 
 // processAdditionalBanks traces unique vectors of non-last PRG banks by temporarily remapping
@@ -24,6 +26,7 @@ func (dis *Disasm) processAdditionalBanks(ctx context.Context) error {
 		dis.mapper.MapBank(bankIndex)
 
 		dis.seedLikelyMappedBankEntryPoints()
+		dis.seedLikelyMappedBankCallTargets()
 
 		if err := dis.arch.InitializeBankVectors(bankIndex); err != nil {
 			return fmt.Errorf("initializing vectors for bank %d: %w", bankIndex, err)
@@ -77,5 +80,66 @@ func isLikelyM6502EntryOpcode(op byte) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// seedLikelyMappedBankCallTargets scans the currently mapped bank for absolute
+// JSR/JMP targets and queues targets that look like routine entry points.
+func (dis *Disasm) seedLikelyMappedBankCallTargets() {
+	const maxCandidatesPerBank = 2048
+
+	start := dis.codeBaseAddress
+	end := dis.arch.LastCodeAddress()
+	if end <= start+2 {
+		return
+	}
+
+	queued := 0
+	for addr := start; addr < end-2; addr++ {
+		if queued >= maxCandidatesPerBank {
+			break
+		}
+
+		op, err := dis.ReadMemory(addr)
+		if err != nil {
+			continue
+		}
+		if op != 0x20 && op != 0x4C { // JSR abs / JMP abs
+			continue
+		}
+
+		low, err := dis.ReadMemory(addr + 1)
+		if err != nil {
+			continue
+		}
+		high, err := dis.ReadMemory(addr + 2)
+		if err != nil {
+			continue
+		}
+		target := uint16(high)<<8 | uint16(low)
+		if !dis.isValidCodeAddress(target) || target > end {
+			continue
+		}
+
+		targetOp, err := dis.ReadMemory(target)
+		if err != nil || !isLikelyM6502RoutineStartOpcode(targetOp) {
+			continue
+		}
+
+		dis.AddAddressToParse(target, target, addr, nil, false)
+		queued++
+	}
+}
+
+func isLikelyM6502RoutineStartOpcode(op byte) bool {
+	opcode := cpum6502.Opcodes[op]
+	if opcode.Instruction == nil || opcode.Instruction.Unofficial {
+		return false
+	}
+	switch opcode.Instruction.Name {
+	case cpum6502.BrkName, cpum6502.RtiName, cpum6502.RtsName:
+		return false
+	default:
+		return true
 	}
 }

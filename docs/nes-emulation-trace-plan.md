@@ -2070,6 +2070,58 @@ Post-phase note:
 - This phase directly improves `.asm` code density with core pipeline logic, not external tooling.
 - Rom City Rampage remains fully reassemblable while emitting materially more code.
 
+### Phase 29: Mapped-Bank Call-Target Expansion (Official Opcode Gate)
+
+Status: Completed (2026-02-24)
+
+1. Further increase emitted `.asm` code density by expanding mapped-bank call-target discovery.
+2. Keep discovery bounded and assembly-safe by gating targets to official 6502 routine-start opcodes.
+3. Preserve existing verification behavior for both `asm6` and `ca65`.
+
+Acceptance:
+
+1. Rom City Rampage still verifies for both assemblers.
+2. Instruction-line metric increases materially beyond Phase 28.
+3. Full Go test suite remains green.
+
+Implementation notes:
+
+- Core mapped-bank discovery expansion:
+  - `internal/disasm/banks.go`
+  - `seedLikelyMappedBankCallTargets()` updates:
+    - increased per-bank candidate budget from `1024` to `2048`
+    - replaced narrow entry-opcode whitelist target check with `isLikelyM6502RoutineStartOpcode(...)`
+  - `isLikelyM6502RoutineStartOpcode(...)` uses `retrogolib` opcode table:
+    - requires opcode to be defined and official (`Instruction != nil`, `Unofficial == false`)
+    - excludes `brk`, `rti`, and `rts` as routine starts.
+- No new script/tooling changes in this phase; this is a core disassembly logic change.
+
+Validation:
+
+- Full tests:
+  - `GOCACHE=/tmp/gocache_retrodisasm go test ./... -count=1`
+  - Result: success.
+- Rom City Rampage verify/regeneration:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+  - Output:
+    - `internal/testroms/special/Rom City Rampage.asm6.asm` (`56022` lines)
+    - `internal/testroms/special/Rom City Rampage.ca65.asm` (`55947` lines)
+- Code-density result (same metric used in prior phases):
+  - `rg -n '^[[:space:]]+[a-z]{3}\b' ... | wc -l`
+  - After Phase 28: `1191`
+  - After Phase 29: `4764`
+  - Delta: `+3573` code lines.
+- Trace telemetry sample (Rom City Rampage, asm6, hybrid profile):
+  - `static_unique_pc`: `5323`
+  - `parsed_offsets`: `5694`
+  - `code_bytes_marked`: `10331`
+
+Post-phase note:
+
+- This phase delivered a large code-density lift on the priority ROM without adding new helper scripts.
+- Output remains reassemblable under both target assemblers.
+
 ## Testing Plan
 
 1. Unit tests
@@ -2118,7 +2170,7 @@ Post-phase note:
 
 ## Immediate Next Steps
 
-1. Extend mapped-bank code seeding beyond fixed anchors by adding conservative call-target/table-target candidate seeding with strict opcode/shape guards.
+1. Add conservative mapped-bank pointer-table target seeding (frequency/shape guarded) to capture callback/jump-table-only routines not reached by call-target scans.
 2. Replace mapper-1 branch guard with a condition-based alternate-path policy (mapper-safe heuristics) so branch exploration can be re-enabled without reintroducing the regression.
 3. Use mapper-2 sweep telemetry to drive targeted PPU/frame-model experiments (starting with `Alfred Chicken` at hotspot `$C93F`) and re-measure `unique_pc` lift under the same preset matrix.
 4. Add a small automated experiment matrix around `Alfred Chicken` (`max_visits` and PPU-stub variants) and feed results through class-aware clustering to quantify which changes shift failure class or hotspot region.
