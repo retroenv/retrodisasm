@@ -38,6 +38,7 @@ func (dis *Disasm) processJumpDestinations() {
 	})
 
 	labelOwners := map[string]*offset.DisasmOffset{}
+	defaultMappingSignature := dis.defaultMappingSignature()
 
 	for _, key := range branchDestinations {
 		address := key.PC
@@ -45,6 +46,8 @@ func (dis *Disasm) processJumpDestinations() {
 		if offsetInfo == nil {
 			continue
 		}
+		canRewriteCallersToLabel := key.MappingID == defaultMappingSignature &&
+			dis.canRewriteCallersToBranchLabel(key, offsetInfo)
 
 		name := offsetInfo.Label
 		if name == "" {
@@ -70,6 +73,9 @@ func (dis *Disasm) processJumpDestinations() {
 
 		for _, bankRef := range offsetInfo.BranchFrom {
 			offsetInfo = bankRef.Mapped.OffsetInfo(bankRef.Index)
+			if !canRewriteCallersToLabel && len(offsetInfo.Data) >= 3 {
+				continue
+			}
 			offsetInfo.BranchingTo = name
 
 			// reference can be a function address of a jump engine
@@ -78,6 +84,35 @@ func (dis *Disasm) processJumpDestinations() {
 			}
 		}
 	}
+}
+
+func (dis *Disasm) defaultMappingSignature() uint64 {
+	current := dis.mapper.MappingSignature()
+	defer func() {
+		if !dis.mapper.RestoreMappingSignature(current) {
+			dis.mapper.RestoreDefaultMapping()
+		}
+	}()
+
+	dis.mapper.RestoreDefaultMapping()
+	return dis.mapper.MappingSignature()
+}
+
+func (dis *Disasm) canRewriteCallersToBranchLabel(key ParseKey, owner *offset.DisasmOffset) bool {
+	current := dis.mapper.MappingSignature()
+	restoreCurrent := func() {
+		if !dis.mapper.RestoreMappingSignature(current) {
+			dis.mapper.RestoreDefaultMapping()
+		}
+	}
+	defer restoreCurrent()
+
+	if !dis.mapper.RestoreMappingSignature(key.MappingID) {
+		return false
+	}
+
+	resolved := dis.mapper.OffsetInfo(key.PC)
+	return resolved != nil && resolved == owner
 }
 
 func (dis *Disasm) uniqueLabelName(base string, key ParseKey, owner *offset.DisasmOffset,

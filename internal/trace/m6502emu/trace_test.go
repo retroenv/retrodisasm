@@ -298,6 +298,54 @@ func TestRunEscapesStartupMemoryClearLoopWithDefaultVisitBudget(t *testing.T) {
 	assert.Equal(t, uint16(0x8013), res.BankSwitchWrites[0].PC)
 }
 
+func TestRunEscapesLongIndexedStartupClearLoopWithDefaultVisitBudget(t *testing.T) {
+	mapper := &mockMapper{
+		memory: map[uint16]byte{
+			0xFFFC: 0x00, // reset vector low
+			0xFFFD: 0x80, // reset vector high -> $8000
+			0x8000: 0xA9, // lda #$00
+			0x8001: 0x00,
+			0x8002: 0xA2, // ldx #$00
+			0x8003: 0x00,
+			0x8004: 0x95, // sta $00,X
+			0x8005: 0x00,
+			0x8006: 0x9D, // sta $0200,X
+			0x8007: 0x00,
+			0x8008: 0x02,
+			0x8009: 0x9D, // sta $0300,X
+			0x800A: 0x00,
+			0x800B: 0x03,
+			0x800C: 0x9D, // sta $0400,X
+			0x800D: 0x00,
+			0x800E: 0x04,
+			0x800F: 0xCA, // dex
+			0x8010: 0xD0, // bne $8004
+			0x8011: 0xF2,
+			0x8012: 0xA9, // lda #$01
+			0x8013: 0x01,
+			0x8014: 0x8D, // sta $8000 (mapper write marker)
+			0x8015: 0x00,
+			0x8016: 0x80,
+			0x8017: 0x4C, // jmp $8017
+			0x8018: 0x17,
+			0x8019: 0x80,
+		},
+		signature: 0x58,
+	}
+
+	res, err := Run(context.Background(), &cartridge.Cartridge{}, mapper, Config{
+		MaxInstructions: 12000,
+		MaxVisitsPerPC:  8,
+	})
+	assert.NoError(t, err)
+	if len(res.BankSwitchWrites) != 1 {
+		t.Fatalf("expected 1 mapper write, got %d (halt=%q unique_pc=%d instructions=%d)",
+			len(res.BankSwitchWrites), res.HaltReason, res.UniquePCCount, res.Instructions)
+	}
+	assert.Equal(t, uint16(0x8014), res.BankSwitchWrites[0].PC)
+	assert.True(t, res.UniquePCCount >= 10)
+}
+
 func TestRunEscapesPPUDataStreamLoopWithDefaultVisitBudget(t *testing.T) {
 	mapper := &mockMapper{
 		memory: map[uint16]byte{

@@ -140,6 +140,15 @@ func (dis *Disasm) Process(ctx context.Context, mainWriter io.Writer, newBankWri
 	}()
 
 	emuTrace := dis.runAdvisoryEmuTrace(ctx)
+
+	// Hybrid mode keeps static discovery as the primary pass, then augments
+	// with emulator-discovered mapper contexts in a second pass.
+	if dis.isHybridTraceMode() {
+		if err := dis.followExecutionFlow(ctx); err != nil {
+			return nil, err
+		}
+	}
+
 	dis.seedFromAdvisoryEmuTrace(emuTrace)
 
 	if err := dis.followExecutionFlow(ctx); err != nil {

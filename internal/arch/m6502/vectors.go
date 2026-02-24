@@ -21,8 +21,9 @@ func (ar *Arch6502) Initialize() error {
 	return nil
 }
 
-// InitializeBankVectors initializes and queues unique vector handlers for a non-last PRG bank.
-// Only vectors that differ from the last bank are traced.
+// InitializeBankVectors initializes and queues valid vector handlers for a non-last PRG bank.
+// Vectors are queued even when addresses match the last bank because mapping-aware parse keys
+// treat bank context as distinct code.
 func (ar *Arch6502) InitializeBankVectors(bankIndex int) error {
 	type bankVectorProvider interface {
 		BankCount() int
@@ -40,12 +41,7 @@ func (ar *Arch6502) InitializeBankVectors(bankIndex int) error {
 	}
 
 	vectors := provider.BankVectors(bankIndex)
-	lastVectors := provider.BankVectors(bankCount - 1)
-
 	for i, address := range vectors {
-		if address == lastVectors[i] {
-			continue
-		}
 		if !isValidVectorAddress(address) {
 			continue
 		}

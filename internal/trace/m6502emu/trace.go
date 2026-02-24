@@ -590,9 +590,6 @@ func canRelaxVisitLimitForLoop(res *Result, pc uint16) bool {
 			return false
 		}
 	}
-	if len(res.BankSwitchWrites) > 32 {
-		return false
-	}
 	if pc < 0x8000 {
 		return false
 	}
@@ -605,7 +602,7 @@ func isTightCounterLoopPC(mapper Mapper, pc uint16) bool {
 	// Branch endpoint in a tight backward loop, e.g. BNE -4.
 	if isConditionalBranchOpcode(op0) {
 		target := pc + 2 + uint16(int16(int8(mapper.ReadMemory(pc+1))))
-		if target <= pc && pc-target <= 8 {
+		if target <= pc && pc-target <= 0x40 {
 			return true
 		}
 	}
@@ -626,6 +623,36 @@ func isTightCounterLoopPC(mapper Mapper, pc uint16) bool {
 		}
 	}
 
+	// Long indexed clear loops are common during startup, e.g.:
+	//   STA ...,X
+	//   ...
+	//   DEX
+	//   BNE <loop-start>
+	// Visit caps usually trigger at the loop start store instruction, not near DEX/BNE.
+	if isStoreOpcode(mapper.ReadMemory(pc)) {
+		for offset := uint16(0); offset <= 0x30; offset++ {
+			counterPC := pc + offset
+			if !isIndexCounterOpcode(mapper.ReadMemory(counterPC)) {
+				continue
+			}
+			if !isConditionalBranchOpcode(mapper.ReadMemory(counterPC + 1)) {
+				continue
+			}
+
+			target := counterPC + 3 + uint16(int16(int8(mapper.ReadMemory(counterPC+2))))
+			if target > counterPC {
+				continue
+			}
+			distance := int(counterPC) - int(target)
+			if distance <= 0 || distance > 0x40 {
+				continue
+			}
+			if target <= pc && pc <= counterPC {
+				return true
+			}
+		}
+	}
+
 	if isDelayLoopPrefaceOpcode(op0) &&
 		isIndexCounterOpcode(mapper.ReadMemory(pc+1)) &&
 		isConditionalBranchOpcode(mapper.ReadMemory(pc+2)) {
@@ -643,7 +670,7 @@ func isNearbyLoopTarget(basePC, counterPC, target uint16) bool {
 	}
 
 	distance := int(counterPC) - int(target)
-	if distance > 8 {
+	if distance > 0x40 {
 		return false
 	}
 
@@ -693,6 +720,21 @@ func isDelayLoopPrefaceOpcode(op byte) bool {
 		0x78, // SEI
 		0xD8, // CLD
 		0xF8: // SED
+		return true
+	default:
+		return false
+	}
+}
+
+func isStoreOpcode(op byte) bool {
+	switch op {
+	case 0x85, // STA zp
+		0x95, // STA zp,X
+		0x8D, // STA abs
+		0x9D, // STA abs,X
+		0x99, // STA abs,Y
+		0x81, // STA (zp,X)
+		0x91: // STA (zp),Y
 		return true
 	default:
 		return false

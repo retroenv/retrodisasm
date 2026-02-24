@@ -13,16 +13,18 @@ import (
 	"github.com/retroenv/retrogolib/log"
 )
 
-func TestInitializeBankVectors_QueuesUniqueValidVectors(t *testing.T) {
+func TestInitializeBankVectors_QueuesValidVectorsIncludingSameAddressAsLastBank(t *testing.T) {
 	mapper := &bankVectorMapperMock{
 		offsets: map[uint16]*offset.DisasmOffset{
 			0x9100: {},
+			0x9010: {},
 		},
 		memory: map[uint16]byte{
 			0x9100: 0xEA, // nop
+			0x9010: 0xEA, // nop
 		},
 		vectorsByBank: [][3]uint16{
-			{0x9100, 0x9010, 0xFFFF}, // bank 0: only NMI should be queued
+			{0x9100, 0x9010, 0xFFFF}, // bank 0: NMI + Reset are valid
 			{0x9000, 0x9010, 0x9020}, // last bank
 		},
 	}
@@ -37,11 +39,16 @@ func TestInitializeBankVectors_QueuesUniqueValidVectors(t *testing.T) {
 	err := arch.InitializeBankVectors(0)
 	assert.NoError(t, err)
 
-	assert.Len(t, dis.queued, 1)
+	assert.Len(t, dis.queued, 2)
 	assert.Equal(t, uint16(0x9100), dis.queued[0])
+	assert.Equal(t, uint16(0x9010), dis.queued[1])
 
 	offsetInfo := mapper.OffsetInfo(0x9100)
 	assert.Equal(t, "NMI_Bank0", offsetInfo.Label)
+	assert.True(t, offsetInfo.IsType(program.CallDestination))
+
+	offsetInfo = mapper.OffsetInfo(0x9010)
+	assert.Equal(t, "Reset_Bank0", offsetInfo.Label)
 	assert.True(t, offsetInfo.IsType(program.CallDestination))
 }
 
@@ -54,7 +61,7 @@ func TestInitializeBankVectors_SkipsInvalidOpcode(t *testing.T) {
 			0x9200: 0x02, // invalid opcode
 		},
 		vectorsByBank: [][3]uint16{
-			{0x9200, 0x9010, 0x9020}, // bank 0
+			{0x9200, 0x0000, 0xFFFF}, // bank 0: only invalid opcode candidate
 			{0x9000, 0x9010, 0x9020}, // last bank
 		},
 	}

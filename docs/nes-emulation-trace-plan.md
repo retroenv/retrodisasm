@@ -1463,6 +1463,123 @@ Post-phase note:
 - The PPU-loop hook improved Alfred trace progression again (new PCs reached, hotspot shifted deeper), confirming the bottleneck was partly PPU loop churn rather than branch frontier size.
 - Verification mismatch remains unchanged, so remaining blockers are likely higher-level frame/input progression and mapper-path realism, not raw startup-loop depth.
 
+### Phase 20: Rom City Rampage Hybrid Stabilization + Coverage Lift
+
+Status: Completed (2026-02-24)
+
+1. Fix `hybrid` parse ordering so emulator seeding cannot suppress static discovery.
+2. Extend startup-loop relaxation for long indexed clear loops used by MMC5 startup code.
+3. Make high-coverage hybrid (`branch=1024`) verify cleanly for both `asm6` and `ca65`.
+
+Acceptance:
+
+1. `Rom City Rampage.nes` verifies for both assemblers with higher hybrid coverage settings.
+2. Generated `.asm` for Rom City Rampage has materially more code than static/low-branch hybrid output.
+3. Focused unit/integration suites remain green.
+
+Implementation notes:
+
+- `internal/disasm/disasm.go`:
+  - `hybrid` mode now runs in two passes:
+    - static `followExecutionFlow()` first
+    - emulator-seeded additive pass second
+  - This prevents emulator queue seeding from reducing static parse coverage.
+- `internal/disasm/emutrace.go`:
+  - Added `traceMode()`/`isHybridTraceMode()` helpers used by the new two-pass flow.
+- `internal/trace/m6502emu/trace.go`:
+  - Startup loop heuristics broadened for long indexed clear loops (e.g. `STA ...,X ... DEX/BNE` patterns).
+  - Backward-branch distance checks increased for startup loop detection.
+  - Relaxation guard no longer hard-fails only because mapper register writes are numerous when they do not change mapping.
+- `internal/trace/m6502emu/trace_test.go`:
+  - Added `TestRunEscapesLongIndexedStartupClearLoopWithDefaultVisitBudget`.
+- `internal/disasm/code.go`:
+  - Branch-target label rewriting is now constrained to safer contexts.
+  - For non-default mapping contexts, absolute branch/call operands keep literal targets (avoids cross-mapping label address drift that caused a 1-byte PRG mismatch in Rom City Rampage).
+- `scripts/verify_rom_city_rampage.sh`:
+  - Default hybrid branch budget updated from `512` to `1024` after stabilization.
+
+Validation:
+
+- Focused tests:
+  - `GOCACHE=/tmp/retrodisasm_gocache_rcb go test ./internal/trace/m6502emu -count=1`
+  - `GOCACHE=/tmp/retrodisasm_gocache_rcb go test ./internal/disasm -count=1`
+  - `GOCACHE=/tmp/retrodisasm_gocache_rcb go test ./internal/mapper -count=1`
+  - Result: success.
+- Rom City Rampage verify (high-coverage hybrid):
+  - `go run . -verify -q -a asm6 -s nes -trace-mode hybrid -trace-max-instr 1000000 -trace-max-visits-per-state 128 -trace-max-branch-states 1024 -o /tmp/rc_verify4_asm6.asm "internal/testroms/special/Rom City Rampage.nes"`
+  - `go run . -verify -q -a ca65 -s nes -trace-mode hybrid -trace-max-instr 1000000 -trace-max-visits-per-state 128 -trace-max-branch-states 1024 -o /tmp/rc_verify4_ca65.asm "internal/testroms/special/Rom City Rampage.nes"`
+  - Result: both pass.
+- Regenerated target artifacts in requested directory:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Output:
+    - `internal/testroms/special/Rom City Rampage.asm6.asm` (`50664` lines, `code=973`)
+    - `internal/testroms/special/Rom City Rampage.ca65.asm` (`50589` lines, `code=973`)
+- Coverage/output comparison (Rom City Rampage):
+  - low-branch hybrid/static regime (`branch=512`): `code=893`
+  - stabilized high-branch hybrid (`branch=1024`): `code=973`
+
+Post-phase note:
+
+- Rom City Rampage now verifies with both assemblers under a higher-coverage hybrid setting while producing noticeably more disassembled code.
+- Remaining opportunity is to further increase `emu_unique_pc` on mapper-heavy paths without relying on broader speculative branch state growth.
+
+### Phase 21: Rom City Rampage Bank-Context Expansion (Verified Higher Coverage)
+
+Status: Completed (2026-02-24)
+
+1. Expand mapper-context bank tracing so additional-bank vector seeding does not skip same-address vectors.
+2. Raise Rom City Rampage hybrid trace budgets to a verified higher-coverage profile.
+3. Keep strict reassembly parity for both `asm6` and `ca65`.
+
+Acceptance:
+
+1. Rom City Rampage output in `internal/testroms/special` verifies for both assemblers.
+2. Rom City Rampage emitted code increases again versus Phase 20 output.
+3. Focused architecture/disasm/mapper/trace tests remain green.
+
+Implementation notes:
+
+- `internal/arch/m6502/vectors.go`:
+  - `InitializeBankVectors()` now queues valid bank vectors even when vector addresses match the last bank.
+  - Rationale: parse keys are mapping-aware, so same CPU address under different mapping can still be distinct code.
+- `internal/arch/m6502/vectors_bank_test.go`:
+  - Updated coverage for the new behavior:
+    - same-address-as-last vectors are now expected to queue when valid
+    - invalid-opcode case now isolates only invalid candidate vectors
+- `internal/disasm/emutrace.go`:
+  - Advisory seed now also queues `BranchAlternates` destinations and vector handlers (`$FFFA/$FFFC/$FFFE`) across discovered mapping signatures (deterministic signature order).
+  - This is additive and preserves mapping-context parse behavior.
+- `scripts/verify_rom_city_rampage.sh`:
+  - Updated default profile to:
+    - `-trace-max-instr 2000000`
+    - `-trace-max-visits-per-state 1024`
+    - `-trace-max-branch-states 4096`
+
+Validation:
+
+- Focused tests:
+  - `GOCACHE=/tmp/retrodisasm_gocache_rce go test ./internal/disasm ./internal/arch/m6502 ./internal/trace/m6502emu ./internal/mapper -count=1`
+  - Result: success.
+- Rom City Rampage verify:
+  - `go run . -verify -q -a asm6 -s nes -trace-mode hybrid -trace-max-instr 2000000 -trace-max-visits-per-state 1024 -trace-max-branch-states 4096 -o /tmp/rc_revert_asm6.asm "internal/testroms/special/Rom City Rampage.nes"`
+  - `go run . -verify -q -a ca65 -s nes -trace-mode hybrid -trace-max-instr 2000000 -trace-max-visits-per-state 1024 -trace-max-branch-states 4096 -o /tmp/rc_revert_ca65.asm "internal/testroms/special/Rom City Rampage.nes"`
+  - Result: both pass.
+- Regenerated target artifacts:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Output:
+    - `internal/testroms/special/Rom City Rampage.asm6.asm` (`50791` lines, `code=1075`)
+    - `internal/testroms/special/Rom City Rampage.ca65.asm` (`50716` lines, `code=1075`)
+
+Coverage/output comparison (Rom City Rampage):
+
+- Phase 20 profile (`instr=1,000,000`, `visits=128`, `branch=1024`): `code=973`
+- Phase 21 profile (`instr=2,000,000`, `visits=1024`, `branch=4096`): `code=1075`
+
+Post-phase note:
+
+- Rom City Rampage now emits another measurable step up in code while preserving deterministic rebuild parity.
+- Output is still data-heavy overall, indicating remaining gains require deeper mapper/IO path realism rather than budget-only tuning.
+
 ## Testing Plan
 
 1. Unit tests

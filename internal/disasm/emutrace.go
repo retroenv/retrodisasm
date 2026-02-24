@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -106,7 +107,55 @@ func (dis *Disasm) seedFromAdvisoryEmuTrace(result *m6502emu.Result) {
 		dis.AddAddressToParse(step.PC, step.PC, 0, nil, false)
 	}
 
+	for _, alt := range result.BranchAlternates {
+		key := ParseKey{
+			PC:        alt.Address,
+			MappingID: alt.MappingSignature,
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+
+		if !dis.mapper.RestoreMappingSignature(alt.MappingSignature) {
+			continue
+		}
+		dis.AddAddressToParse(alt.Address, alt.Address, alt.FromPC, nil, false)
+	}
+	dis.seedVectorsForAdvisoryMappings(result)
+
 	dis.mapper.RestoreDefaultMapping()
+}
+
+func (dis *Disasm) seedVectorsForAdvisoryMappings(result *m6502emu.Result) {
+	if len(result.Steps) == 0 {
+		return
+	}
+
+	signatureSet := map[uint64]struct{}{}
+	for _, step := range result.Steps {
+		signatureSet[step.MappingSignature] = struct{}{}
+	}
+	signatures := make([]uint64, 0, len(signatureSet))
+	for signature := range signatureSet {
+		signatures = append(signatures, signature)
+	}
+	slices.Sort(signatures)
+
+	vectorAddresses := []uint16{0xFFFA, 0xFFFC, 0xFFFE}
+
+	for _, signature := range signatures {
+		if !dis.mapper.RestoreMappingSignature(signature) {
+			continue
+		}
+		for _, vectorAddress := range vectorAddresses {
+			handler, err := dis.ReadMemoryWord(vectorAddress)
+			if err != nil || handler == 0 {
+				continue
+			}
+			dis.AddAddressToParse(handler, handler, 0, nil, false)
+		}
+	}
 }
 
 func (dis *Disasm) logAdvisoryEmuTraceComparison(result *m6502emu.Result) {
@@ -160,13 +209,21 @@ func (dis *Disasm) staticParsedPCSet() map[uint16]struct{} {
 }
 
 func (dis *Disasm) shouldRunAdvisoryEmuTrace() bool {
-	switch strings.ToLower(strings.TrimSpace(dis.options.TraceMode)) {
+	switch dis.traceMode() {
 	case "emu", "hybrid":
 		return true
 	}
 
 	// Backward compatibility for existing env-based flows.
 	return envBoolEnabled(envEmuTraceEnable)
+}
+
+func (dis *Disasm) isHybridTraceMode() bool {
+	return dis.traceMode() == "hybrid"
+}
+
+func (dis *Disasm) traceMode() string {
+	return strings.ToLower(strings.TrimSpace(dis.options.TraceMode))
 }
 
 func envBoolEnabled(key string) bool {
