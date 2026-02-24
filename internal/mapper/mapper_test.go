@@ -493,3 +493,88 @@ func TestApplyMapperWrite_MMC1(t *testing.T) {
 	assert.Equal(t, 1, bankID)
 	assert.Equal(t, uint32(0x4000), physicalOffset)
 }
+
+func TestApplyMapperWrite_MMC5Mode3(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		PRG:    make([]byte, 0x20000), // 16 x 8KB banks
+		Mapper: 5,
+	}
+	arch := &mockArchitecture{bankWindowSize: 0x2000}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+
+	// Mode 3: four independent 8KB windows.
+	changed := mapper.ApplyMapperWrite(0x5100, 0x03)
+	changed = mapper.ApplyMapperWrite(0x5114, 0x81) || changed
+	changed = mapper.ApplyMapperWrite(0x5115, 0x82) || changed
+	changed = mapper.ApplyMapperWrite(0x5116, 0x83) || changed
+	changed = mapper.ApplyMapperWrite(0x5117, 0x84) || changed
+	assert.True(t, changed)
+
+	bankID, physicalOffset, ok := mapper.ResolveAddress(0x8000)
+	assert.True(t, ok)
+	assert.Equal(t, 0, bankID)
+	assert.Equal(t, uint32(0x2000), physicalOffset)
+
+	bankID, physicalOffset, ok = mapper.ResolveAddress(0xA000)
+	assert.True(t, ok)
+	assert.Equal(t, 0, bankID)
+	assert.Equal(t, uint32(0x4000), physicalOffset)
+
+	bankID, physicalOffset, ok = mapper.ResolveAddress(0xC000)
+	assert.True(t, ok)
+	assert.Equal(t, 0, bankID)
+	assert.Equal(t, uint32(0x6000), physicalOffset)
+
+	bankID, physicalOffset, ok = mapper.ResolveAddress(0xE000)
+	assert.True(t, ok)
+	assert.Equal(t, 1, bankID)
+	assert.Equal(t, uint32(0x0000), physicalOffset)
+}
+
+func TestApplyMapperWrite_MMC5ModeWritePreservesDefaultMapping(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		PRG:    make([]byte, 0x20000), // 16 x 8KB banks
+		Mapper: 5,
+	}
+	arch := &mockArchitecture{bankWindowSize: 0x2000}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+
+	changed := mapper.ApplyMapperWrite(0x5100, 0x03)
+	assert.False(t, changed)
+
+	bankID, physicalOffset, ok := mapper.ResolveAddress(0xE000)
+	assert.True(t, ok)
+	assert.Equal(t, 3, bankID)
+	assert.Equal(t, uint32(0x6000), physicalOffset)
+}
+
+func TestSnapshotRestoreRuntimeState_MMC5(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		PRG:    make([]byte, 0x20000), // 16 x 8KB banks
+		Mapper: 5,
+	}
+	arch := &mockArchitecture{bankWindowSize: 0x2000}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+
+	snapshot := mapper.SnapshotRuntimeState()
+
+	mapper.ApplyMapperWrite(0x5100, 0x03)
+	mapper.ApplyMapperWrite(0x5114, 0x81)
+	mapper.ApplyMapperWrite(0x5115, 0x82)
+	mapper.ApplyMapperWrite(0x5116, 0x83)
+	mapper.ApplyMapperWrite(0x5117, 0x84)
+
+	ok := mapper.RestoreRuntimeState(snapshot)
+	assert.True(t, ok)
+
+	bankID, physicalOffset, valid := mapper.ResolveAddress(0xE000)
+	assert.True(t, valid)
+	assert.Equal(t, 3, bankID)
+	assert.Equal(t, uint32(0x6000), physicalOffset)
+}

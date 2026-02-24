@@ -137,7 +137,11 @@ func (b *nesBus) Write(address uint16, value uint8) {
 		return
 
 	case address <= 0x5FFF:
-		// Expansion area writes ignored.
+		// Mapper-controlled expansion registers (e.g., MMC5 $5100-$5117) live here.
+		// Forward writes so runtime PRG mapping can react.
+		if b.onMapperWrite != nil && address >= 0x5000 {
+			b.onMapperWrite(address, value)
+		}
 		return
 
 	case address <= 0x7FFF:

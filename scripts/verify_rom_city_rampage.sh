@@ -15,6 +15,7 @@ mkdir -p "${OUT_DIR}"
 echo "Verifying Rom City Rampage with ca65 + asm6"
 echo "ROM: ${ROM_PATH}"
 echo "Output dir: ${OUT_DIR}"
+echo "Trace mode: hybrid (instr=1000000 visits=128 branch=512)"
 
 for assembler in ca65 asm6; do
   out_file="${OUT_DIR}/Rom City Rampage.${assembler}.asm"
@@ -27,6 +28,10 @@ for assembler in ca65 asm6; do
     cd "${REPO_ROOT}"
     GOCACHE="${gocache_dir}" go run . \
       -verify -q -a "${assembler}" -s nes \
+      -trace-mode hybrid \
+      -trace-max-instr 1000000 \
+      -trace-max-visits-per-state 128 \
+      -trace-max-branch-states 512 \
       -o "${out_file}" \
       "${ROM_PATH}" >"${log_file}" 2>&1
   )

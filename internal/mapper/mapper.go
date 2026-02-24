@@ -22,6 +22,7 @@ type Mapper struct {
 
 	mappingSnapshots map[uint64][]mappedBank
 	mmc1             mmc1Runtime
+	mmc5             mmc5Runtime
 
 	dis    disasm          // Reference to disasm for single-bank systems
 	vars   variableManager // Reference to variable manager
