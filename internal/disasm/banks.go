@@ -482,6 +482,8 @@ type correlationState struct {
 	jumpPointers             map[uint16]struct{}
 	indirectZPRefs           map[uint16]struct{}
 	transferArithmeticSignal bool
+	phaCount                 int
+	stackDispatch            bool
 }
 
 func newCorrelationState() correlationState {
@@ -506,7 +508,13 @@ func (dis *Disasm) hasSplitPointerRuntimeCorrelation(firstPC, secondPC, end, loo
 
 	state := newCorrelationState()
 	dis.scanCorrelationWindow(windowStart, windowEnd, &state)
-	return checkCorrelationSignals(&state)
+	if !checkCorrelationSignals(&state) {
+		return false
+	}
+	if state.stackDispatch {
+		dis.stats.splitSeedAcceptedStackDisp++
+	}
+	return true
 }
 
 // scanCorrelationWindow iterates instructions in the correlation window and populates state.
@@ -539,6 +547,14 @@ func (dis *Disasm) collectCorrelationOp(pc uint16, opByte byte, opcode cpum6502.
 	}
 	if isPointerTransferArithmeticSignalOpcode(opByte) {
 		state.transferArithmeticSignal = true
+	}
+	switch opByte {
+	case 0x48: // PHA
+		state.phaCount++
+	case 0x60: // RTS
+		if state.phaCount >= 2 {
+			state.stackDispatch = true
+		}
 	}
 }
 
@@ -589,6 +605,13 @@ func (dis *Disasm) collectIndirectZPRef(pc uint16, opcode cpum6502.Opcode, state
 
 // checkCorrelationSignals evaluates the collected address sets for split pointer correlation evidence.
 func checkCorrelationSignals(state *correlationState) bool {
+	// Stack dispatch: LDA tbl_lo,X / PHA / LDA tbl_hi,X / PHA / RTS
+	// is a common NES dispatch pattern that builds the target address on
+	// the stack and returns to it. No stores or indirect refs are needed.
+	if state.stackDispatch {
+		return true
+	}
+
 	for base := range state.stores {
 		if base == 0xFFFF {
 			continue

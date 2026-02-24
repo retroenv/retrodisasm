@@ -617,6 +617,52 @@ func TestRunEscapesPPUStatusPollingLoopAtNonBranchPC(t *testing.T) {
 	assert.Equal(t, uint16(0x8007), res.BankSwitchWrites[0].PC)
 }
 
+func TestRunBailsOnUnofficialOpcodeAndContinuesAlternatePath(t *testing.T) {
+	// When the trace encounters an unofficial opcode it should bail out of
+	// the current path and continue with queued branch states. Here the
+	// primary path falls through to an unofficial opcode ($E2 = NOP #imm),
+	// while the alternate branch leads to valid code with a mapper write.
+	mapper := &mockMapper{
+		memory: map[uint16]byte{
+			0xFFFC: 0x00, // reset vector low
+			0xFFFD: 0x80, // reset vector high -> $8000
+			0x8000: 0xA9, // lda #$01 (Z=0)
+			0x8001: 0x01,
+			0x8002: 0xF0, // beq +4 (not taken -> alt=$8008)
+			0x8003: 0x04,
+			0x8004: 0xE2, // unofficial NOP #imm (primary path dead end)
+			0x8005: 0x19,
+			0x8006: 0xE2, // more unofficial
+			0x8007: 0x19,
+			0x8008: 0xA9, // lda #$42 (alternate branch path)
+			0x8009: 0x42,
+			0x800A: 0x8D, // sta $8000 (mapper write marker)
+			0x800B: 0x00,
+			0x800C: 0x80,
+			0x800D: 0x4C, // jmp $800D
+			0x800E: 0x0D,
+			0x800F: 0x80,
+		},
+		signature: 0x5B,
+	}
+
+	res, err := Run(context.Background(), &cartridge.Cartridge{}, mapper, Config{
+		MaxInstructions: 64,
+		MaxVisitsPerPC:  8,
+		MaxBranchStates: 8,
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(res.BankSwitchWrites))
+	assert.Equal(t, uint16(0x800A), res.BankSwitchWrites[0].PC)
+
+	// The trace should never have visited the unofficial opcode addresses.
+	for _, step := range res.Steps {
+		if step.PC == 0x8004 || step.PC == 0x8006 {
+			t.Errorf("trace visited unofficial opcode at $%04X", step.PC)
+		}
+	}
+}
+
 func TestRunEscapesPPUStatusPollingLoopWithHighVisitBudget(t *testing.T) {
 	// When MaxVisitsPerPC is high (>= bootLoopVisitLimit), the generic loop
 	// relaxation provides no headroom. The PPU status polling detector must
@@ -649,6 +695,82 @@ func TestRunEscapesPPUStatusPollingLoopWithHighVisitBudget(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(res.BankSwitchWrites))
 	assert.Equal(t, uint16(0x8007), res.BankSwitchWrites[0].PC)
+}
+
+func TestRunPostBankSwitchAlternatesPrioritized(t *testing.T) {
+	// Branch alternates created after a bank-switch should be explored before
+	// alternates created at the initial mapping. This tests that the frontier
+	// queue prioritizes post-switch alternates.
+	//
+	// Layout:
+	//   $8000: LDA #$01           ; Z=0
+	//   $8002: BEQ $8020          ; not taken → alternate at $8020 (INITIAL mapping)
+	//   $8004: STA $8000          ; mapper write → signature changes
+	//   $8007: BEQ $8030          ; not taken → alternate at $8030 (NEW mapping)
+	//   $8009: JMP $8009          ; halt primary trace
+	//   $8020: STA $9000          ; pre-switch alternate marker
+	//   $8023: JMP $8023
+	//   $8030: STA $A000          ; post-switch alternate marker
+	//   $8033: JMP $8033
+	mapper := &mockMapper{
+		memory: map[uint16]byte{
+			0xFFFC: 0x00, // reset vector low
+			0xFFFD: 0x80, // reset vector high -> $8000
+			0x8000: 0xA9, // lda #$01
+			0x8001: 0x01,
+			0x8002: 0xF0, // beq $8020 (offset $1C: $8004 + $1C = $8020)
+			0x8003: 0x1C,
+			0x8004: 0x8D, // sta $8000 (mapper write)
+			0x8005: 0x00,
+			0x8006: 0x80,
+			0x8007: 0xF0, // beq $8030 (offset $27: $8009 + $27 = $8030)
+			0x8008: 0x27,
+			0x8009: 0x4C, // jmp $8009
+			0x800A: 0x09,
+			0x800B: 0x80,
+			// Pre-switch alternate target
+			0x8020: 0x8D, // sta $9000 (mapper write marker)
+			0x8021: 0x00,
+			0x8022: 0x90,
+			0x8023: 0x4C, // jmp $8023
+			0x8024: 0x23,
+			0x8025: 0x80,
+			// Post-switch alternate target
+			0x8030: 0x8D, // sta $A000 (mapper write marker)
+			0x8031: 0x00,
+			0x8032: 0xA0,
+			0x8033: 0x4C, // jmp $8033
+			0x8034: 0x33,
+			0x8035: 0x80,
+		},
+		signature: 0x50,
+	}
+
+	res, err := Run(context.Background(), &cartridge.Cartridge{}, mapper, Config{
+		MaxInstructions: 200,
+		MaxVisitsPerPC:  4,
+		MaxBranchStates: 8,
+	})
+	assert.NoError(t, err)
+
+	// The post-bank-switch alternate ($8030) should be explored before
+	// the pre-switch alternate ($8020).
+	var firstPostSwitchIdx, firstPreSwitchIdx int
+	for i, step := range res.Steps {
+		if step.PC == 0x8030 && firstPostSwitchIdx == 0 {
+			firstPostSwitchIdx = i + 1 // +1 to distinguish from zero-value
+		}
+		if step.PC == 0x8020 && firstPreSwitchIdx == 0 {
+			firstPreSwitchIdx = i + 1
+		}
+	}
+
+	assert.Greater(t, firstPostSwitchIdx, 0,
+		"post-bank-switch alternate at $8030 should be visited")
+	if firstPreSwitchIdx > 0 && firstPostSwitchIdx > 0 {
+		assert.Less(t, firstPostSwitchIdx, firstPreSwitchIdx,
+			"post-bank-switch alternate should be explored before pre-switch alternate")
+	}
 }
 
 type mockMapper struct {

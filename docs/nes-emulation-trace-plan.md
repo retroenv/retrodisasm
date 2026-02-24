@@ -3142,6 +3142,141 @@ Validation:
 
 Analysis: The halt at `$E2F1` is a data-execution issue, not a loop detection gap. The address range `$E2E0-$E2FF` contains repeated `$E2 $19` data bytes that the CPU interprets as unofficial 2-byte NOPs. The visit limit correctly stops this path. Future trace quality improvements should focus on detecting when the trace enters data regions (e.g., unofficial opcode sequences) and aborting early rather than consuming visit budget.
 
+### Phase 46: Unofficial Opcode Trap
+
+Status: Completed (2026-02-24)
+
+1. Add `isUnofficialOpcode()` check in the main trace loop — before the visit limit check, read the opcode at the current PC. If it's an unofficial/undefined 6502 opcode, treat the path as a dead-end and restore the next branch state.
+2. Add `TestRunBailsOnUnofficialOpcodeAndContinuesAlternatePath` — verifies the trace skips unofficial opcodes and successfully follows alternate branch paths to reach valid code.
+
+Acceptance:
+
+1. Both `asm6` and `ca65` outputs verify successfully for Rom City Rampage.
+2. Full test suite and lint remain clean.
+3. Unofficial opcode trap correctly prevents data-region execution (verified by unit test).
+
+Implementation notes:
+
+- `internal/trace/m6502emu/trace.go`:
+  - Added `isUnofficialOpcode(op byte) bool` that checks `cpu6502.Opcodes[op]` for `Instruction == nil || Instruction.Unofficial`.
+  - Inserted check in `runTraceLoop` after `CheckInterrupts()` and before `checkAndHandleVisitLimit()`. When the trap fires, it sets `lastHaltReason` and calls `restoreNextState` to continue with the next queued branch state.
+- `internal/trace/m6502emu/trace_test.go`:
+  - Added `TestRunBailsOnUnofficialOpcodeAndContinuesAlternatePath`: primary path contains unofficial `$E2 $19` opcodes; alternate branch path leads to a mapper write marker. Test verifies the trace reaches the mapper write AND never visits the unofficial opcode PCs.
+
+Validation:
+
+- Full tests:
+  - `go test ./...`
+  - Result: success.
+- Lint:
+  - `make lint`
+  - Result: `0 issues`.
+- Rom City Rampage verify/regeneration:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+  - Output unchanged (`61027` / `61102` lines).
+- Code-density result:
+  - After Phase 45: `7580`
+  - After Phase 46: `7580`
+  - Delta: `+0` code lines.
+- Telemetry:
+  - Metrics unchanged for Rom City Rampage — the halt at `$E2F1` occurs in a **non-default bank mapping** where that CPU address maps to different (official) physical bytes. The unofficial data at `$E2F1` in the default mapping is not what the trace encounters.
+  - The trap is a safety improvement that prevents data execution in traces that drift into regions containing unofficial opcodes. Its impact will be visible on ROMs where the trace actually reaches unofficial opcodes in the active bank mapping.
+
+Analysis: The unchanged metrics reveal a key insight about the emu trace's behavior. The halt at `$E2F1` is NOT the trace executing unofficial opcodes — it's executing **official code in a different bank mapping** at the same CPU address. The `unique_mapping=3` confirms the trace operates under multiple mappings. The unofficial opcodes visible at `$E2F1` in the disassembly output are from the **default mapping** (which the static pass disassembles), while the emu trace executes a **switched mapping** at that address. This explains why the trace discovers `emu_only_pc=0` — it's visiting the same CPU addresses as static analysis, just under different bank mappings. The emu trace's value is in mapper-write discovery (6,157 writes, 1,032 mapping changes) and branch-alternate seeding (8,343 states), not in discovering new CPU addresses.
+
+### Phase 47: Stack Dispatch Correlation Signal
+
+Status: Completed (2026-02-24)
+
+1. Add PHA+PHA+RTS stack dispatch detection as a split-table correlation signal. This is a common NES dispatch pattern: `LDA tbl_lo,X / PHA / LDA tbl_hi,X / PHA / RTS` builds the target address on the stack and returns to it. No ZP stores or indirect references are needed.
+2. Track `phaCount` and `stackDispatch` in `correlationState`. The signal fires when 2+ PHA instructions precede an RTS in the correlation window.
+3. Add `splitSeedAcceptedStackDisp` telemetry counter.
+
+Acceptance:
+
+1. Both `asm6` and `ca65` outputs verify successfully for Rom City Rampage.
+2. Full test suite and lint remain clean.
+3. Stack dispatch signal recovered 2 pairs from correlation rejection; downstream opcode/shape gates correctly identified them as data, confirming the multi-stage pipeline's safety.
+
+Implementation notes:
+
+- `internal/disasm/banks.go`:
+  - Added `phaCount int` and `stackDispatch bool` to `correlationState`.
+  - Extended `collectCorrelationOp` to track PHA (0x48) count and detect RTS (0x60) following 2+ PHAs.
+  - Added stack dispatch as the first check in `checkCorrelationSignals`, before the store-based checks.
+  - Added `splitSeedAcceptedStackDisp` increment in `hasSplitPointerRuntimeCorrelation` when stack dispatch is the accepting signal.
+- `internal/disasm/stats.go`:
+  - Added `splitSeedAcceptedStackDisp` field with log key `split_seed_accepted_stack_dispatch`.
+
+Validation:
+
+- Full tests:
+  - `go test ./...`
+  - Result: success.
+- Lint:
+  - `make lint`
+  - Result: `0 issues`.
+- Rom City Rampage verify/regeneration:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+  - Output unchanged (`61027` / `61102` lines).
+- Code-density result:
+  - After Phase 46: `7580`
+  - After Phase 47: `7580`
+  - Delta: `+0` code lines.
+- Telemetry:
+  - `split_seed_rejected_correlation`: 24 → 22 (-2 pairs recovered by stack dispatch signal).
+  - `split_seed_accepted_stack_dispatch`: 2 (new pairs passing correlation).
+  - `split_seed_rejected_extract`: 0 → 1 (one recovered pair failed extraction).
+  - `split_seed_reject_invalid_target`: 25 → 32 (+7 new entries checked from recovered pairs).
+  - `split_seed_reject_opcode_gate`: 36 → 41 (+5 opcode rejects from new entries).
+  - `split_seed_reject_shape`: 0 → 2 (+2 shape rejects from new entries).
+  - `split_seed_accepted_targets`: 37 (unchanged — recovered pairs contained data, not genuine dispatch tables).
+
+Analysis: The stack dispatch signal correctly expanded correlation coverage — 2 pairs that were previously rejected now pass. However, the downstream gates (opcode, shape, invalid target) correctly identified these pairs' target entries as data. This demonstrates the multi-stage pipeline's defense-in-depth: the correlation check can be safely broadened because downstream gates catch false positives. The remaining 22 correlation rejections are pairs without any recognizable dispatch mechanism in their vicinity.
+
+### Phase 48: Post-Bank-Switch Frontier Prioritization
+
+**Goal:** Increase the chance that branch alternates discover code reachable only through bank-switched mappings by prioritizing post-bank-switch alternates in the frontier queue.
+
+**Background:** Phase 47 analysis showed `emu_only_pc=0` — the emulator trace discovers no PCs that static analysis misses. All 8,343 branch alternates explored code under the same initial mapping. Branch alternates created after mapper writes (different `MappingSignature`) are more likely to reach bank-switched code paths.
+
+An initial attempt at per-state visit budget isolation was explored and abandoned. Per-state isolation — giving each branch alternate a fresh visit counter — was counterproductive because it removed the "fast-fail" mechanism: in the original shared counter, hot PCs (already visited 1024+ times by the primary trace) immediately block alternates, forcing them to quickly yield and let other alternates run. With per-state isolation, alternates re-entered boot loops at full budget, wasting instruction budget and resulting in fewer alternates explored (4678 vs 8343) and fewer unique PCs (142 vs 495).
+
+**Implementation:**
+
+1. Track `initialMapping` in `traceState` — captured at the start of `runTraceLoop`.
+2. Split the frontier into two queues: `priorityFrontier` (post-bank-switch alternates) and `frontier` (normal alternates).
+3. In `recordBranchAlternate`: if `signatureBefore != ts.initialMapping`, append to `priorityFrontier`; otherwise append to `frontier`.
+4. In `restoreNextState`: pop from `priorityFrontier` first (FIFO), then from `frontier`.
+5. Budget check uses `ts.frontierSize()` (sum of both queues).
+
+**Test:** `TestRunPostBankSwitchAlternatesPrioritized` — creates a sequence with a pre-switch BEQ alternate and a post-switch BEQ alternate, verifies the post-switch alternate is explored first in the trace steps.
+
+**Validation:**
+
+- `go test ./...` — all pass.
+- `make lint` — 0 issues.
+- `bash scripts/verify_rom_city_rampage.sh` — both assemblers pass.
+- Code-density result:
+  - After Phase 47: `7580`
+  - After Phase 48: `7580`
+  - Delta: `+0` code lines.
+- Emu trace metrics (comparison):
+  - `unique_pc`: 495 → 495 (no regression)
+  - `emu_only_pc`: 0 → 0 (no improvement on emu-only discovery for this ROM)
+  - `instructions`: 292,138 → 280,812 (-4% more efficient)
+  - `branch_alternates`: 8,343 → 9,104 (+9% more alternates explored)
+  - `branch_alternate_budget_drops`: 9,718 → 6,141 (-37% fewer drops)
+  - `code_bytes_marked`: 15,863 → 16,106 (+243 more code bytes discovered)
+  - `parsed_offsets`: 9,984 → 10,349 (+365 more offsets parsed)
+  - `elapsed` (emu trace only): 617ms → 791ms (+28%)
+  - `halt_reason`: `$E2F1` → `$C24B` (different halt site — trace takes different paths)
+- Output unchanged: ca65 61,027 lines, asm6 61,102 lines.
+
+**Analysis:** The frontier prioritization successfully explores more branch alternates (+9%) with fewer budget drops (-37%) by giving post-bank-switch alternates first access. The +243 code bytes marked indicates the prioritization helps downstream static analysis discover additional code (via more diverse trace coverage influencing queue seeding). The `emu_only_pc=0` result confirms that for Rom City Rampage specifically, all emu-discovered code is redundant with static analysis — the split-table pipeline already finds these PCs. The value of frontier prioritization will be greater for ROMs where bank-switched code isn't reachable via static pointer tables.
+
 ## Progress Summary (as of 2026-02-24)
 
 ### Completed Phases
@@ -3195,6 +3330,9 @@ Analysis: The halt at `$E2F1` is a data-execution issue, not a loop detection ga
 | 43 | Loop Relaxation + Mid-Run RTS | Remove bank-switch guard, mid-run RTS/RTI split acceptance, `code=7580` |
 | 44 | Inside-Loop Body Relaxation | Non-branch instruction loop-body detection, trace halt advanced `$E2E7`→`$E2F1` |
 | 45 | PPU Status Polling Detection | `BIT/LDA $2002` loop detection with `ppuLoopVisitLimit=8192`, +3,307 trace instructions |
+| 46 | Unofficial Opcode Trap | Skip paths executing unofficial/undefined opcodes, prevent data-region budget waste |
+| 47 | Stack Dispatch Correlation | PHA+PHA+RTS correlation signal, recovered 2 pairs (downstream gates confirmed as data) |
+| 48 | Post-Bank-Switch Frontier Prioritization | Dual-queue frontier: post-switch alternates explored first, +9% alternates, -37% drops, +243 code bytes |
 
 ### Current Metrics
 
@@ -3224,8 +3362,9 @@ Analysis: The halt at `$E2F1` is a data-execution issue, not a loop detection ga
 1. **Hybrid two-pass model** (Phase 20): Static pass first, then emulator-seeded additive pass prevents emu queue from suppressing static discovery.
 2. **Advisory trace** (Phase 1+): Emulator trace is informational; disassembly decisions remain independent, preventing cascade from emu-path errors.
 3. **Mapper-1 branch clamp** (Phase 31): Tiered budget caps (512/128/64) based on instruction/visit budgets; pragmatic guard until mapper-1-safe heuristics are available.
-4. **Split-table pipeline** (Phases 32-41, 43): Multi-stage gated pipeline: plausibility → correlation → extraction → opcode gate → shape → weak-entry tiers → mid-run RTS/RTI acceptance.
-5. **Deterministic I/O stubs** (Phases 17-19, 43-45): PPU status alternation, controller serial emulation, PPU data-loop relaxation; all snapshot-safe for branch replay. Phase 43 removed the bank-switch guard that blocked loop relaxation for mapper-heavy ROMs. Phase 44 added inside-loop body detection so non-branch instructions within tight loops also get relaxed visit limits. Phase 45 added PPU status polling (`BIT/LDA $2002`) detection for the higher `ppuLoopVisitLimit`.
+4. **Split-table pipeline** (Phases 32-41, 43, 47): Multi-stage gated pipeline: plausibility → correlation → extraction → opcode gate → shape → weak-entry tiers → mid-run RTS/RTI acceptance → stack dispatch correlation.
+5. **Deterministic I/O stubs** (Phases 17-19, 43-46): PPU status alternation, controller serial emulation, PPU data-loop relaxation; all snapshot-safe for branch replay. Phase 43 removed the bank-switch guard that blocked loop relaxation for mapper-heavy ROMs. Phase 44 added inside-loop body detection so non-branch instructions within tight loops also get relaxed visit limits. Phase 45 added PPU status polling (`BIT/LDA $2002`) detection for the higher `ppuLoopVisitLimit`. Phase 46 added unofficial opcode trap to bail out of data-execution paths.
+6. **Frontier prioritization** (Phase 48): Dual-queue frontier where post-bank-switch alternates are explored before initial-mapping alternates. Per-state visit budget isolation was investigated and abandoned because the shared counter's "fast-fail" at hot PCs is a beneficial side-effect that keeps alternates efficiently yielding.
 6. **Non-default mapping label safety** (Phase 20): Branch/call operands in non-default mapping contexts keep literal targets to prevent cross-mapping address drift.
 7. **Emu-trace-driven bank-switch comments** (Phase 42): Only annotates writes that actually changed PRG mapping during emulation, avoiding noise from CHR/misc register writes. Static-only mode gets no bank-switch comments.
 
@@ -3307,7 +3446,7 @@ Scripts:
 5. I/O-dependent infinite loops.
    - Stub values may not satisfy wait conditions (e.g., polling $2002 for specific PPU state).
    - Mitigation: per-PC visit limit, boot-loop relaxation, PPU data-loop relaxation.
-   - Status: materially improved via Phases 17-19, 44-45. Current halt at `$E2F1` is data execution (unofficial opcodes), not an I/O loop. Remaining improvement: early data-region detection.
+   - Status: materially improved via Phases 17-19, 44-45, 48. Current halt at `$C24B` (after Phase 48 frontier prioritization changed exploration order). The trace explores more diverse paths via post-bank-switch alternate prioritization.
 
 6. Mapper state divergence.
    - Stubs cause different code paths than real hardware, potentially missing or mis-tracing branches.
@@ -3317,7 +3456,7 @@ Scripts:
 7. Split-table false-positive code promotion.
    - Aggressive pointer-table seeding can promote data as code, causing verification failures.
    - Mitigation: multi-stage gated pipeline (plausibility → correlation → extraction → opcode → shape → weak tiers → mid-run RTS/RTI).
-   - Status: zero false-positive regressions through Phase 45.
+   - Status: zero false-positive regressions through Phase 48. Phase 47's stack dispatch signal validated the pipeline's defense-in-depth: 2 new pairs passed correlation but downstream gates correctly blocked data entries. Phase 48's frontier prioritization caused no output changes.
 
 ## Glossary
 
@@ -3332,28 +3471,37 @@ Scripts:
 
 ## Immediate Next Steps
 
-### High Priority — Code Density and Coverage
+### High Priority — Emu Trace Quality
 
-1. **RTS singleton rescue heuristics** — Add targeted rescue for the dominant `split_seed_reject_opcode_rts` class (13/30 rejects on Rom City). Use explicit per-bank max-accepts cap and require adjacent code evidence within tunable radius.
-2. **Distance-aware adjacent evidence telemetry** — Emit minimum delta from split target to nearest code evidence to data-drive the current `radius=8` guard. This enables evidence-based radius tuning.
-3. **Invalid-opcode salvage experiment** — For singleton targets with both local code evidence and upstream split correlation, test limited acceptance. Compare noise against `split_seed_reject_shape` to bound risk.
+Current bottleneck: the emu trace discovers 495 unique PCs but **0 emu-only PCs** — it visits only code that static analysis already finds. Phase 48 added frontier prioritization (post-bank-switch alternates explored first), resulting in +9% more alternates and +243 code bytes, but `emu_only_pc` remains 0 for this ROM because the split-table pipeline already discovers all bank-switched code statically.
+
+1. ~~**Branch state visit budget isolation**~~ — Investigated in Phase 48 and abandoned. Per-state isolation removed the "fast-fail" mechanism at hot PCs, causing alternates to re-enter boot loops at full budget. Result: fewer alternates explored (4678 vs 8343) and fewer unique PCs (142 vs 495). The shared visit counter's saturation at hot PCs is actually beneficial — it forces alternates to quickly yield and let other alternates run.
+2. ~~**Post-bank-switch frontier prioritization**~~ — Implemented in Phase 48. Dual-queue frontier (`priorityFrontier` + `frontier`) explores post-switch alternates first. Metrics: +9% alternates, -37% drops, +243 code bytes. No emu_only_pc improvement for Rom City Rampage since static analysis already covers those paths.
+3. **Unofficial opcode trap** — ~~Implemented in Phase 46.~~ The trap correctly skips data-region paths. For Rom City Rampage the trap has no metric impact because the halt site contains official code in the active bank mapping.
+4. **Frontier diversity scoring** — Current alternates from different branch points but the same mapping largely explore the same code. Consider deduplicating frontier entries by PC range (e.g., merge alternates whose starting PCs are within 32 bytes under the same mapping) to increase path diversity.
+
+### High Priority — Split-Table Pipeline
+
+Current state (post-Phase 47): 28 candidate pairs, 22 rejected by correlation (79%), 37+30 accepted targets. Phase 47's PHA+RTS signal recovered 2 pairs from correlation, but their entries were correctly blocked by downstream gates — confirming the pipeline's defense-in-depth. The remaining 22 correlation rejections are genuine false candidates without dispatch mechanisms.
+
+4. **Correlation relaxation for high-coherence pairs** — The 22 remaining correlation rejections are the largest pool, but Phase 47's experiment showed that broadening correlation doesn't necessarily yield new code — downstream gates correctly caught the 2 recovered pairs as data. Further relaxation should focus on pairs with unusually high plausibility (10+ valid sampled targets) rather than pattern-based signals.
+5. **Distance-aware adjacent evidence telemetry** — Emit minimum delta from split target to nearest code evidence to data-drive the current `radius=8` guard. This enables evidence-based radius tuning.
+6. **Remaining RTS singleton rescue** — 3 RTS rejects remain from table entries. Consider accepting RTS targets in tables where the table base address is referenced by at least 2 split-load instructions (higher upstream confidence).
 
 ### Medium Priority — Remaining Failure Triage
 
-4. **Alfred Chicken PPU/frame-model experiments** — Current trace halts at `$C93F` (PPU update loop) with `unique_pc=111` and `mapper_writes=4`. Progress requires either:
-   - Synthetic frame-progression hooks (e.g., periodic PPUSTATUS vblank + NMI cycling that advances past repeated PPU update flows), or
-   - Aggressive visit-cap relaxation for PPU update patterns beyond the current `ppuLoopVisitLimit=8192`.
-5. **Alfred Chicken experiment matrix** — Compact `max_visits` × PPU-stub variant matrix fed through class-aware clustering to identify which changes shift failure class or hotspot region.
-6. **Archon input integrity** — Confirm whether `Archon (USA).nes` is a genuinely truncated/corrupt dump or requires loader-side tolerance for non-standard PRG sizes.
+7. **Alfred Chicken PPU/frame-model experiments** — Current trace halts at `$C93F` (PPU update loop) with `unique_pc=111` and `mapper_writes=4`. Phase 45's PPU status polling detector may help; needs testing. Progress may also require synthetic frame-progression hooks.
+8. **Alfred Chicken experiment matrix** — Compact `max_visits` × PPU-stub variant matrix fed through class-aware clustering to identify which changes shift failure class or hotspot region.
+9. **Archon input integrity** — Confirm whether `Archon (USA).nes` is a genuinely truncated/corrupt dump or requires loader-side tolerance for non-standard PRG sizes.
 
 ### Lower Priority — Policy Refinement
 
-7. **Mapper-1 clamp threshold tuning** — Use real benchmark telemetry (coverage deltas, runtime impact) to relax tiered caps where data shows stability. Current caps (512/128/64) may be unnecessarily conservative for some visit/instruction profiles.
-8. **Default trace-mode evaluation** — Once coverage and stability are proven across the full corpus, evaluate promoting `hybrid` as default trace mode (currently `static`).
-9. **Mapper 4 (MMC3) support** — The next most common mapper after 0/1/2/3/7. Requires IRQ counter emulation for scanline-based bank switching. Design should follow the established `ApplyMapperWrite` + runtime snapshot pattern.
+10. **Mapper-1 clamp threshold tuning** — Use real benchmark telemetry (coverage deltas, runtime impact) to relax tiered caps where data shows stability. Current caps (512/128/64) may be unnecessarily conservative for some visit/instruction profiles.
+11. **Default trace-mode evaluation** — Once coverage and stability are proven across the full corpus, evaluate promoting `hybrid` as default trace mode (currently `static`).
+12. **Mapper 4 (MMC3) support** — The next most common mapper after 0/1/2/3/7. Requires IRQ counter emulation for scanline-based bank switching. Design should follow the established `ApplyMapperWrite` + runtime snapshot pattern.
 
 ### Optimization and Cleanup
 
-10. **Split-seeding pipeline consolidation** — Phases 32-41 added incremental tuning knobs and telemetry counters. Consider consolidating threshold constants into a configurable struct for easier experimentation.
-11. **Benchmark script deduplication** — `benchmark_mapper_corpus.sh`, `benchmark_trace_sweep.sh`, and `sweep_mapper_joypad_timeline.sh` share significant verify/classify logic. Extract common helpers to reduce maintenance burden.
-12. **Trace stats field rationalization** — Some split-seed telemetry fields (40+) may be better grouped or conditionally emitted to reduce log noise for non-split-seeding use cases.
+13. **Split-seeding pipeline consolidation** — Phases 32-41 added incremental tuning knobs and telemetry counters. Consider consolidating threshold constants into a configurable struct for easier experimentation.
+14. **Benchmark script deduplication** — `benchmark_mapper_corpus.sh`, `benchmark_trace_sweep.sh`, and `sweep_mapper_joypad_timeline.sh` share significant verify/classify logic. Extract common helpers to reduce maintenance burden.
+15. **Trace stats field rationalization** — Some split-seed telemetry fields (40+) may be better grouped or conditionally emitted to reduce log noise for non-split-seeding use cases.

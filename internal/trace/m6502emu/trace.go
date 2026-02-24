@@ -159,7 +159,12 @@ type traceState struct {
 	uniquePCs      map[uint16]struct{}
 	uniqueMappings map[uint64]struct{}
 	queuedBranches map[branchStateKey]struct{}
-	frontier       []executionSnapshot
+
+	// frontier holds normal branch alternates (initial mapping).
+	// priorityFrontier holds post-bank-switch alternates, explored first.
+	frontier         []executionSnapshot
+	priorityFrontier []executionSnapshot
+	initialMapping   uint64
 
 	instructionsSinceNMI int
 	lastHaltReason       string
@@ -167,13 +172,19 @@ type traceState struct {
 
 func newTraceState(cfg Config) *traceState {
 	return &traceState{
-		visits:         make(map[visitKey]int, 4096),
-		visitCaps:      make(map[visitKey]int, 128),
-		uniquePCs:      make(map[uint16]struct{}, 4096),
-		uniqueMappings: make(map[uint64]struct{}, 64),
-		queuedBranches: make(map[branchStateKey]struct{}, cfg.MaxBranchStates),
-		frontier:       make([]executionSnapshot, 0, cfg.MaxBranchStates),
+		visits:           make(map[visitKey]int, 4096),
+		visitCaps:        make(map[visitKey]int, 128),
+		uniquePCs:        make(map[uint16]struct{}, 4096),
+		uniqueMappings:   make(map[uint64]struct{}, 64),
+		queuedBranches:   make(map[branchStateKey]struct{}, cfg.MaxBranchStates),
+		frontier:         make([]executionSnapshot, 0, cfg.MaxBranchStates),
+		priorityFrontier: make([]executionSnapshot, 0, 64),
 	}
+}
+
+// frontierSize returns the total number of queued branch alternate states.
+func (ts *traceState) frontierSize() int {
+	return len(ts.frontier) + len(ts.priorityFrontier)
 }
 
 // Run executes a bounded advisory 6502 trace over a NES cartridge using mapper-backed PRG reads.
@@ -239,6 +250,8 @@ func runTraceLoop(
 	cfg Config, res *Result, ts *traceState,
 ) {
 
+	ts.initialMapping = mapper.MappingSignature()
+
 	for len(res.Steps) < cfg.MaxInstructions {
 		select {
 		case <-ctx.Done():
@@ -254,6 +267,14 @@ func runTraceLoop(
 		}
 		cpu.CheckInterrupts()
 
+		if isUnofficialOpcode(mapper.ReadMemory(cpu.PC)) {
+			ts.lastHaltReason = fmt.Sprintf("unofficial opcode $%02X at $%04X", mapper.ReadMemory(cpu.PC), cpu.PC)
+			if !restoreNextState(ts, cpu, bus, mapper, &ts.instructionsSinceNMI, res) {
+				break
+			}
+			continue
+		}
+
 		signatureBefore := mapper.MappingSignature()
 		if !checkAndHandleVisitLimit(cpu, bus, mapper, cfg, res, ts, signatureBefore) {
 			break
@@ -265,7 +286,7 @@ func runTraceLoop(
 		pre := snapshotExecutionState(cpu, bus, mapper, ts.instructionsSinceNMI)
 		if err := cpu.Step(); err != nil {
 			ts.lastHaltReason = err.Error()
-			if !restoreNextState(&ts.frontier, cpu, bus, mapper, &ts.instructionsSinceNMI, res) {
+			if !restoreNextState(ts, cpu, bus, mapper, &ts.instructionsSinceNMI, res) {
 				break
 			}
 			continue
@@ -295,7 +316,7 @@ func checkAndHandleVisitLimit(
 	}
 	if ts.visits[vk] > limit {
 		ts.lastHaltReason = fmt.Sprintf("pc visit limit exceeded at $%04X", cpu.PC)
-		return restoreNextState(&ts.frontier, cpu, bus, mapper, &ts.instructionsSinceNMI, res)
+		return restoreNextState(ts, cpu, bus, mapper, &ts.instructionsSinceNMI, res)
 	}
 	return true
 }
@@ -383,12 +404,18 @@ func recordBranchAlternate(
 	}
 	ts.queuedBranches[key] = struct{}{}
 
-	if len(ts.frontier) >= cfg.MaxBranchStates {
+	if ts.frontierSize() >= cfg.MaxBranchStates {
 		res.BranchAlternateBudgetDrops++
 		return
 	}
 
-	ts.frontier = append(ts.frontier, branchSnapshot)
+	// Prioritize post-bank-switch alternates: they are more likely to
+	// discover code in different bank mappings that static analysis misses.
+	if signatureBefore != ts.initialMapping {
+		ts.priorityFrontier = append(ts.priorityFrontier, branchSnapshot)
+	} else {
+		ts.frontier = append(ts.frontier, branchSnapshot)
+	}
 	res.BranchAlternates = append(res.BranchAlternates, BranchAlternate{
 		FromPC:            step.PC,
 		Address:           altPC,
@@ -587,6 +614,11 @@ func isConditionalBranch(opName string) bool {
 	}
 }
 
+func isUnofficialOpcode(op byte) bool {
+	opcode := cpu6502.Opcodes[op]
+	return opcode.Instruction == nil || opcode.Instruction.Unofficial
+}
+
 func alternateBranchTarget(step TraceStep, nextPC uint16) (alternate, target, fallthroughPC uint16,
 	taken, ok bool) {
 
@@ -646,14 +678,20 @@ func restoreExecutionState(state executionSnapshot, cpu *cpu6502.CPU, bus *nesBu
 	return true
 }
 
-func restoreNextState(frontier *[]executionSnapshot, cpu *cpu6502.CPU, bus *nesBus, mapper Mapper,
+func restoreNextState(ts *traceState, cpu *cpu6502.CPU, bus *nesBus, mapper Mapper,
 	instructionsSinceNMI *int, res *Result) bool {
 
-	if len(*frontier) == 0 {
+	var next executionSnapshot
+	switch {
+	case len(ts.priorityFrontier) > 0:
+		next = ts.priorityFrontier[0]
+		ts.priorityFrontier = ts.priorityFrontier[1:]
+	case len(ts.frontier) > 0:
+		next = ts.frontier[0]
+		ts.frontier = ts.frontier[1:]
+	default:
 		return false
 	}
-	next := (*frontier)[0]
-	*frontier = (*frontier)[1:]
 	if !restoreExecutionState(next, cpu, bus, mapper, instructionsSinceNMI) {
 		return false
 	}

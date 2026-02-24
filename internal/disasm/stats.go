@@ -19,27 +19,28 @@ type traceStats struct {
 	jumpEngineScanCalls  uint64
 	jumpEngineEntryFound uint64
 
-	additionalBanksConsidered uint64
-	additionalBanksProcessed  uint64
-	additionalBankQueueGrowth uint64
-	splitSeedCandidatePairs   uint64
-	splitSeedRejectedByCorr   uint64
-	splitSeedRejectedPlaus    uint64
-	splitSeedRejectedExtract  uint64
-	splitSeedRejectInvalid    uint64
-	splitSeedRejectOpcode     uint64
-	splitSeedRejectOpcodeRead uint64
-	splitSeedRejectOpcodeInv  uint64
-	splitSeedRejectOpcodeUno  uint64
-	splitSeedRejectOpcodeBRK  uint64
-	splitSeedRejectOpcodeRTS  uint64
-	splitSeedRejectOpcodeRTI  uint64
-	splitSeedRejectOpcodeOth  uint64
-	splitSeedRejectShape      uint64
-	splitSeedAcceptedTargets  uint64
-	splitSeedAcceptedWeak     uint64
-	splitSeedAcceptedWeakRT   uint64
-	splitSeedAcceptedMidRunRT uint64
+	additionalBanksConsidered  uint64
+	additionalBanksProcessed   uint64
+	additionalBankQueueGrowth  uint64
+	splitSeedCandidatePairs    uint64
+	splitSeedRejectedByCorr    uint64
+	splitSeedRejectedPlaus     uint64
+	splitSeedRejectedExtract   uint64
+	splitSeedRejectInvalid     uint64
+	splitSeedRejectOpcode      uint64
+	splitSeedRejectOpcodeRead  uint64
+	splitSeedRejectOpcodeInv   uint64
+	splitSeedRejectOpcodeUno   uint64
+	splitSeedRejectOpcodeBRK   uint64
+	splitSeedRejectOpcodeRTS   uint64
+	splitSeedRejectOpcodeRTI   uint64
+	splitSeedRejectOpcodeOth   uint64
+	splitSeedRejectShape       uint64
+	splitSeedAcceptedTargets   uint64
+	splitSeedAcceptedWeak      uint64
+	splitSeedAcceptedWeakRT    uint64
+	splitSeedAcceptedMidRunRT  uint64
+	splitSeedAcceptedStackDisp uint64
 
 	parsedOffsets       uint64
 	alreadyParsedSkips  uint64
@@ -89,6 +90,7 @@ func (dis *Disasm) logTraceStats(start time.Time, completed bool) {
 		log.Uint64("split_seed_accepted_weak", dis.stats.splitSeedAcceptedWeak),
 		log.Uint64("split_seed_accepted_weak_rts_rti", dis.stats.splitSeedAcceptedWeakRT),
 		log.Uint64("split_seed_accepted_mid_run_rts_rti", dis.stats.splitSeedAcceptedMidRunRT),
+		log.Uint64("split_seed_accepted_stack_dispatch", dis.stats.splitSeedAcceptedStackDisp),
 		log.Uint64("parsed_offsets", dis.stats.parsedOffsets),
 		log.Uint64("already_parsed_skips", dis.stats.alreadyParsedSkips),
 		log.Uint64("inspect_skipped", dis.stats.inspectSkipped),
