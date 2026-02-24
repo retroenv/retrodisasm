@@ -42,48 +42,55 @@ func (dis *Disasm) processJumpDestinations() {
 
 	for _, key := range branchDestinations {
 		address := key.PC
-		offsetInfo := dis.branchDestinationInfo[key]
-		if offsetInfo == nil {
+		destinationInfo := dis.branchDestinationInfo[key]
+		if destinationInfo == nil {
 			continue
 		}
 		canRewriteCallersToLabel := key.MappingID == defaultMappingSignature &&
-			dis.canRewriteCallersToBranchLabel(key, offsetInfo)
+			dis.canRewriteCallersToBranchLabel(key, destinationInfo)
 
-		name := offsetInfo.Label
+		name := destinationInfo.Label
 		if name == "" {
 			switch {
-			case offsetInfo.IsType(program.JumpEngine):
+			case destinationInfo.IsType(program.JumpEngine):
 				name = fmt.Sprintf(jumpEngineNaming, address)
-			case offsetInfo.IsType(program.CallDestination):
+			case destinationInfo.IsType(program.CallDestination):
 				name = fmt.Sprintf(funcNaming, address)
 			default:
 				name = fmt.Sprintf(labelNaming, address)
 			}
 		}
-		name = dis.uniqueLabelName(name, key, offsetInfo, labelOwners)
-		offsetInfo.Label = name
+		name = dis.uniqueLabelName(name, key, destinationInfo, labelOwners)
+		destinationInfo.Label = name
 
 		// if the offset is marked as code but does not have opcode bytes, the jump destination
 		// is inside the second or third byte of an instruction.
-		if (offsetInfo.IsType(program.CodeOffset) || offsetInfo.IsType(program.CodeAsData)) &&
-			len(offsetInfo.Data) == 0 {
+		if (destinationInfo.IsType(program.CodeOffset) || destinationInfo.IsType(program.CodeAsData)) &&
+			len(destinationInfo.Data) == 0 {
 
 			dis.handleJumpIntoInstruction(address)
 		}
 
-		for _, bankRef := range offsetInfo.BranchFrom {
-			offsetInfo = bankRef.Mapped.OffsetInfo(bankRef.Index)
-			if !canRewriteCallersToLabel && len(offsetInfo.Data) >= 3 {
+		for _, bankRef := range destinationInfo.BranchFrom {
+			callerInfo := bankRef.Mapped.OffsetInfo(bankRef.Index)
+			rewriteAbsoluteToStableLabel := len(callerInfo.Data) >= 3 &&
+				dis.isStableEmittedLabelAddress(address, destinationInfo)
+			if !canRewriteCallersToLabel && len(callerInfo.Data) >= 3 && !rewriteAbsoluteToStableLabel {
 				continue
 			}
-			offsetInfo.BranchingTo = name
+			callerInfo.BranchingTo = name
 
 			// reference can be a function address of a jump engine
-			if offsetInfo.IsType(program.CodeOffset) {
-				offsetInfo.Code = offsetInfo.Opcode.Instruction().Name()
+			if callerInfo.IsType(program.CodeOffset) {
+				callerInfo.Code = callerInfo.Opcode.Instruction().Name()
 			}
 		}
 	}
+}
+
+func (dis *Disasm) isStableEmittedLabelAddress(targetAddress uint16, targetInfo *offset.DisasmOffset) bool {
+	emittedAddress, ok := dis.mapper.EmittedAddressOfOffset(targetInfo)
+	return ok && emittedAddress == targetAddress
 }
 
 func (dis *Disasm) defaultMappingSignature() uint64 {

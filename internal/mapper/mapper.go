@@ -27,6 +27,9 @@ type Mapper struct {
 	dis    disasm          // Reference to disasm for single-bank systems
 	vars   variableManager // Reference to variable manager
 	consts constantManager // Reference to constant manager
+
+	offsetAddressCache     map[*offset.DisasmOffset]uint16
+	offsetAddressCacheBase uint16
 }
 
 var prgWindowAddresses = []uint16{0x8000, 0xA000, 0xC000, 0xE000}
@@ -183,6 +186,31 @@ func (m *Mapper) mappedEntriesForBank(bankIndex int) []mappedBank {
 // SetCodeBaseAddress sets the code base address for single-bank systems.
 func (m *Mapper) SetCodeBaseAddress(address uint16) {
 	m.codeBaseAddress = address
+	m.offsetAddressCache = nil
+	m.offsetAddressCacheBase = 0
+}
+
+// EmittedAddressOfOffset returns the output assembly address for a mapper offset.
+// This is based on the owning bank offset index plus current code base address.
+func (m *Mapper) EmittedAddressOfOffset(offsetInfo *offset.DisasmOffset) (uint16, bool) {
+	if offsetInfo == nil {
+		return 0, false
+	}
+	if m.offsetAddressCache == nil || m.offsetAddressCacheBase != m.codeBaseAddress {
+		cache := make(map[*offset.DisasmOffset]uint16)
+		for _, bnk := range m.banks {
+			for i, info := range bnk.offsets {
+				if _, exists := cache[info]; exists {
+					continue
+				}
+				cache[info] = m.codeBaseAddress + uint16(i)
+			}
+		}
+		m.offsetAddressCache = cache
+		m.offsetAddressCacheBase = m.codeBaseAddress
+	}
+	address, ok := m.offsetAddressCache[offsetInfo]
+	return address, ok
 }
 
 func (m *Mapper) setMappedBank(address uint16, bank mappedBank) {
