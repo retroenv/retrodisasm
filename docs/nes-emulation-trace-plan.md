@@ -2698,6 +2698,76 @@ Post-phase note:
 - Reject-breakdown shows the dominant extraction blocker is `invalid_target`, not shape filtering.
 - Next gains should focus on reducing invalid-pointer noise before relaxing opcode/shape gates.
 
+### Phase 39: Plausibility Prefilter for Invalid-Target Suppression
+
+Status: Completed (2026-02-24)
+
+1. Add a pre-extraction split-table plausibility gate to reduce invalid-target churn before opcode reads.
+2. Keep accepted split targets and Rom City code-density stable.
+3. Extend telemetry with plausibility-reject visibility.
+
+Acceptance:
+
+1. Invalid-target reject count is reduced materially.
+2. Rom City output and verification stay stable.
+3. Full test suite remains green.
+
+Implementation notes:
+
+- New plausibility gate:
+  - `internal/disasm/banks.go`
+  - Added `hasSplitTableTargetWindowCoherence(...)`:
+    - samples split low/high tables before extraction opcode checks
+    - requires at least one plausible sampled pointer target
+    - bounds page spread to reject incoherent table pairs.
+- Pair gating flow update:
+  - split candidates now require at least one plausible orientation (`forward` or `reverse`) before correlation/extraction.
+  - added `splitSeedRejectedPlaus` counter when both orientations fail plausibility.
+- Stats/log updates:
+  - `internal/disasm/stats.go`
+  - Added/logged:
+    - `split_seed_rejected_plausibility`
+
+Validation:
+
+- Full tests:
+  - `GOCACHE=/tmp/gocache_retrodisasm go test ./... -count=1`
+  - Result: success.
+- Rom City Rampage verify/regeneration:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+  - Output unchanged from Phase 37:
+    - `internal/testroms/special/Rom City Rampage.asm6.asm` (`61042` lines)
+    - `internal/testroms/special/Rom City Rampage.ca65.asm` (`60967` lines)
+- Code-density result:
+  - `rg -n '^[[:space:]]+[a-z]{3}\b' ... | wc -l`
+  - After Phase 38: `7542`
+  - After Phase 39: `7542`
+  - Delta: `+0` code lines (no regression).
+- Telemetry delta (Rom City Rampage, asm6, hybrid profile):
+  - Before (Phase 38):
+    - `split_seed_candidate_pairs=47`
+    - `split_seed_rejected_correlation=38`
+    - `split_seed_rejected_extract=5`
+    - `split_seed_reject_invalid_target=107`
+    - `split_seed_reject_opcode_gate=30`
+    - `split_seed_reject_shape=1`
+    - `split_seed_accepted_targets=16`
+  - After (Phase 39):
+    - `split_seed_candidate_pairs=28`
+    - `split_seed_rejected_correlation=24`
+    - `split_seed_rejected_plausibility=19`
+    - `split_seed_rejected_extract=0`
+    - `split_seed_reject_invalid_target=17`
+    - `split_seed_reject_opcode_gate=30`
+    - `split_seed_reject_shape=1`
+    - `split_seed_accepted_targets=16`
+
+Post-phase note:
+
+- The plausibility gate removed most invalid-target churn while preserving accepted split seeds and Rom City code density.
+- With invalid-target noise reduced, `opcode_gate` is now the dominant extraction reject class.
+
 ## Testing Plan
 
 1. Unit tests
@@ -2746,7 +2816,7 @@ Post-phase note:
 
 ## Immediate Next Steps
 
-1. Reduce `split_seed_reject_invalid_target` by adding stricter table-byte plausibility checks (bank-locality/target-window coherence) before opcode reads.
+1. Target `split_seed_reject_opcode_gate` (now dominant) with a guarded “weak-entry” acceptance tier for split-derived singletons (bounded by existing correlation + code-evidence checks).
 2. Use mapper-2 sweep telemetry to drive targeted PPU/frame-model experiments (starting with `Alfred Chicken` at hotspot `$C93F`) and re-measure `unique_pc` lift under the same preset matrix.
 3. Add a compact automated experiment matrix around `Alfred Chicken` (`max_visits` and PPU-stub variants) and feed results through class-aware clustering to quantify which changes shift failure class or hotspot region.
 4. Tune mapper-1 clamp thresholds from real benchmark telemetry (coverage/runtime deltas) to reduce unnecessary budget drops while preserving stability.

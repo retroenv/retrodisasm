@@ -24,6 +24,7 @@ type traceStats struct {
 	additionalBankQueueGrowth uint64
 	splitSeedCandidatePairs   uint64
 	splitSeedRejectedByCorr   uint64
+	splitSeedRejectedPlaus    uint64
 	splitSeedRejectedExtract  uint64
 	splitSeedRejectInvalid    uint64
 	splitSeedRejectOpcode     uint64
@@ -62,6 +63,7 @@ func (dis *Disasm) logTraceStats(start time.Time, completed bool) {
 		log.Uint64("additional_bank_queue_growth", dis.stats.additionalBankQueueGrowth),
 		log.Uint64("split_seed_candidate_pairs", dis.stats.splitSeedCandidatePairs),
 		log.Uint64("split_seed_rejected_correlation", dis.stats.splitSeedRejectedByCorr),
+		log.Uint64("split_seed_rejected_plausibility", dis.stats.splitSeedRejectedPlaus),
 		log.Uint64("split_seed_rejected_extract", dis.stats.splitSeedRejectedExtract),
 		log.Uint64("split_seed_reject_invalid_target", dis.stats.splitSeedRejectInvalid),
 		log.Uint64("split_seed_reject_opcode_gate", dis.stats.splitSeedRejectOpcode),

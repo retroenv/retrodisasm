@@ -296,21 +296,35 @@ func (dis *Disasm) seedLikelyMappedBankSplitPointerTableTargets() {
 			if tableByteDistance(firstTable, secondTable) > maxTableByteDistance {
 				continue
 			}
+
+			plausibleForward := dis.hasSplitTableTargetWindowCoherence(firstTable, secondTable, end)
+			plausibleReverse := dis.hasSplitTableTargetWindowCoherence(secondTable, firstTable, end)
+			if !plausibleForward && !plausibleReverse {
+				dis.stats.splitSeedRejectedPlaus++
+				continue
+			}
+
 			dis.stats.splitSeedCandidatePairs++
 			if !dis.hasSplitPointerRuntimeCorrelation(pc, secondPC, end, correlationLookahead) {
 				dis.stats.splitSeedRejectedByCorr++
 				continue
 			}
 
-			targets, ok := dis.extractSplitPointerTargets(
-				firstTable, secondTable, end, maxRunEntries, minRunEntries, minDistinctTargets)
-			if !ok {
-				targets, ok = dis.extractSplitPointerTargets(
+			var (
+				targets   []uint16
+				extracted bool
+			)
+			if plausibleForward {
+				targets, extracted = dis.extractSplitPointerTargets(
+					firstTable, secondTable, end, maxRunEntries, minRunEntries, minDistinctTargets)
+			}
+			if !extracted && plausibleReverse {
+				targets, extracted = dis.extractSplitPointerTargets(
 					secondTable, firstTable, end, maxRunEntries, minRunEntries, minDistinctTargets)
-				if !ok {
-					dis.stats.splitSeedRejectedExtract++
-					continue
-				}
+			}
+			if !extracted {
+				dis.stats.splitSeedRejectedExtract++
+				continue
 			}
 
 			for _, target := range targets {
@@ -334,6 +348,50 @@ func (dis *Disasm) seedLikelyMappedBankSplitPointerTableTargets() {
 			pc += 2
 		}
 	}
+}
+
+// hasSplitTableTargetWindowCoherence performs a cheap prefilter on split table
+// pairs before opcode checks: keep pairs where sampled pointer words mostly land
+// in plausible code windows with limited page spread.
+func (dis *Disasm) hasSplitTableTargetWindowCoherence(lowTable, highTable, end uint16) bool {
+	const (
+		sampleEntries = 16
+		minValid      = 1
+		maxPages      = 16
+	)
+
+	pages := map[byte]struct{}{}
+	valid := 0
+
+	for i := 0; i < sampleEntries; i++ {
+		lowAddr32 := uint32(lowTable) + uint32(i)
+		highAddr32 := uint32(highTable) + uint32(i)
+		if lowAddr32 > uint32(end) || highAddr32 > uint32(end) {
+			break
+		}
+
+		low, err := dis.ReadMemory(uint16(lowAddr32))
+		if err != nil {
+			break
+		}
+		high, err := dis.ReadMemory(uint16(highAddr32))
+		if err != nil {
+			break
+		}
+
+		target := uint16(high)<<8 | uint16(low)
+		if !dis.isValidCodeAddress(target) || target > end {
+			continue
+		}
+
+		valid++
+		pages[byte(target>>8)] = struct{}{}
+		if len(pages) > maxPages {
+			return false
+		}
+	}
+
+	return valid >= minValid
 }
 
 func (dis *Disasm) hasSplitPointerRuntimeCorrelation(firstPC, secondPC, end, lookahead uint16) bool {
