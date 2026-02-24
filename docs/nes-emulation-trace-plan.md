@@ -2122,6 +2122,67 @@ Post-phase note:
 - This phase delivered a large code-density lift on the priority ROM without adding new helper scripts.
 - Output remains reassemblable under both target assemblers.
 
+### Phase 30: Mapped-Bank Pointer-Table Target Seeding (Shape-Guarded)
+
+Status: Completed (2026-02-24)
+
+1. Implement conservative pointer-table target seeding in mapped-bank discovery to recover callback/jump-table-only routines.
+2. Keep behavior bounded and verification-safe using explicit table-shape guards and strict seeding caps.
+3. Preserve existing output validity for `asm6` and `ca65`.
+
+Acceptance:
+
+1. Rom City Rampage verifies for both assemblers after adding pointer-table seeding.
+2. Instruction-line density increases beyond Phase 29.
+3. Full Go test suite remains green.
+
+Implementation notes:
+
+- Core disassembly update:
+  - `internal/disasm/banks.go`
+  - Added `seedLikelyMappedBankPointerTableTargets()` in `processAdditionalBanks()` after entry/call-target seeding.
+- New pointer-table seeding guardrails:
+  - source starts only on even addresses (`16-bit` shape guard)
+  - source bytes must not already be typed as `CodeOffset`
+  - contiguous run parsing of little-endian targets with:
+    - `minRunEntries=4`
+    - `maxRunEntries=64`
+    - `maxSeedsPerBank=1024`
+  - each target must pass:
+    - valid code address bounds
+    - official routine-start opcode gate (`isLikelyM6502RoutineStartOpcode`)
+  - additional shape test (`hasLikelyPointerTableShape`):
+    - minimum distinct targets
+    - at least one close-neighbor pair (clustered routine region signal)
+  - dedupes seeded targets per mapped bank pass.
+- No script/tooling changes in this phase.
+
+Validation:
+
+- Full tests:
+  - `GOCACHE=/tmp/gocache_retrodisasm go test ./... -count=1`
+  - Result: success.
+- Rom City Rampage verify/regeneration:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+  - Output:
+    - `internal/testroms/special/Rom City Rampage.asm6.asm` (`60841` lines)
+    - `internal/testroms/special/Rom City Rampage.ca65.asm` (`60766` lines)
+- Code-density result (same metric used in prior phases):
+  - `rg -n '^[[:space:]]+[a-z]{3}\b' ... | wc -l`
+  - After Phase 29: `4764`
+  - After Phase 30: `7418`
+  - Delta: `+2654` code lines.
+- Trace telemetry sample (Rom City Rampage, asm6, hybrid profile):
+  - `static_unique_pc`: `9232`
+  - `parsed_offsets`: `10151`
+  - `code_bytes_marked`: `15740`
+
+Post-phase note:
+
+- This phase materially increased real disassembled code lines while keeping output reassemblable.
+- The pointer-table pass is intentionally constrained to avoid uncontrolled data-to-code promotion.
+
 ## Testing Plan
 
 1. Unit tests
@@ -2170,7 +2231,7 @@ Post-phase note:
 
 ## Immediate Next Steps
 
-1. Add conservative mapped-bank pointer-table target seeding (frequency/shape guarded) to capture callback/jump-table-only routines not reached by call-target scans.
-2. Replace mapper-1 branch guard with a condition-based alternate-path policy (mapper-safe heuristics) so branch exploration can be re-enabled without reintroducing the regression.
+1. Replace mapper-1 branch guard with a condition-based alternate-path policy (mapper-safe heuristics) so branch exploration can be re-enabled without reintroducing the regression.
+2. Add mapper-aware pointer-table enhancements for split low/high-byte tables (`tbl_lo`/`tbl_hi` style) with strict pair-shape checks.
 3. Use mapper-2 sweep telemetry to drive targeted PPU/frame-model experiments (starting with `Alfred Chicken` at hotspot `$C93F`) and re-measure `unique_pc` lift under the same preset matrix.
-4. Add a small automated experiment matrix around `Alfred Chicken` (`max_visits` and PPU-stub variants) and feed results through class-aware clustering to quantify which changes shift failure class or hotspot region.
+4. Add a compact automated experiment matrix around `Alfred Chicken` (`max_visits` and PPU-stub variants) and feed results through class-aware clustering to quantify which changes shift failure class or hotspot region.

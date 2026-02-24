@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/retroenv/retrodisasm/internal/program"
 	cpum6502 "github.com/retroenv/retrogolib/arch/cpu/m6502"
 )
 
@@ -27,6 +28,7 @@ func (dis *Disasm) processAdditionalBanks(ctx context.Context) error {
 
 		dis.seedLikelyMappedBankEntryPoints()
 		dis.seedLikelyMappedBankCallTargets()
+		dis.seedLikelyMappedBankPointerTableTargets()
 
 		if err := dis.arch.InitializeBankVectors(bankIndex); err != nil {
 			return fmt.Errorf("initializing vectors for bank %d: %w", bankIndex, err)
@@ -129,6 +131,115 @@ func (dis *Disasm) seedLikelyMappedBankCallTargets() {
 		dis.AddAddressToParse(target, target, addr, nil, false)
 		queued++
 	}
+}
+
+// seedLikelyMappedBankPointerTableTargets scans for contiguous little-endian
+// pointer tables in mapped banks and seeds targets that look like routine
+// starts. This is intentionally guarded to avoid exploding false positives.
+func (dis *Disasm) seedLikelyMappedBankPointerTableTargets() {
+	const (
+		maxSeedsPerBank    = 1024
+		maxRunEntries      = 64
+		minRunEntries      = 4
+		minDistinctTargets = 3
+	)
+
+	start := dis.codeBaseAddress
+	end := dis.arch.LastCodeAddress()
+	if end <= start+1 {
+		return
+	}
+
+	seeded := 0
+	seededTargets := map[uint16]struct{}{}
+
+	for addr := start; addr < end-1 && seeded < maxSeedsPerBank; addr++ {
+		// Conservative shape guard: pointer tables are 16-bit words.
+		if addr&1 != 0 {
+			continue
+		}
+		if dis.mapper.OffsetInfo(addr).IsType(program.CodeOffset) ||
+			dis.mapper.OffsetInfo(addr+1).IsType(program.CodeOffset) {
+			continue
+		}
+
+		targets := make([]uint16, 0, minRunEntries)
+		for entryAddr := addr; entryAddr < end-1 && len(targets) < maxRunEntries; entryAddr += 2 {
+			if dis.mapper.OffsetInfo(entryAddr).IsType(program.CodeOffset) ||
+				dis.mapper.OffsetInfo(entryAddr+1).IsType(program.CodeOffset) {
+				break
+			}
+
+			low, err := dis.ReadMemory(entryAddr)
+			if err != nil {
+				break
+			}
+			high, err := dis.ReadMemory(entryAddr + 1)
+			if err != nil {
+				break
+			}
+
+			target := uint16(high)<<8 | uint16(low)
+			if !dis.isValidCodeAddress(target) || target > end {
+				break
+			}
+
+			targetOp, err := dis.ReadMemory(target)
+			if err != nil || !isLikelyM6502RoutineStartOpcode(targetOp) {
+				break
+			}
+
+			targets = append(targets, target)
+		}
+
+		if len(targets) < minRunEntries || !hasLikelyPointerTableShape(targets, minDistinctTargets) {
+			continue
+		}
+
+		for _, target := range targets {
+			if seeded >= maxSeedsPerBank {
+				break
+			}
+			if _, ok := seededTargets[target]; ok {
+				continue
+			}
+			dis.AddAddressToParse(target, target, addr, nil, false)
+			seededTargets[target] = struct{}{}
+			seeded++
+		}
+
+		// Skip across the accepted table run.
+		addr += uint16(len(targets)*2 - 1)
+	}
+}
+
+func hasLikelyPointerTableShape(targets []uint16, minDistinct int) bool {
+	if len(targets) == 0 {
+		return false
+	}
+
+	distinctTargets := map[uint16]struct{}{}
+	closeNeighborPairs := 0
+	for i := range targets {
+		distinctTargets[targets[i]] = struct{}{}
+		if i == 0 {
+			continue
+		}
+		prev := targets[i-1]
+		curr := targets[i]
+		var delta uint16
+		if curr > prev {
+			delta = curr - prev
+		} else {
+			delta = prev - curr
+		}
+		// Typical callback/jump-table targets are often grouped in nearby regions.
+		if delta <= 0x0100 {
+			closeNeighborPairs++
+		}
+	}
+
+	return len(distinctTargets) >= minDistinct && closeNeighborPairs > 0
 }
 
 func isLikelyM6502RoutineStartOpcode(op byte) bool {
