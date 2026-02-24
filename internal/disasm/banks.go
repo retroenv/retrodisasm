@@ -106,6 +106,9 @@ func (dis *Disasm) seedCrossBankCallTargets(targets []uint16) {
 		if err != nil || !isLikelyM6502RoutineStartOpcode(op) {
 			continue
 		}
+		if !dis.validateCodeSequence(addr) {
+			continue
+		}
 		dis.AddAddressToParse(addr, addr, 0, nil, false)
 		dis.stats.crossBankCallTargetsSeeded++
 	}
@@ -122,6 +125,9 @@ func (dis *Disasm) seedLikelyMappedBankEntryPoints() {
 		}
 		op, err := dis.ReadMemory(addr)
 		if err != nil || !isLikelyM6502EntryOpcode(op) {
+			continue
+		}
+		if !dis.validateCodeSequence(addr) {
 			continue
 		}
 		dis.AddAddressToParse(addr, addr, 0, nil, false)
@@ -188,6 +194,9 @@ func (dis *Disasm) seedLikelyMappedBankCallTargets() {
 
 		targetOp, err := dis.ReadMemory(target)
 		if err != nil || !isLikelyM6502RoutineStartOpcode(targetOp) {
+			continue
+		}
+		if !dis.validateCodeSequence(target) {
 			continue
 		}
 
@@ -289,6 +298,9 @@ func (dis *Disasm) seedPointerTableTargets(
 			break
 		}
 		if _, ok := (*seededTargets)[target]; ok {
+			continue
+		}
+		if !dis.validateCodeSequence(target) {
 			continue
 		}
 		dis.AddAddressToParse(target, target, fromAddr, nil, false)
@@ -482,6 +494,9 @@ func (dis *Disasm) seedSplitPairTargets(
 			break
 		}
 		if _, exists := (*seededTargets)[target]; exists {
+			continue
+		}
+		if !dis.validateCodeSequence(target) {
 			continue
 		}
 		dis.AddAddressToParse(target, target, pc, nil, false)
@@ -1073,6 +1088,50 @@ func isLikelyM6502RoutineStartOpcode(op byte) bool {
 	default:
 		return true
 	}
+}
+
+// validateCodeSequence checks if the bytes at the given address form a plausible
+// code sequence by decoding the first several instructions. Returns false if any
+// decoded instruction is unofficial, invalid, or the sequence is too short.
+// This catches data regions where byte values quickly decode to unofficial opcodes.
+func (dis *Disasm) validateCodeSequence(addr uint16) bool {
+	const minInstructions = 3
+
+	end := dis.arch.LastCodeAddress()
+	validCount := 0
+
+	for pc := addr; validCount < minInstructions; {
+		if pc > end {
+			return false
+		}
+
+		op, err := dis.ReadMemory(pc)
+		if err != nil {
+			return false
+		}
+
+		opcode := cpum6502.Opcodes[op]
+		if opcode.Instruction == nil || opcode.Instruction.Unofficial {
+			return false
+		}
+
+		size := opcodeSizeBytes(opcode)
+		if size <= 0 {
+			return false
+		}
+
+		validCount++
+
+		// An unconditional control flow instruction (JMP/RTS/RTI) is a valid
+		// end for a short trampoline or stub routine.
+		if _, ok := cpum6502.NotExecutingFollowingOpcodeInstructions[opcode.Instruction.Name]; ok {
+			break
+		}
+
+		pc += uint16(size)
+	}
+
+	return validCount >= minInstructions
 }
 
 func isWeakSplitEntryTerminatorOpcode(op byte) bool {
