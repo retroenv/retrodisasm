@@ -1403,6 +1403,66 @@ Post-phase note:
 - Controller protocol fidelity is now materially better, but Alfred remains dominated by PPU update/control-loop behavior (`$81FA` hotspot).
 - Next gains should focus on PPU-side progression semantics and selective input scripting, not additional controller protocol changes.
 
+### Phase 19: PPU Data-Loop Progression Hook (Targeted Visit-Cap Relaxation)
+
+Status: Completed (2026-02-24)
+
+1. Add a lightweight progression hook for repeated `PPU_DATA` update loops so advisory trace can pass common VRAM streaming loops under default `visits=8`.
+2. Keep relaxation tightly scoped to known short PPU stream loop shapes and preserve global boundedness.
+3. Re-measure Alfred hotspot/coverage progression after this hook.
+
+Acceptance:
+
+1. A representative `STA $2007` stream loop can complete under default visit budgets in unit tests.
+2. Alfred trace moves beyond the prior `$81FA` hotspot under `visits=8`.
+3. Full test suite and mapper baseline remain stable.
+
+Implementation notes:
+
+- `internal/trace/m6502emu/trace.go`:
+  - Added second bounded relaxation tier:
+    - `ppuLoopVisitLimit=8192`
+    - `relaxedPPULoopVisitLimit()`
+  - Added PPU stream loop detection:
+    - `shouldRelaxVisitLimitForPPUDataLoop()`
+    - `isPPUDataStreamLoopPC()`
+    - `isPPUDataStreamPatternAt()`
+    - `isSTAAbsolutePPUData()`
+    - `isIndexCompareImmediateOpcode()`
+  - Relaxation is still guarded by existing safety checks:
+    - no observed mapper mapping transitions (`Changed=true`)
+    - bounded step horizon (`len(res.Steps) <= 20000`)
+    - capped mapper-write activity threshold.
+- `internal/trace/m6502emu/trace_test.go`:
+  - Added `TestRunEscapesPPUDataStreamLoopWithDefaultVisitBudget`.
+
+Validation:
+
+- Focused tests:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase19 go test ./internal/trace/m6502emu -count=1`
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase19 go test ./internal/disasm -count=1`
+  - Result: success.
+- Full tests:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase19 go test ./...`
+  - Result: success.
+- Alfred run (`visits=8`):
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase19 go run . -debug -verify -q -a ca65 -s nes -trace-mode hybrid -trace-max-instr 200000 -trace-max-visits-per-state 8 -trace-max-branch-states 0 -o /tmp/alfred_phase19_v8_Lehq/out.asm "internal/testroms/commercial/notworking/Alfred Chicken (USA).nes"`
+  - Result: verify still fails with `segment PRG mismatch: 24061 offset mismatches`.
+  - Telemetry delta vs Phase 18:
+    - before: `instructions=8103`, `unique_pc=87`, `mapper_writes=3`, halt at `$81FA`
+    - after: `instructions=8305`, `unique_pc=111`, `mapper_writes=4`, halt at `$C93F`
+- Baseline checks:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase19 scripts/benchmark_mapper_corpus.sh -g notworking -a ca65 -o /tmp/phase19_mapper_corpus_notworking.csv`
+    - mapper `1`: `2/2` pass
+    - mapper `2`: `5/7` pass
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase19 scripts/benchmark_trace_sweep.sh -g notworking -m 2 -i 200000 -v 8 -b 0 -o /tmp/phase19_trace_sweep_m2.csv`
+    - mapper `2`: `5 pass / 2 fail / 7 total`
+
+Post-phase note:
+
+- The PPU-loop hook improved Alfred trace progression again (new PCs reached, hotspot shifted deeper), confirming the bottleneck was partly PPU loop churn rather than branch frontier size.
+- Verification mismatch remains unchanged, so remaining blockers are likely higher-level frame/input progression and mapper-path realism, not raw startup-loop depth.
+
 ## Testing Plan
 
 1. Unit tests
@@ -1451,7 +1511,7 @@ Post-phase note:
 
 ## Immediate Next Steps
 
-1. Add lightweight PPU timing progression hooks for repeated `PPU_DATA` update loops so startup/frame loops can advance without inflating global visit budgets.
-2. Add optional deterministic input scripting (controller button timeline) for advisory mode to test menu/progression gates after startup.
+1. Add optional deterministic input scripting (controller button timeline) for advisory mode to test menu/progression gates after startup.
+2. Extend PPU progression realism beyond data loops (e.g., frame/vblank phase model tied to PPU register interaction cadence).
 3. Add a fast failure classifier in benchmark scripts for corrupt/truncated ROM inputs (`Archon` class) to separate input-integrity failures from trace/mapper regressions.
 4. Replace mapper-1 branch guard with a condition-based alternate-path policy (mapper-safe heuristics) so branch exploration can be re-enabled without reintroducing the regression.

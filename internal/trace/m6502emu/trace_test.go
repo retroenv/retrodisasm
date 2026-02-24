@@ -298,6 +298,44 @@ func TestRunEscapesStartupMemoryClearLoopWithDefaultVisitBudget(t *testing.T) {
 	assert.Equal(t, uint16(0x8013), res.BankSwitchWrites[0].PC)
 }
 
+func TestRunEscapesPPUDataStreamLoopWithDefaultVisitBudget(t *testing.T) {
+	mapper := &mockMapper{
+		memory: map[uint16]byte{
+			0xFFFC: 0x00, // reset vector low
+			0xFFFD: 0x80, // reset vector high -> $8000
+			0x8000: 0xA9, // lda #$0F
+			0x8001: 0x0F,
+			0x8002: 0xA0, // ldy #$00
+			0x8003: 0x00,
+			0x8004: 0x8D, // sta $2007
+			0x8005: 0x07,
+			0x8006: 0x20,
+			0x8007: 0xC8, // iny
+			0x8008: 0xC0, // cpy #$20
+			0x8009: 0x20,
+			0x800A: 0xD0, // bne $8004
+			0x800B: 0xF8,
+			0x800C: 0xA9, // lda #$01
+			0x800D: 0x01,
+			0x800E: 0x8D, // sta $8000 (mapper write marker)
+			0x800F: 0x00,
+			0x8010: 0x80,
+			0x8011: 0x4C, // jmp $8011
+			0x8012: 0x11,
+			0x8013: 0x80,
+		},
+		signature: 0x57,
+	}
+
+	res, err := Run(context.Background(), &cartridge.Cartridge{}, mapper, Config{
+		MaxInstructions: 6000,
+		MaxVisitsPerPC:  8,
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(res.BankSwitchWrites))
+	assert.Equal(t, uint16(0x800E), res.BankSwitchWrites[0].PC)
+}
+
 func TestRunBranchAlternatesBudget(t *testing.T) {
 	mapper := &mockMapper{
 		memory: map[uint16]byte{

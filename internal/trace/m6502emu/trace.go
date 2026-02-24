@@ -18,6 +18,7 @@ const (
 	defaultMaxBranchStates = 0
 	mapperHotspotLimit     = 8
 	bootLoopVisitLimit     = 2048
+	ppuLoopVisitLimit      = 8192
 )
 
 // Mapper defines the mapper functions needed by the emulator trace.
@@ -210,6 +211,9 @@ func Run(ctx context.Context, cart *cartridge.Cartridge, mapper Mapper, cfg Conf
 		if visits[vk] > limit {
 			if limit == cfg.MaxVisitsPerPC && shouldRelaxVisitLimitForStartupLoop(mapper, res, cpu.PC) {
 				limit = relaxedVisitLimit(cfg.MaxVisitsPerPC)
+				visitCaps[vk] = limit
+			} else if limit == cfg.MaxVisitsPerPC && shouldRelaxVisitLimitForPPUDataLoop(mapper, res, cpu.PC) {
+				limit = relaxedPPULoopVisitLimit(cfg.MaxVisitsPerPC)
 				visitCaps[vk] = limit
 			}
 		}
@@ -556,7 +560,28 @@ func relaxedVisitLimit(base int) int {
 	return bootLoopVisitLimit
 }
 
+func relaxedPPULoopVisitLimit(base int) int {
+	if base >= ppuLoopVisitLimit {
+		return base
+	}
+	return ppuLoopVisitLimit
+}
+
 func shouldRelaxVisitLimitForStartupLoop(mapper Mapper, res *Result, pc uint16) bool {
+	if !canRelaxVisitLimitForLoop(res, pc) {
+		return false
+	}
+	return isTightCounterLoopPC(mapper, pc)
+}
+
+func shouldRelaxVisitLimitForPPUDataLoop(mapper Mapper, res *Result, pc uint16) bool {
+	if !canRelaxVisitLimitForLoop(res, pc) {
+		return false
+	}
+	return isPPUDataStreamLoopPC(mapper, pc)
+}
+
+func canRelaxVisitLimitForLoop(res *Result, pc uint16) bool {
 	if len(res.Steps) > 20000 {
 		return false
 	}
@@ -571,7 +596,7 @@ func shouldRelaxVisitLimitForStartupLoop(mapper Mapper, res *Result, pc uint16) 
 	if pc < 0x8000 {
 		return false
 	}
-	return isTightCounterLoopPC(mapper, pc)
+	return true
 }
 
 func isTightCounterLoopPC(mapper Mapper, pc uint16) bool {
@@ -668,6 +693,66 @@ func isDelayLoopPrefaceOpcode(op byte) bool {
 		0x78, // SEI
 		0xD8, // CLD
 		0xF8: // SED
+		return true
+	default:
+		return false
+	}
+}
+
+func isPPUDataStreamLoopPC(mapper Mapper, pc uint16) bool {
+	// Check current PC and nearby PCs for a short streaming loop:
+	//   STA $2007
+	//   INY/DEX/...
+	//   CPY/CPX #imm
+	//   B?? <back>
+	for back := uint16(0); back <= 8; back++ {
+		if pc < back {
+			continue
+		}
+		start := pc - back
+		if !isPPUDataStreamPatternAt(mapper, start) {
+			continue
+		}
+		if pc <= start+8 {
+			return true
+		}
+	}
+	return false
+}
+
+func isPPUDataStreamPatternAt(mapper Mapper, start uint16) bool {
+	if !isSTAAbsolutePPUData(mapper, start) {
+		return false
+	}
+	if !isIndexCounterOpcode(mapper.ReadMemory(start + 3)) {
+		return false
+	}
+	if !isIndexCompareImmediateOpcode(mapper.ReadMemory(start + 4)) {
+		return false
+	}
+	if !isConditionalBranchOpcode(mapper.ReadMemory(start + 6)) {
+		return false
+	}
+
+	branchPC := start + 6
+	target := branchPC + 2 + uint16(int16(int8(mapper.ReadMemory(start+7))))
+	distance := int(branchPC) - int(target)
+	if distance <= 0 || distance > 16 {
+		return false
+	}
+	return target <= start+3
+}
+
+func isSTAAbsolutePPUData(mapper Mapper, pc uint16) bool {
+	return mapper.ReadMemory(pc) == 0x8D &&
+		mapper.ReadMemory(pc+1) == 0x07 &&
+		mapper.ReadMemory(pc+2) == 0x20
+}
+
+func isIndexCompareImmediateOpcode(op byte) bool {
+	switch op {
+	case 0xC0, // CPY #imm
+		0xE0: // CPX #imm
 		return true
 	default:
 		return false
