@@ -2183,6 +2183,134 @@ Post-phase note:
 - This phase materially increased real disassembled code lines while keeping output reassemblable.
 - The pointer-table pass is intentionally constrained to avoid uncontrolled data-to-code promotion.
 
+### Phase 31: Mapper-1 Branch Alternate Policy (Clamp, Not Disable)
+
+Status: Completed (2026-02-24)
+
+1. Replace the mapper-1 branch-alternate hard disable with a mapper-safe budget policy.
+2. Re-enable alternate-path exploration for mapper 1 while capping frontier growth under high trace budgets.
+3. Preserve existing verification behavior for priority ROM outputs.
+
+Acceptance:
+
+1. Mapper-1 traces no longer force `MaxBranchStates=0`.
+2. Mapper-1 runs show active branch alternates with bounded budgets.
+3. Full Go tests and Rom City Rampage verification remain green.
+
+Implementation notes:
+
+- Policy change in advisory emu-trace integration:
+  - `internal/disasm/emutrace.go`
+  - Removed hard-disable block:
+    - previous behavior: mapper 1 + `MaxBranchStates>0` => forced `0`.
+  - Added `tunedBranchStateBudgetForMapper(...)`:
+    - mapper 1 only
+    - low budget cap: `512`
+    - mid budget cap: `128` (`max_instructions >= 500000` or `max_visits_per_state >= 256`)
+    - high budget cap: `64` (`max_instructions >= 1000000` or `max_visits_per_state >= 512`)
+    - non-mapper-1 remains unchanged.
+  - Added debug telemetry when policy adjusts requested budget.
+- New tests:
+  - `internal/disasm/emutrace_test.go`
+  - Added coverage for:
+    - mapper-1 high-budget clamp
+    - mapper-1 mid-budget clamp
+    - mapper-1 low-budget passthrough
+    - non-mapper-1 unchanged behavior.
+
+Validation:
+
+- Full tests:
+  - `GOCACHE=/tmp/gocache_retrodisasm go test ./... -count=1`
+  - Result: success.
+- Mapper-1 policy proof (The Bard's Tale):
+  - `go run . -debug ... -trace-max-instr 2000000 -trace-max-visits-per-state 1024 -trace-max-branch-states 4096 ... "internal/testroms/commercial/notworking/The Bard's Tale (USA).nes"`
+  - Log highlights:
+    - `requested_max_branch_states=4096`
+    - `effective_max_branch_states=64`
+    - `branch_alternates=198` (re-enabled, not forced to `0`)
+    - `branch_alternate_budget_drops=3023` (bounded as intended).
+- Mapper-1 verify check:
+  - `go run . -verify -q -a ca65 -s nes -trace-mode hybrid -trace-max-instr 2000000 -trace-max-visits-per-state 1024 -trace-max-branch-states 4096 -o /tmp/bards_phase31_verify.ca65.asm "internal/testroms/commercial/notworking/The Bard's Tale (USA).nes"`
+  - Result: success.
+- Rom City Rampage regression guard:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+  - Output unchanged from Phase 30:
+    - `internal/testroms/special/Rom City Rampage.asm6.asm` (`60841` lines)
+    - `internal/testroms/special/Rom City Rampage.ca65.asm` (`60766` lines)
+    - instruction-line metric: `7418`.
+
+Post-phase note:
+
+- Mapper-1 alternate-path exploration is now active under controlled limits.
+- This phase improves policy correctness and mapper safety; primary Rom City code-density gains remain from Phases 29-30.
+
+### Phase 32: Mapper-Aware Split Pointer-Table Seeding (`tbl_lo`/`tbl_hi`)
+
+Status: Completed (2026-02-24)
+
+1. Implement split low/high-byte pointer-table target seeding in mapped-bank discovery.
+2. Keep split-table detection conservative via code-pattern and table-shape guards.
+3. Preserve stability and reassembly validity for Rom City Rampage outputs.
+
+Acceptance:
+
+1. Split-table seeding is integrated into additional-bank processing.
+2. Full Go test suite remains green.
+3. Rom City Rampage verification remains green with no regressions.
+
+Implementation notes:
+
+- Core discovery integration:
+  - `internal/disasm/banks.go`
+  - `processAdditionalBanks()` now calls:
+    - `seedLikelyMappedBankSplitPointerTableTargets()`
+- New split-table detection pass:
+  - Scans for paired indexed absolute loads (`LDA abs,X` / `LDA abs,Y`) within a short lookahead window.
+  - Derives candidate `(table_lo, table_hi)` starts from paired load operands.
+  - Requires table-start validity and bounded inter-table distance.
+  - Tries both low/high orientation orders.
+- New split-table target extraction guardrails:
+  - bounded run length (`min=4`, `max=64`)
+  - per-bank seed and pair caps (`maxSeedsPerBank=768`, `maxPairsPerBank=256`)
+  - source bytes must not already be typed as `CodeOffset`
+  - target must be a valid code address and pass official routine-start opcode gating
+  - target sequence must satisfy pointer-table shape checks (distinct targets + neighborhood signal).
+- Helper functions added:
+  - `extractSplitPointerTargets(...)`
+  - `readWordAt(...)`
+  - `isLikelySplitTableAddress(...)`
+  - `isLikelySplitPointerLoadOpcode(...)`
+  - `tableByteDistance(...)`
+
+Validation:
+
+- Full tests:
+  - `GOCACHE=/tmp/gocache_retrodisasm go test ./... -count=1`
+  - Result: success.
+- Rom City Rampage verify/regeneration:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+  - Output:
+    - `internal/testroms/special/Rom City Rampage.asm6.asm` (`60841` lines)
+    - `internal/testroms/special/Rom City Rampage.ca65.asm` (`60766` lines)
+- Code-density result:
+  - `rg -n '^[[:space:]]+[a-z]{3}\b' ... | wc -l`
+  - After Phase 31: `7418`
+  - After Phase 32: `7418`
+  - Delta: `+0` code lines (no regression).
+- Trace telemetry sample (Rom City Rampage, asm6, hybrid profile):
+  - `static_unique_pc`: `9232`
+  - `parsed_offsets`: `10151`
+  - `code_bytes_marked`: `15740`
+  - unchanged vs Phase 31 in this guarded configuration.
+
+Post-phase note:
+
+- The split-table framework is now in the core pipeline.
+- On Rom City Rampage, current guard thresholds are stable but too conservative to yield additional code lift, so tuning should focus on pattern coverage rather than broader unguarded seeding.
+
 ## Testing Plan
 
 1. Unit tests
@@ -2231,7 +2359,7 @@ Post-phase note:
 
 ## Immediate Next Steps
 
-1. Replace mapper-1 branch guard with a condition-based alternate-path policy (mapper-safe heuristics) so branch exploration can be re-enabled without reintroducing the regression.
-2. Add mapper-aware pointer-table enhancements for split low/high-byte tables (`tbl_lo`/`tbl_hi` style) with strict pair-shape checks.
-3. Use mapper-2 sweep telemetry to drive targeted PPU/frame-model experiments (starting with `Alfred Chicken` at hotspot `$C93F`) and re-measure `unique_pc` lift under the same preset matrix.
-4. Add a compact automated experiment matrix around `Alfred Chicken` (`max_visits` and PPU-stub variants) and feed results through class-aware clustering to quantify which changes shift failure class or hotspot region.
+1. Tune split-table detection coverage by adding additional indexed-load patterns and requiring nearby pointer-store/indirect-jump correlation to keep false positives low.
+2. Use mapper-2 sweep telemetry to drive targeted PPU/frame-model experiments (starting with `Alfred Chicken` at hotspot `$C93F`) and re-measure `unique_pc` lift under the same preset matrix.
+3. Add a compact automated experiment matrix around `Alfred Chicken` (`max_visits` and PPU-stub variants) and feed results through class-aware clustering to quantify which changes shift failure class or hotspot region.
+4. Tune mapper-1 clamp thresholds from real benchmark telemetry (coverage/runtime deltas) to reduce unnecessary budget drops while preserving stability.

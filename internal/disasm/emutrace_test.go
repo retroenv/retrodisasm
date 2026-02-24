@@ -43,3 +43,23 @@ func TestParseJoypadSequenceSettingUsesEnv(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []byte{1, 2, 3}, sequence)
 }
+
+func TestTunedBranchStateBudgetForMapper_Mapper1HighBudgetClamp(t *testing.T) {
+	got := tunedBranchStateBudgetForMapper(1, 4096, 2_000_000, 1024)
+	assert.Equal(t, mapper1BranchCapHighBudget, got)
+}
+
+func TestTunedBranchStateBudgetForMapper_Mapper1MidBudgetClamp(t *testing.T) {
+	got := tunedBranchStateBudgetForMapper(1, 400, 500_000, 128)
+	assert.Equal(t, mapper1BranchCapMidBudget, got)
+}
+
+func TestTunedBranchStateBudgetForMapper_Mapper1LowBudgetKeepsRequested(t *testing.T) {
+	got := tunedBranchStateBudgetForMapper(1, 128, 200_000, 64)
+	assert.Equal(t, 128, got)
+}
+
+func TestTunedBranchStateBudgetForMapper_NonMapper1Unchanged(t *testing.T) {
+	got := tunedBranchStateBudgetForMapper(2, 4096, 2_000_000, 1024)
+	assert.Equal(t, 4096, got)
+}

@@ -29,6 +29,7 @@ func (dis *Disasm) processAdditionalBanks(ctx context.Context) error {
 		dis.seedLikelyMappedBankEntryPoints()
 		dis.seedLikelyMappedBankCallTargets()
 		dis.seedLikelyMappedBankPointerTableTargets()
+		dis.seedLikelyMappedBankSplitPointerTableTargets()
 
 		if err := dis.arch.InitializeBankVectors(bankIndex); err != nil {
 			return fmt.Errorf("initializing vectors for bank %d: %w", bankIndex, err)
@@ -240,6 +241,167 @@ func hasLikelyPointerTableShape(targets []uint16, minDistinct int) bool {
 	}
 
 	return len(distinctTargets) >= minDistinct && closeNeighborPairs > 0
+}
+
+// seedLikelyMappedBankSplitPointerTableTargets looks for nearby pairs of indexed
+// absolute table loads (tbl_lo,tbl_hi style) and seeds routine targets derived
+// from combining low/high byte tables. Detection is heavily bounded and shape
+// guarded to avoid aggressive data-to-code promotion.
+func (dis *Disasm) seedLikelyMappedBankSplitPointerTableTargets() {
+	const (
+		maxSeedsPerBank      = 768
+		maxPairsPerBank      = 256
+		loadPairLookahead    = 16
+		maxRunEntries        = 64
+		minRunEntries        = 4
+		minDistinctTargets   = 3
+		maxTableByteDistance = 0x0200
+	)
+
+	start := dis.codeBaseAddress
+	end := dis.arch.LastCodeAddress()
+	if end <= start+5 {
+		return
+	}
+
+	seeded := 0
+	pairs := 0
+	seededTargets := map[uint16]struct{}{}
+
+	for pc := start; pc < end-5 && seeded < maxSeedsPerBank && pairs < maxPairsPerBank; pc++ {
+		firstOp, err := dis.ReadMemory(pc)
+		if err != nil || !isLikelySplitPointerLoadOpcode(firstOp) {
+			continue
+		}
+
+		firstTable, ok := dis.readWordAt(pc + 1)
+		if !ok || !dis.isLikelySplitTableAddress(firstTable, end) {
+			continue
+		}
+
+		paired := false
+		for delta := uint16(3); delta <= loadPairLookahead && pc+delta+2 <= end; delta++ {
+			secondPC := pc + delta
+			secondOp, err := dis.ReadMemory(secondPC)
+			if err != nil || secondOp != firstOp {
+				continue
+			}
+
+			secondTable, ok := dis.readWordAt(secondPC + 1)
+			if !ok || !dis.isLikelySplitTableAddress(secondTable, end) || secondTable == firstTable {
+				continue
+			}
+
+			if tableByteDistance(firstTable, secondTable) > maxTableByteDistance {
+				continue
+			}
+
+			targets, ok := dis.extractSplitPointerTargets(
+				firstTable, secondTable, end, maxRunEntries, minRunEntries, minDistinctTargets)
+			if !ok {
+				targets, ok = dis.extractSplitPointerTargets(
+					secondTable, firstTable, end, maxRunEntries, minRunEntries, minDistinctTargets)
+				if !ok {
+					continue
+				}
+			}
+
+			for _, target := range targets {
+				if seeded >= maxSeedsPerBank {
+					break
+				}
+				if _, exists := seededTargets[target]; exists {
+					continue
+				}
+				dis.AddAddressToParse(target, target, pc, nil, false)
+				seededTargets[target] = struct{}{}
+				seeded++
+			}
+			pairs++
+			paired = true
+			break
+		}
+
+		if paired {
+			pc += 2
+		}
+	}
+}
+
+func (dis *Disasm) extractSplitPointerTargets(lowTable, highTable, end uint16,
+	maxRunEntries, minRunEntries, minDistinctTargets int) ([]uint16, bool) {
+
+	targets := make([]uint16, 0, minRunEntries)
+	for i := 0; i < maxRunEntries; i++ {
+		lowAddr32 := uint32(lowTable) + uint32(i)
+		highAddr32 := uint32(highTable) + uint32(i)
+		if lowAddr32 > uint32(end) || highAddr32 > uint32(end) {
+			break
+		}
+		lowAddr := uint16(lowAddr32)
+		highAddr := uint16(highAddr32)
+
+		if dis.mapper.OffsetInfo(lowAddr).IsType(program.CodeOffset) ||
+			dis.mapper.OffsetInfo(highAddr).IsType(program.CodeOffset) {
+			break
+		}
+
+		low, err := dis.ReadMemory(lowAddr)
+		if err != nil {
+			break
+		}
+		high, err := dis.ReadMemory(highAddr)
+		if err != nil {
+			break
+		}
+
+		target := uint16(high)<<8 | uint16(low)
+		if !dis.isValidCodeAddress(target) || target > end {
+			break
+		}
+
+		targetOp, err := dis.ReadMemory(target)
+		if err != nil || !isLikelyM6502RoutineStartOpcode(targetOp) {
+			break
+		}
+		targets = append(targets, target)
+	}
+
+	if len(targets) < minRunEntries || !hasLikelyPointerTableShape(targets, minDistinctTargets) {
+		return nil, false
+	}
+	return targets, true
+}
+
+func (dis *Disasm) readWordAt(address uint16) (uint16, bool) {
+	low, err := dis.ReadMemory(address)
+	if err != nil {
+		return 0, false
+	}
+	high, err := dis.ReadMemory(address + 1)
+	if err != nil {
+		return 0, false
+	}
+	return uint16(high)<<8 | uint16(low), true
+}
+
+func (dis *Disasm) isLikelySplitTableAddress(address, end uint16) bool {
+	if !dis.isValidCodeAddress(address) || address > end {
+		return false
+	}
+	return !dis.mapper.OffsetInfo(address).IsType(program.CodeOffset)
+}
+
+func isLikelySplitPointerLoadOpcode(op byte) bool {
+	// Conservative: only LDA abs,X and LDA abs,Y.
+	return op == 0xBD || op == 0xB9
+}
+
+func tableByteDistance(a, b uint16) uint16 {
+	if a > b {
+		return a - b
+	}
+	return b - a
 }
 
 func isLikelyM6502RoutineStartOpcode(op byte) bool {

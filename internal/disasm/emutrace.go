@@ -22,6 +22,10 @@ const (
 	envEmuTraceJoypad2    = "RETRODISASM_EMU_TRACE_JOYPAD2"
 	envEmuTraceJoypad1Seq = "RETRODISASM_EMU_TRACE_JOYPAD1_SEQ"
 	envEmuTraceJoypad2Seq = "RETRODISASM_EMU_TRACE_JOYPAD2_SEQ"
+
+	mapper1BranchCapLowBudget  = 512
+	mapper1BranchCapMidBudget  = 128
+	mapper1BranchCapHighBudget = 64
 )
 
 func (dis *Disasm) runAdvisoryEmuTrace(ctx context.Context) *m6502emu.Result {
@@ -52,10 +56,18 @@ func (dis *Disasm) runAdvisoryEmuTrace(ctx context.Context) *m6502emu.Result {
 	}
 	cfg.Joypad1Sequence = joypad1Sequence
 	cfg.Joypad2Sequence = joypad2Sequence
-	if dis.cart != nil && dis.cart.Mapper == 1 && cfg.MaxBranchStates > 0 {
-		dis.logger.Debug("Disabling branch alternate exploration for mapper 1 due known regression hotspot",
-			log.Int("requested_max_branch_states", cfg.MaxBranchStates))
-		cfg.MaxBranchStates = 0
+	if dis.cart != nil {
+		tuned := tunedBranchStateBudgetForMapper(dis.cart.Mapper,
+			cfg.MaxBranchStates, cfg.MaxInstructions, cfg.MaxVisitsPerPC)
+		if tuned != cfg.MaxBranchStates {
+			dis.logger.Debug("Adjusting branch alternate budget for mapper policy",
+				log.Int("mapper", int(dis.cart.Mapper)),
+				log.Int("requested_max_branch_states", cfg.MaxBranchStates),
+				log.Int("effective_max_branch_states", tuned),
+				log.Int("max_instructions", cfg.MaxInstructions),
+				log.Int("max_visits_per_state", cfg.MaxVisitsPerPC))
+			cfg.MaxBranchStates = tuned
+		}
 	}
 
 	startSignature := dis.mapper.MappingSignature()
@@ -269,6 +281,26 @@ func envIntOrDefault(key string, defaultValue int) int {
 		return defaultValue
 	}
 	return parsed
+}
+
+func tunedBranchStateBudgetForMapper(mapper uint16, requested, maxInstructions, maxVisitsPerPC int) int {
+	if requested <= 0 {
+		return requested
+	}
+	if mapper != 1 {
+		return requested
+	}
+
+	capBudget := mapper1BranchCapLowBudget
+	if maxInstructions >= 1_000_000 || maxVisitsPerPC >= 512 {
+		capBudget = mapper1BranchCapHighBudget
+	} else if maxInstructions >= 500_000 || maxVisitsPerPC >= 256 {
+		capBudget = mapper1BranchCapMidBudget
+	}
+	if requested <= capBudget {
+		return requested
+	}
+	return capBudget
 }
 
 func intSetting(cliValue int, envKey string, defaultValue int) int {
