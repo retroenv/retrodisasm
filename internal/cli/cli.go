@@ -138,6 +138,10 @@ func createDisasmOptions(opts options.Program) options.Disassembler {
 	disasmOptions.TraceMaxInstructions = opts.TraceMaxInstr
 	disasmOptions.TraceMaxVisitsPerPC = opts.TraceMaxVisits
 	disasmOptions.TraceMaxBranchStates = opts.TraceMaxBranch
+	disasmOptions.TraceJoypad1 = opts.TraceJoypad1
+	disasmOptions.TraceJoypad2 = opts.TraceJoypad2
+	disasmOptions.TraceJoypad1Sequence = opts.TraceJoypad1Seq
+	disasmOptions.TraceJoypad2Sequence = opts.TraceJoypad2Seq
 
 	return disasmOptions
 }

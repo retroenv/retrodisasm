@@ -27,17 +27,21 @@ type Parameters struct {
 
 // Flags contains behavior options.
 type Flags struct {
-	Assembler      string `flag:"a" usage:"assembler format: asm6, ca65, nesasm, retroasm" default:"ca65"`
-	System         string `flag:"s" usage:"target system: nes, chip8 (default: auto-detect)"`
-	Binary         bool   `flag:"binary" usage:"treat input as raw binary without header"`
-	BaseAddress    string `flag:"base" usage:"base address for -binary mode in hex (e.g. 0200, 8000)"`
-	AssembleTest   bool   `flag:"verify" usage:"verify output by reassembling and comparing to input"`
-	Debug          bool   `flag:"debug" usage:"enable debug logging"`
-	Quiet          bool   `flag:"q" usage:"quiet mode"`
-	TraceMode      string `flag:"trace-mode" usage:"trace mode: static, emu, hybrid" default:"static"`
-	TraceMaxInstr  int    `flag:"trace-max-instr" usage:"max emulator trace instructions (0 uses default)"`
-	TraceMaxVisits int    `flag:"trace-max-visits-per-state" usage:"max visits per PC state during emu trace (0 uses default)"`
-	TraceMaxBranch int    `flag:"trace-max-branch-states" usage:"max inferred alternate branch states (0 disables expansion)"`
+	Assembler       string `flag:"a" usage:"assembler format: asm6, ca65, nesasm, retroasm" default:"ca65"`
+	System          string `flag:"s" usage:"target system: nes, chip8 (default: auto-detect)"`
+	Binary          bool   `flag:"binary" usage:"treat input as raw binary without header"`
+	BaseAddress     string `flag:"base" usage:"base address for -binary mode in hex (e.g. 0200, 8000)"`
+	AssembleTest    bool   `flag:"verify" usage:"verify output by reassembling and comparing to input"`
+	Debug           bool   `flag:"debug" usage:"enable debug logging"`
+	Quiet           bool   `flag:"q" usage:"quiet mode"`
+	TraceMode       string `flag:"trace-mode" usage:"trace mode: static, emu, hybrid" default:"static"`
+	TraceMaxInstr   int    `flag:"trace-max-instr" usage:"max emulator trace instructions (0 uses default)"`
+	TraceMaxVisits  int    `flag:"trace-max-visits-per-state" usage:"max visits per PC state during emu trace (0 uses default)"`
+	TraceMaxBranch  int    `flag:"trace-max-branch-states" usage:"max inferred alternate branch states (0 disables expansion)"`
+	TraceJoypad1    int    `flag:"trace-joypad1" usage:"joypad1 latched bitmask for emu trace (A=1,B=2,Select=4,Start=8,Up=16,Down=32,Left=64,Right=128)"`
+	TraceJoypad2    int    `flag:"trace-joypad2" usage:"joypad2 latched bitmask for emu trace (A=1,B=2,Select=4,Start=8,Up=16,Down=32,Left=64,Right=128)"`
+	TraceJoypad1Seq string `flag:"trace-joypad1-seq" usage:"joypad1 per-latch bitmask sequence for emu trace (comma/space separated, decimal or hex)"`
+	TraceJoypad2Seq string `flag:"trace-joypad2-seq" usage:"joypad2 per-latch bitmask sequence for emu trace (comma/space separated, decimal or hex)"`
 }
 
 // OutputFlags contains output formatting options.
@@ -76,6 +80,10 @@ type Disassembler struct {
 	TraceMaxInstructions int
 	TraceMaxVisitsPerPC  int
 	TraceMaxBranchStates int
+	TraceJoypad1         int
+	TraceJoypad2         int
+	TraceJoypad1Sequence string
+	TraceJoypad2Sequence string
 }
 
 // NewDisassembler returns a new options instance with default options.

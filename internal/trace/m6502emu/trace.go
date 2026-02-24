@@ -36,6 +36,10 @@ type Config struct {
 	MaxInstructions int
 	MaxVisitsPerPC  int
 	MaxBranchStates int
+	Joypad1State    byte
+	Joypad2State    byte
+	Joypad1Sequence []byte
+	Joypad2Sequence []byte
 }
 
 // TraceStep contains a single executed instruction with mapping metadata.
@@ -155,7 +159,7 @@ func Run(ctx context.Context, cart *cartridge.Cartridge, mapper Mapper, cfg Conf
 		res.Duration = time.Since(start)
 	}()
 
-	bus := newNesBus(cart, mapper)
+	bus := newNesBus(cart, mapper, cfg)
 	var currentPC uint16
 
 	bus.onMapperWrite = func(address uint16, value byte) {
@@ -326,7 +330,27 @@ func normalizeConfig(cfg Config) Config {
 	if cfg.MaxBranchStates < 0 {
 		cfg.MaxBranchStates = defaultMaxBranchStates
 	}
+	cfg.Joypad1State = clampJoypadState(cfg.Joypad1State)
+	cfg.Joypad2State = clampJoypadState(cfg.Joypad2State)
+	cfg.Joypad1Sequence = copyJoypadSequence(cfg.Joypad1Sequence)
+	cfg.Joypad2Sequence = copyJoypadSequence(cfg.Joypad2Sequence)
 	return cfg
+}
+
+func clampJoypadState(state byte) byte {
+	return state
+}
+
+func copyJoypadSequence(seq []byte) []byte {
+	if len(seq) == 0 {
+		return nil
+	}
+	copied := make([]byte, len(seq))
+	copy(copied, seq)
+	for i := range copied {
+		copied[i] = clampJoypadState(copied[i])
+	}
+	return copied
 }
 
 func finalizeResult(res *Result, uniquePCs map[uint16]struct{}, uniqueMappings map[uint64]struct{}) {

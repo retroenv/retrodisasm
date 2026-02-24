@@ -1580,6 +1580,156 @@ Post-phase note:
 - Rom City Rampage now emits another measurable step up in code while preserving deterministic rebuild parity.
 - Output is still data-heavy overall, indicating remaining gains require deeper mapper/IO path realism rather than budget-only tuning.
 
+### Phase 22: Deterministic JOYPAD Input Controls (Trace Config + Sweep)
+
+Status: Completed (2026-02-24)
+
+1. Implement deterministic JOYPAD mask controls for advisory emulator tracing via CLI/env.
+2. Preserve default behavior (`neutral input`) while enabling reproducible input-profile experiments.
+3. Run a Rom City Rampage JOYPAD sweep to quantify whether startup/menu input gates current coverage.
+
+Acceptance:
+
+1. Users can configure joypad latched state for controller 1/2 in trace mode.
+2. New settings are covered by tests and do not regress existing behavior.
+3. Rom City Rampage verify remains stable with and without custom JOYPAD masks.
+
+Implementation notes:
+
+- CLI/options plumbing:
+  - `internal/options/options.go`
+    - Added flags/options:
+      - `-trace-joypad1`
+      - `-trace-joypad2`
+    - Values are controller latched bitmasks:
+      - `A=1, B=2, Select=4, Start=8, Up=16, Down=32, Left=64, Right=128`
+  - `internal/cli/cli.go`
+    - Added propagation into `options.Disassembler`.
+  - `internal/cli/cli_test.go`
+    - Extended trace-flag parsing test coverage for `trace-joypad1/2`.
+- Trace/runtime wiring:
+  - `internal/disasm/emutrace.go`
+    - Added env fallbacks:
+      - `RETRODISASM_EMU_TRACE_JOYPAD1`
+      - `RETRODISASM_EMU_TRACE_JOYPAD2`
+    - Added joypad state fields to emu trace config and debug logging (`joypad1_state`, `joypad2_state`).
+  - `internal/trace/m6502emu/trace.go`
+    - Extended `Config` with `Joypad1State`/`Joypad2State`.
+    - Passed config into bus construction.
+  - `internal/trace/m6502emu/bus.go`
+    - `sampleJoypadState()` now returns configured deterministic masks instead of hard-coded neutral.
+  - `internal/trace/m6502emu/trace_test.go`
+    - Updated bus constructor calls for config argument.
+    - Added `TestNesBusJoypadConfiguredState`.
+
+Validation:
+
+- Full test suite:
+  - `GOCACHE=/tmp/retrodisasm_gocache_rch go test ./...`
+  - Result: success.
+- Rom City Rampage verify (baseline high-coverage profile):
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+- JOYPAD mask sweep (Rom City Rampage, `asm6`, verified):
+  - Tested masks:
+    - `0,1,2,4,8,16,32,64,128,3,5,9,24,48,96,255`
+  - Command profile:
+    - `-trace-mode hybrid -trace-max-instr 2000000 -trace-max-visits-per-state 1024 -trace-max-branch-states 4096`
+    - `-trace-joypad1 <mask>`
+  - Result:
+    - all masks verified successfully
+    - emitted code remained unchanged (`code=1075`) across tested masks.
+
+Post-phase note:
+
+- JOYPAD scripting controls are now available and deterministic, enabling reproducible input experiments without code changes.
+- For Rom City Rampage, controller mask variation did not change discovered code in current trace horizons, so the dominant remaining bottleneck is likely PPU/frame progression realism and mapper-path conditions, not neutral input alone.
+
+### Phase 23: Deterministic JOYPAD Timeline Scripting (Per-Latch Sequences)
+
+Status: Completed (2026-02-24)
+
+1. Extend JOYPAD trace controls from static masks to deterministic per-latch sequences.
+2. Keep sequence execution deterministic across branch-state replay by snapshotting sequence cursors.
+3. Verify Rom City Rampage rebuild parity remains stable while enabling richer scripted input experiments.
+
+Acceptance:
+
+1. Users can provide JOYPAD sequences via CLI/env for controller 1/2.
+2. Sequence advances on latch cycles and holds the final state once exhausted.
+3. Snapshot/restore preserves sequence position and replay determinism.
+
+Implementation notes:
+
+- CLI/options plumbing:
+  - `internal/options/options.go`
+    - Added:
+      - `-trace-joypad1-seq`
+      - `-trace-joypad2-seq`
+    - Added fields:
+      - `TraceJoypad1Sequence`
+      - `TraceJoypad2Sequence`
+  - `internal/cli/cli.go`
+    - Wired sequence flags into disassembler options.
+  - `internal/cli/cli_test.go`
+    - Extended trace-flag parsing test coverage for sequence fields.
+- Trace config parsing:
+  - `internal/disasm/emutrace.go`
+    - Added env fallbacks:
+      - `RETRODISASM_EMU_TRACE_JOYPAD1_SEQ`
+      - `RETRODISASM_EMU_TRACE_JOYPAD2_SEQ`
+    - Added robust sequence parsing with CLI precedence:
+      - separators: comma/semicolon/colon/whitespace
+      - token formats: decimal, `0xNN`, `$NN`
+    - Added debug fields:
+      - `joypad1_seq_len`
+      - `joypad2_seq_len`
+  - `internal/disasm/emutrace_test.go`
+    - Added parser/env precedence coverage:
+      - `TestParseJoypadSequence`
+      - `TestParseJoypadSequenceInvalidToken`
+      - `TestParseJoypadSequenceSettingPrefersCLI`
+      - `TestParseJoypadSequenceSettingUsesEnv`
+- Emulator bus/runtime behavior:
+  - `internal/trace/m6502emu/trace.go`
+    - Extended config:
+      - `Joypad1Sequence`
+      - `Joypad2Sequence`
+    - Defensive sequence-copy normalization added.
+  - `internal/trace/m6502emu/bus.go`
+    - Added per-controller sequence cursor state (`joypadSeqIndex`) to bus + snapshot.
+    - Latch behavior updated:
+      - strobe high: latch current scripted state without advancing
+      - high->low transition: latch and advance sequence
+    - Sequence policy:
+      - use scripted value when present
+      - fall back to static `trace-joypad*` mask when sequence is absent
+      - hold the last scripted value once cursor reaches end
+  - `internal/trace/m6502emu/trace_test.go`
+    - Added:
+      - `TestNesBusJoypadSequenceAdvancesPerLatchCycle`
+      - `TestNesBusJoypadSequenceSnapshotRestore`
+
+Validation:
+
+- Focused tests:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase23 go test ./internal/cli ./internal/disasm ./internal/trace/m6502emu -count=1`
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase23 go test ./internal/arch/m6502 ./internal/mapper -count=1`
+  - Result: success.
+- Rom City Rampage baseline verify:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+- Rom City Rampage sequence-profile verify:
+  - `go run . -verify -q -a asm6 -s nes -trace-mode hybrid -trace-max-instr 2000000 -trace-max-visits-per-state 1024 -trace-max-branch-states 4096 -trace-joypad1-seq "8,8,0,0,0" -o /tmp/phase23_rc_asm6_seq.asm "internal/testroms/special/Rom City Rampage.nes"`
+  - Result: success.
+  - Output check:
+    - `cmp -s /tmp/phase23_rc_asm6_seq.asm internal/testroms/special/Rom\ City\ Rampage.asm6.asm` -> identical.
+
+Post-phase note:
+
+- Timeline scripting infrastructure is now in place for deterministic menu/runtime progression experiments without code edits.
+- For current Rom City Rampage profiles, scripted sequence variation is stable but does not yet increase discovered code, so the next leverage point remains PPU/frame progression realism.
+
 ## Testing Plan
 
 1. Unit tests
@@ -1628,7 +1778,7 @@ Post-phase note:
 
 ## Immediate Next Steps
 
-1. Add optional deterministic input scripting (controller button timeline) for advisory mode to test menu/progression gates after startup.
-2. Extend PPU progression realism beyond data loops (e.g., frame/vblank phase model tied to PPU register interaction cadence).
-3. Add a fast failure classifier in benchmark scripts for corrupt/truncated ROM inputs (`Archon` class) to separate input-integrity failures from trace/mapper regressions.
-4. Replace mapper-1 branch guard with a condition-based alternate-path policy (mapper-safe heuristics) so branch exploration can be re-enabled without reintroducing the regression.
+1. Extend PPU progression realism beyond status/data loops (frame/vblank cadence tied to register interaction and timing proxies).
+2. Add a fast failure classifier in benchmark scripts for corrupt/truncated ROM inputs (`Archon` class) to separate input-integrity failures from trace/mapper regressions.
+3. Replace mapper-1 branch guard with a condition-based alternate-path policy (mapper-safe heuristics) so branch exploration can be re-enabled without reintroducing the regression.
+4. Add repeatable JOYPAD timeline presets/sweeps for menu-state traversal (e.g. title -> start -> in-game) and record resulting coverage deltas.

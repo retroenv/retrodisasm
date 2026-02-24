@@ -21,6 +21,7 @@ const (
 type nesBus struct {
 	cart   *cartridge.Cartridge
 	mapper Mapper
+	cfg    Config
 
 	ram    [ramSize]byte
 	prgRAM [prgRAMSize]byte
@@ -31,6 +32,7 @@ type nesBus struct {
 	joypadLatched  [2]byte
 	joypadShift    [2]byte
 	joypadBitsLeft [2]uint8
+	joypadSeqIndex [2]uint32
 
 	onMapperWrite func(address uint16, value byte)
 }
@@ -44,12 +46,14 @@ type busSnapshot struct {
 	joypadLatched      [2]byte
 	joypadShift        [2]byte
 	joypadBitsLeft     [2]uint8
+	joypadSeqIndex     [2]uint32
 }
 
-func newNesBus(cart *cartridge.Cartridge, mapper Mapper) *nesBus {
+func newNesBus(cart *cartridge.Cartridge, mapper Mapper, cfg Config) *nesBus {
 	return &nesBus{
 		cart:   cart,
 		mapper: mapper,
+		cfg:    cfg,
 	}
 }
 
@@ -62,6 +66,7 @@ func (b *nesBus) snapshot() busSnapshot {
 		joypadLatched:      b.joypadLatched,
 		joypadShift:        b.joypadShift,
 		joypadBitsLeft:     b.joypadBitsLeft,
+		joypadSeqIndex:     b.joypadSeqIndex,
 	}
 }
 
@@ -73,6 +78,7 @@ func (b *nesBus) restore(state busSnapshot) {
 	b.joypadLatched = state.joypadLatched
 	b.joypadShift = state.joypadShift
 	b.joypadBitsLeft = state.joypadBitsLeft
+	b.joypadSeqIndex = state.joypadSeqIndex
 }
 
 func (b *nesBus) Read(address uint16) uint8 {
@@ -157,30 +163,66 @@ func (b *nesBus) Write(address uint16, value uint8) {
 func (b *nesBus) writeJoypadStrobe(value byte) {
 	newStrobe := value&joypadButtonData != 0
 	if newStrobe {
-		b.latchJoypads()
+		// While strobe is high, read A directly from current state, but do not
+		// advance scripted timeline until the poll cycle is latched on high->low.
+		b.latchJoypads(false)
 	} else if b.joypadStrobe {
 		// Latch on high->low transition, matching CPU polling behavior.
-		b.latchJoypads()
+		b.latchJoypads(true)
 	}
 	b.joypadStrobe = newStrobe
 }
 
-func (b *nesBus) latchJoypads() {
+func (b *nesBus) latchJoypads(advanceSequence bool) {
 	for controller := 0; controller < len(b.joypadLatched); controller++ {
 		state := b.sampleJoypadState(controller)
 		b.joypadLatched[controller] = state
 		b.joypadShift[controller] = state
 		b.joypadBitsLeft[controller] = joypadButtonCount
+		if advanceSequence {
+			b.advanceJoypadSequence(controller)
+		}
 	}
 }
 
 func (b *nesBus) sampleJoypadState(controller int) byte {
-	// Neutral deterministic input by default (no pressed buttons).
 	// State bit order: A, B, Select, Start, Up, Down, Left, Right.
 	if controller < 0 || controller > 1 {
 		return 0
 	}
-	return 0
+	sequence := b.joypadSequence(controller)
+	if len(sequence) > 0 {
+		index := int(b.joypadSeqIndex[controller])
+		if index >= len(sequence) {
+			index = len(sequence) - 1
+		}
+		return sequence[index]
+	}
+	return b.defaultJoypadState(controller)
+}
+
+func (b *nesBus) defaultJoypadState(controller int) byte {
+	if controller == 0 {
+		return b.cfg.Joypad1State
+	}
+	return b.cfg.Joypad2State
+}
+
+func (b *nesBus) joypadSequence(controller int) []byte {
+	if controller == 0 {
+		return b.cfg.Joypad1Sequence
+	}
+	return b.cfg.Joypad2Sequence
+}
+
+func (b *nesBus) advanceJoypadSequence(controller int) {
+	sequence := b.joypadSequence(controller)
+	if len(sequence) == 0 {
+		return
+	}
+	if int(b.joypadSeqIndex[controller]) < len(sequence)-1 {
+		b.joypadSeqIndex[controller]++
+	}
 }
 
 func (b *nesBus) readJoypad(controller int) byte {

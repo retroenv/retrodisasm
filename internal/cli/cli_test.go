@@ -47,6 +47,10 @@ func TestParseFlags_DisasmOptions(t *testing.T) {
 				"-trace-max-instr", "12345",
 				"-trace-max-visits-per-state", "12",
 				"-trace-max-branch-states", "99",
+				"-trace-joypad1", "8",
+				"-trace-joypad2", "1",
+				"-trace-joypad1-seq", "8,0,0",
+				"-trace-joypad2-seq", "1 0 0",
 				"test.nes",
 			},
 			want: options.Disassembler{
@@ -56,6 +60,10 @@ func TestParseFlags_DisasmOptions(t *testing.T) {
 				TraceMaxInstructions: 12345,
 				TraceMaxVisitsPerPC:  12,
 				TraceMaxBranchStates: 99,
+				TraceJoypad1:         8,
+				TraceJoypad2:         1,
+				TraceJoypad1Sequence: "8,0,0",
+				TraceJoypad2Sequence: "1 0 0",
 			},
 		},
 	}
@@ -80,6 +88,10 @@ func TestParseFlags_DisasmOptions(t *testing.T) {
 			assert.Equal(t, tt.want.TraceMaxInstructions, got.TraceMaxInstructions)
 			assert.Equal(t, tt.want.TraceMaxVisitsPerPC, got.TraceMaxVisitsPerPC)
 			assert.Equal(t, tt.want.TraceMaxBranchStates, got.TraceMaxBranchStates)
+			assert.Equal(t, tt.want.TraceJoypad1, got.TraceJoypad1)
+			assert.Equal(t, tt.want.TraceJoypad2, got.TraceJoypad2)
+			assert.Equal(t, tt.want.TraceJoypad1Sequence, got.TraceJoypad1Sequence)
+			assert.Equal(t, tt.want.TraceJoypad2Sequence, got.TraceJoypad2Sequence)
 		})
 	}
 }

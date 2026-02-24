@@ -14,10 +14,14 @@ import (
 )
 
 const (
-	envEmuTraceEnable    = "RETRODISASM_EMU_TRACE"
-	envEmuTraceMaxInstr  = "RETRODISASM_EMU_TRACE_MAX_INSTR"
-	envEmuTraceMaxVisits = "RETRODISASM_EMU_TRACE_MAX_VISITS"
-	envEmuTraceMaxBranch = "RETRODISASM_EMU_TRACE_MAX_BRANCH_STATES"
+	envEmuTraceEnable     = "RETRODISASM_EMU_TRACE"
+	envEmuTraceMaxInstr   = "RETRODISASM_EMU_TRACE_MAX_INSTR"
+	envEmuTraceMaxVisits  = "RETRODISASM_EMU_TRACE_MAX_VISITS"
+	envEmuTraceMaxBranch  = "RETRODISASM_EMU_TRACE_MAX_BRANCH_STATES"
+	envEmuTraceJoypad1    = "RETRODISASM_EMU_TRACE_JOYPAD1"
+	envEmuTraceJoypad2    = "RETRODISASM_EMU_TRACE_JOYPAD2"
+	envEmuTraceJoypad1Seq = "RETRODISASM_EMU_TRACE_JOYPAD1_SEQ"
+	envEmuTraceJoypad2Seq = "RETRODISASM_EMU_TRACE_JOYPAD2_SEQ"
 )
 
 func (dis *Disasm) runAdvisoryEmuTrace(ctx context.Context) *m6502emu.Result {
@@ -35,7 +39,19 @@ func (dis *Disasm) runAdvisoryEmuTrace(ctx context.Context) *m6502emu.Result {
 		MaxInstructions: intSetting(dis.options.TraceMaxInstructions, envEmuTraceMaxInstr, 100000),
 		MaxVisitsPerPC:  intSetting(dis.options.TraceMaxVisitsPerPC, envEmuTraceMaxVisits, 8),
 		MaxBranchStates: intSetting(dis.options.TraceMaxBranchStates, envEmuTraceMaxBranch, 0),
+		Joypad1State:    byte(intSetting(dis.options.TraceJoypad1, envEmuTraceJoypad1, 0) & 0xFF),
+		Joypad2State:    byte(intSetting(dis.options.TraceJoypad2, envEmuTraceJoypad2, 0) & 0xFF),
 	}
+	joypad1Sequence, err := parseJoypadSequenceSetting(dis.options.TraceJoypad1Sequence, envEmuTraceJoypad1Seq)
+	if err != nil {
+		dis.logger.Warn("Ignoring invalid joypad1 trace sequence", log.Err(err))
+	}
+	joypad2Sequence, err := parseJoypadSequenceSetting(dis.options.TraceJoypad2Sequence, envEmuTraceJoypad2Seq)
+	if err != nil {
+		dis.logger.Warn("Ignoring invalid joypad2 trace sequence", log.Err(err))
+	}
+	cfg.Joypad1Sequence = joypad1Sequence
+	cfg.Joypad2Sequence = joypad2Sequence
 	if dis.cart != nil && dis.cart.Mapper == 1 && cfg.MaxBranchStates > 0 {
 		dis.logger.Debug("Disabling branch alternate exploration for mapper 1 due known regression hotspot",
 			log.Int("requested_max_branch_states", cfg.MaxBranchStates))
@@ -78,6 +94,10 @@ func (dis *Disasm) runAdvisoryEmuTrace(ctx context.Context) *m6502emu.Result {
 		log.Int("branch_alternates", result.BranchAlternateCount),
 		log.Int("branch_alternate_budget_drops", result.BranchAlternateBudgetDrops),
 		log.Int("branch_states_executed", result.BranchStatesExecuted),
+		log.Int("joypad1_state", int(cfg.Joypad1State)),
+		log.Int("joypad2_state", int(cfg.Joypad2State)),
+		log.Int("joypad1_seq_len", len(cfg.Joypad1Sequence)),
+		log.Int("joypad2_seq_len", len(cfg.Joypad2Sequence)),
 		log.String("halt_reason", result.HaltReason),
 		log.Duration("elapsed", result.Duration),
 	)
@@ -256,6 +276,55 @@ func intSetting(cliValue int, envKey string, defaultValue int) int {
 		return cliValue
 	}
 	return envIntOrDefault(envKey, defaultValue)
+}
+
+func parseJoypadSequenceSetting(cliValue, envKey string) ([]byte, error) {
+	value := strings.TrimSpace(cliValue)
+	if value == "" {
+		value = strings.TrimSpace(os.Getenv(envKey))
+	}
+	if value == "" {
+		return nil, nil
+	}
+	return parseJoypadSequence(value)
+}
+
+func parseJoypadSequence(value string) ([]byte, error) {
+	tokens := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ';' || r == ':' || r == ' ' || r == '\t' || r == '\n' || r == '\r'
+	})
+	if len(tokens) == 0 {
+		return nil, fmt.Errorf("empty joypad sequence")
+	}
+	sequence := make([]byte, 0, len(tokens))
+	for _, token := range tokens {
+		parsed, err := parseJoypadToken(token)
+		if err != nil {
+			return nil, fmt.Errorf("invalid joypad token %q: %w", token, err)
+		}
+		sequence = append(sequence, parsed)
+	}
+	return sequence, nil
+}
+
+func parseJoypadToken(token string) (byte, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return 0, fmt.Errorf("empty token")
+	}
+	if strings.HasPrefix(token, "$") {
+		token = "0x" + token[1:]
+	}
+	base := 10
+	if strings.HasPrefix(token, "0x") || strings.HasPrefix(token, "0X") {
+		token = token[2:]
+		base = 16
+	}
+	value, err := strconv.ParseUint(token, base, 8)
+	if err != nil {
+		return 0, err
+	}
+	return byte(value), nil
 }
 
 func formatMapperWriteAddressHotspots(hotspots []m6502emu.MapperWriteAddressHotspot) string {
