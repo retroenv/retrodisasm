@@ -17,6 +17,7 @@ const (
 	defaultMaxVisitsPerPC  = 8
 	defaultMaxBranchStates = 0
 	mapperHotspotLimit     = 8
+	bootLoopVisitLimit     = 2048
 )
 
 // Mapper defines the mapper functions needed by the emulator trace.
@@ -183,6 +184,7 @@ func Run(ctx context.Context, cart *cartridge.Cartridge, mapper Mapper, cfg Conf
 	)
 
 	visits := make(map[visitKey]int, 4096)
+	visitCaps := make(map[visitKey]int, 128)
 	uniquePCs := make(map[uint16]struct{}, 4096)
 	uniqueMappings := make(map[uint64]struct{}, 64)
 	queuedBranches := make(map[branchStateKey]struct{}, cfg.MaxBranchStates)
@@ -200,8 +202,18 @@ func Run(ctx context.Context, cart *cartridge.Cartridge, mapper Mapper, cfg Conf
 
 		signatureBefore := mapper.MappingSignature()
 		vk := visitKey{PC: cpu.PC, MappingID: signatureBefore}
+		limit := cfg.MaxVisitsPerPC
+		if capLimit, ok := visitCaps[vk]; ok {
+			limit = capLimit
+		}
 		visits[vk]++
-		if visits[vk] > cfg.MaxVisitsPerPC {
+		if visits[vk] > limit {
+			if limit == cfg.MaxVisitsPerPC && shouldRelaxVisitLimitForStartupLoop(mapper, res, cpu.PC) {
+				limit = relaxedVisitLimit(cfg.MaxVisitsPerPC)
+				visitCaps[vk] = limit
+			}
+		}
+		if visits[vk] > limit {
 			lastHaltReason = fmt.Sprintf("pc visit limit exceeded at $%04X", cpu.PC)
 			if !restoreNextState(&frontier, cpu, bus, mapper, res) {
 				break
@@ -535,4 +547,129 @@ func flagsByte(flags cpu6502.Flags) uint8 {
 		(flags.U << 5) |
 		(flags.V << 6) |
 		(flags.N << 7)
+}
+
+func relaxedVisitLimit(base int) int {
+	if base >= bootLoopVisitLimit {
+		return base
+	}
+	return bootLoopVisitLimit
+}
+
+func shouldRelaxVisitLimitForStartupLoop(mapper Mapper, res *Result, pc uint16) bool {
+	if len(res.Steps) > 20000 {
+		return false
+	}
+	for _, event := range res.BankSwitchWrites {
+		if event.Changed {
+			return false
+		}
+	}
+	if len(res.BankSwitchWrites) > 32 {
+		return false
+	}
+	if pc < 0x8000 {
+		return false
+	}
+	return isTightCounterLoopPC(mapper, pc)
+}
+
+func isTightCounterLoopPC(mapper Mapper, pc uint16) bool {
+	op0 := mapper.ReadMemory(pc)
+
+	// Branch endpoint in a tight backward loop, e.g. BNE -4.
+	if isConditionalBranchOpcode(op0) {
+		target := pc + 2 + uint16(int16(int8(mapper.ReadMemory(pc+1))))
+		if target <= pc && pc-target <= 8 {
+			return true
+		}
+	}
+
+	// Counter + backward-branch patterns starting near this PC.
+	// This catches common startup delays and RAM clear loops with small loop bodies.
+	for offset := uint16(0); offset <= 5; offset++ {
+		counterPC := pc + offset
+		if !isIndexCounterOpcode(mapper.ReadMemory(counterPC)) {
+			continue
+		}
+		if !isConditionalBranchOpcode(mapper.ReadMemory(counterPC + 1)) {
+			continue
+		}
+		target := counterPC + 3 + uint16(int16(int8(mapper.ReadMemory(counterPC+2))))
+		if isNearbyLoopTarget(pc, counterPC, target) {
+			return true
+		}
+	}
+
+	if isDelayLoopPrefaceOpcode(op0) &&
+		isIndexCounterOpcode(mapper.ReadMemory(pc+1)) &&
+		isConditionalBranchOpcode(mapper.ReadMemory(pc+2)) {
+		target := pc + 4 + uint16(int16(int8(mapper.ReadMemory(pc+3))))
+		if target == pc || target == pc+1 {
+			return true
+		}
+	}
+	return false
+}
+
+func isNearbyLoopTarget(basePC, counterPC, target uint16) bool {
+	if target > counterPC {
+		return false
+	}
+
+	distance := int(counterPC) - int(target)
+	if distance > 8 {
+		return false
+	}
+
+	return target <= basePC+2
+}
+
+func isConditionalBranchOpcode(op byte) bool {
+	switch op {
+	case 0x90, // BCC
+		0xB0, // BCS
+		0xF0, // BEQ
+		0x30, // BMI
+		0xD0, // BNE
+		0x10, // BPL
+		0x50, // BVC
+		0x70: // BVS
+		return true
+	default:
+		return false
+	}
+}
+
+func isIndexCounterOpcode(op byte) bool {
+	switch op {
+	case 0xCA, // DEX
+		0x88, // DEY
+		0xE8, // INX
+		0xC8: // INY
+		return true
+	default:
+		return false
+	}
+}
+
+func isDelayLoopPrefaceOpcode(op byte) bool {
+	switch op {
+	case 0x48, // PHA
+		0x08, // PHP
+		0xEA, // NOP
+		0x8A, // TXA
+		0x98, // TYA
+		0xAA, // TAX
+		0xA8, // TAY
+		0x18, // CLC
+		0x38, // SEC
+		0x58, // CLI
+		0x78, // SEI
+		0xD8, // CLD
+		0xF8: // SED
+		return true
+	default:
+		return false
+	}
 }

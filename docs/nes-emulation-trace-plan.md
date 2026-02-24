@@ -1278,6 +1278,67 @@ Post-phase note:
 - The new instrumentation confirms current Alfred failure is not a late mapper-switch reconstruction issue in traced paths; the advisory trace remains trapped in an early loop (`$C5E1`) and never executes mapper writes.
 - This narrows the next corrective work to startup-loop escape realism (I/O stub behavior and/or seeded alternate path policy), not additional mapper-write postprocessing.
 
+### Phase 17: Startup Loop Escape Realism (PPU + Counter-Loop Budget)
+
+Status: Completed (2026-02-24)
+
+1. Improve advisory startup-path realism for mapper-2 failures without changing mapper semantics.
+2. Unblock common boot-time delay/clear loops under low `max_visits` settings.
+3. Re-run Alfred with default sweep settings (`visits=8`) and measure coverage delta.
+
+Acceptance:
+
+1. Alfred no longer halts in the initial `$C5E1` delay loop under `visits=8`.
+2. Emulator trace still deterministic and test suite remains green.
+3. Mapper baseline pass/fail behavior does not regress.
+
+Implementation notes:
+
+- Dynamic PPU status stub added in `internal/trace/m6502emu/bus.go`:
+  - `$2002` now alternates deterministic clear/set vblank states (`0x00`, `0x80`, ...), instead of hard-coded always-set.
+  - `ppuStatusReadCount` is included in bus snapshot/restore so branch-state replay remains deterministic.
+- Added bounded startup-loop visit relaxation in `internal/trace/m6502emu/trace.go`:
+  - New boot-loop cap: `bootLoopVisitLimit=2048`.
+  - When per-PC visit budget is exceeded, advisory trace can temporarily relax only for detected tight counter loops (`DEX/DEY/INX/INY` + short backward branch patterns).
+  - Guardrails:
+    - no observed mapper *mapping changes* yet (`Changed=true` events disable relaxation)
+    - trace progress still bounded by instruction budget and per-loop cap.
+- New/updated tests in `internal/trace/m6502emu/trace_test.go`:
+  - `TestNesBusPPUStatusStub` (dynamic sequence)
+  - `TestNesBusPPUStatusSnapshotRestore`
+  - `TestRunEscapesStartupCounterLoopWithDefaultVisitBudget`
+  - `TestRunEscapesStartupMemoryClearLoopWithDefaultVisitBudget`
+
+Validation:
+
+- Focused tests:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase17 go test ./internal/trace/m6502emu -count=1`
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase17 go test ./internal/disasm -count=1`
+  - Result: success.
+- Full tests:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase17 go test ./...`
+  - Result: success.
+- Alfred default-visits run:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase17 go run . -debug -verify -q -a ca65 -s nes -trace-mode hybrid -trace-max-instr 200000 -trace-max-visits-per-state 8 -trace-max-branch-states 0 -o /tmp/alfred_phase17_v8e_PTld/out.asm "internal/testroms/commercial/notworking/Alfred Chicken (USA).nes"`
+  - Result: verify still fails with `segment PRG mismatch: 24061 offset mismatches` (not fixed in this phase).
+  - Coverage/flow delta vs Phase 16 (`v=8`):
+    - before: `instructions=212`, `unique_pc=17`, `mapper_writes=0`, halt at `$C5E1`
+    - after: `instructions=8103`, `unique_pc=87`, `mapper_writes=3`, halt at `$81FA`
+- Notworking mapper baseline:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase17 scripts/benchmark_mapper_corpus.sh -g notworking -a ca65 -o /tmp/phase17_mapper_corpus_notworking.csv`
+  - Summary unchanged:
+    - mapper `1`: `2/2` pass
+    - mapper `2`: `5/7` pass
+- Mapper 2 focused sweep:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase17 scripts/benchmark_trace_sweep.sh -g notworking -m 2 -i 200000 -v 8 -b 0 -o /tmp/phase17_trace_sweep_m2.csv`
+  - Summary unchanged:
+    - mapper `2`: `5 pass / 2 fail / 7 total`
+
+Post-phase note:
+
+- Startup-loop realism materially improved Alfred trace depth under default budgets (5x+ unique PC coverage gain), but ROM verification mismatch remains unchanged.
+- The current halt hotspot (`$81FA`) sits in repeated PPU update flow, and nearby control flow includes JOYPAD polling (`$8217`), indicating the next likely gains come from richer IO timing/input stubs rather than mapper-write handling.
+
 ## Testing Plan
 
 1. Unit tests
@@ -1326,10 +1387,7 @@ Post-phase note:
 
 ## Immediate Next Steps
 
-1. Improve startup loop escape realism for mapper-2 triage (first target: dynamic/non-constant PPU status stub strategy around `$C5E1` loop behavior).
-2. Add a fast failure classifier in benchmark scripts for corrupt/truncated ROM inputs (`Archon` class) to separate input-integrity failures from trace/mapper regressions.
-3. Replace mapper-1 branch guard with a condition-based alternate-path policy (mapper-safe heuristics) so branch exploration can be re-enabled without reintroducing the regression.
-4. Re-run Alfred-focused debug traces after stub/branch-policy changes and compare:
-   - `mapper_writes`
-   - `unique_pc`
-   - verify mismatch count
+1. Add JOYPAD serial input stub realism (`$4016/$4017` latch + shift behavior) and re-measure Alfred hotspot movement from `$81FA`/`$8217` loops.
+2. Add lightweight PPU timing progression hooks for repeated `PPU_DATA` update loops so startup/frame loops can advance without inflating global visit budgets.
+3. Add a fast failure classifier in benchmark scripts for corrupt/truncated ROM inputs (`Archon` class) to separate input-integrity failures from trace/mapper regressions.
+4. Replace mapper-1 branch guard with a condition-based alternate-path policy (mapper-safe heuristics) so branch exploration can be re-enabled without reintroducing the regression.
