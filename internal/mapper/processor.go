@@ -76,7 +76,8 @@ func (m *Mapper) addMissingSymbolAliases(app *program.Program) {
 
 	missing := map[string]uint16{}
 	for _, prgBank := range app.PRG {
-		for _, off := range prgBank.Offsets {
+		for i := range prgBank.Offsets {
+			off := &prgBank.Offsets[i]
 			symbol, ok := referencedSymbol(off.Code)
 			if !ok {
 				continue
@@ -87,6 +88,11 @@ func (m *Mapper) addMissingSymbolAliases(app *program.Program) {
 			address, ok := symbolAddress(symbol)
 			if !ok {
 				continue
+			}
+			if isRelativeBranchCode(off.Code) {
+				if rewriteRelativeBranchAsBytes(off) {
+					continue
+				}
 			}
 			missing[symbol] = address
 		}
@@ -215,6 +221,28 @@ func symbolAddress(symbol string) (uint16, bool) {
 		return address, true
 	}
 	return 0, false
+}
+
+func isRelativeBranchCode(code string) bool {
+	fields := strings.Fields(code)
+	if len(fields) < 2 {
+		return false
+	}
+
+	switch strings.ToUpper(fields[0]) {
+	case "BCC", "BCS", "BEQ", "BMI", "BNE", "BPL", "BVC", "BVS":
+		return true
+	default:
+		return false
+	}
+}
+
+func rewriteRelativeBranchAsBytes(off *program.Offset) bool {
+	if len(off.Data) < 2 {
+		return false
+	}
+	off.Code = fmt.Sprintf(".byte $%02X, $%02X", off.Data[0], off.Data[1])
+	return true
 }
 
 // getProgramOffset converts a disassembly offset to a program offset.

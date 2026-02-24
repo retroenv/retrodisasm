@@ -446,6 +446,81 @@ func TestSetProgramBanks_AddsAliasWhenLabelIsInsideInstruction(t *testing.T) {
 	assert.Equal(t, uint16(0x8001), aliasAddress)
 }
 
+func TestSetProgramBanks_RewritesUnresolvedRelativeBranchAsRawBytes(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		PRG: make([]byte, 0x10),
+	}
+	arch := &mockArchitecture{bankWindowSize: 0}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+	mapper.SetCodeBaseAddress(0x8000)
+
+	mockDis := &mockDisasm{
+		opts: options.Disassembler{},
+	}
+
+	mapper.InjectDependencies(Dependencies{
+		Disasm: mockDis,
+		Vars:   &mockVariableManager{},
+		Consts: &mockConstantManager{},
+	})
+	mapper.InitializeDependencyBanks()
+
+	mapper.banks[0].offsets[0].SetType(program.CodeOffset)
+	mapper.banks[0].offsets[0].Code = "bpl"
+	mapper.banks[0].offsets[0].BranchingTo = "_label_8001"
+	mapper.banks[0].offsets[0].Data = []byte{0x10, 0xFF}
+
+	app := &program.Program{
+		Constants: map[string]uint16{},
+	}
+	err = mapper.SetProgramBanks(app)
+	assert.NoError(t, err)
+
+	assert.Equal(t, ".byte $10, $FF", app.PRG[0].Offsets[0].Code)
+	_, ok := app.PRG[0].Constants["_label_8001"]
+	assert.False(t, ok)
+}
+
+func TestSetProgramBanks_KeepsAliasForUnresolvedNonBranchSymbol(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		PRG: make([]byte, 0x10),
+	}
+	arch := &mockArchitecture{bankWindowSize: 0}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+	mapper.SetCodeBaseAddress(0x8000)
+
+	mockDis := &mockDisasm{
+		opts: options.Disassembler{},
+	}
+
+	mapper.InjectDependencies(Dependencies{
+		Disasm: mockDis,
+		Vars:   &mockVariableManager{},
+		Consts: &mockConstantManager{},
+	})
+	mapper.InitializeDependencyBanks()
+
+	mapper.banks[0].offsets[0].SetType(program.CodeOffset)
+	mapper.banks[0].offsets[0].Code = "jmp"
+	mapper.banks[0].offsets[0].BranchingTo = "_label_8001"
+	mapper.banks[0].offsets[0].Data = []byte{0x4C, 0x01, 0x80}
+
+	app := &program.Program{
+		Constants: map[string]uint16{},
+	}
+	err = mapper.SetProgramBanks(app)
+	assert.NoError(t, err)
+
+	assert.Equal(t, "jmp _label_8001", app.PRG[0].Offsets[0].Code)
+	aliasAddress, ok := app.PRG[0].Constants["_label_8001"]
+	assert.True(t, ok)
+	assert.Equal(t, uint16(0x8001), aliasAddress)
+}
+
 func TestSymbolAddress_WithMappingSuffix(t *testing.T) {
 	address, ok := symbolAddress("_func_ff79_m8d46")
 	assert.True(t, ok)

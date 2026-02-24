@@ -1158,6 +1158,62 @@ Post-phase note:
   - large PRG mismatch class (`Alfred Chicken`)
   - invalid/corrupt input class (`Archon` unexpected EOF on PRG load)
 
+### Phase 15: Unresolved Relative-Branch Fallback Hardening
+
+Status: Completed (2026-02-24)
+
+1. Eliminate `ca65` range-error failures caused by unresolved `_label_XXXX` symbols used by relative branch opcodes.
+2. Keep fallback aliases for unresolved non-branch symbols (`JSR/JMP/.word` cases).
+3. Improve mapper-2 notworking corpus pass rate without changing trace-frontier policy.
+
+Acceptance:
+
+1. `Casino Kid (USA).nes` verifies successfully with `-a ca65`.
+2. Mapper `2` notworking baseline improves from `4/7` to `5/7` pass.
+3. Unit/integration test suite remains green.
+
+Implementation notes:
+
+- Targeted fallback behavior was added in `internal/mapper/processor.go`:
+  - During `addMissingSymbolAliases()`, unresolved symbol references are still scanned from emitted code.
+  - For unresolved **relative branch** instructions (`BCC/BCS/BEQ/BMI/BNE/BPL/BVC/BVS`), fallback symbol aliasing is bypassed and the instruction is rewritten as raw bytes from the original opcode payload:
+    - example output form: `.byte $10, $0F`
+  - For unresolved **non-branch** references, existing alias fallback behavior remains unchanged.
+- New helpers:
+  - `isRelativeBranchCode()`
+  - `rewriteRelativeBranchAsBytes()`
+- New tests in `internal/mapper/processor_test.go`:
+  - `TestSetProgramBanks_RewritesUnresolvedRelativeBranchAsRawBytes`
+  - `TestSetProgramBanks_KeepsAliasForUnresolvedNonBranchSymbol`
+
+Validation:
+
+- Mapper package tests:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase15 go test ./internal/mapper/...`
+  - Result: success.
+- Full tests:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase15 go test ./...`
+  - Result: success.
+- Target ROM verification:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase15 go run . -verify -q -a ca65 -s nes -o /tmp/casino_phase15_after2_I7Ds/out.asm "internal/testroms/commercial/notworking/Casino Kid (USA).nes"`
+  - Result: success (`EXIT:0`).
+- Notworking mapper baseline:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase15 scripts/benchmark_mapper_corpus.sh -g notworking -a ca65 -o /tmp/phase15_mapper_corpus_notworking.csv`
+  - Summary:
+    - mapper `1`: `2/2` pass
+    - mapper `2`: `5/7` pass (improved from `4/7`)
+- Mapper `2` focused sweep:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase15 scripts/benchmark_trace_sweep.sh -g notworking -m 2 -i 200000 -v 8 -b 0 -o /tmp/phase15_trace_sweep_m2.csv`
+  - Summary:
+    - mapper `2`: `5 pass / 2 fail / 7 total`
+
+Post-phase note:
+
+- The `Casino Kid` assembler-range failure class is resolved by making unresolved relative branches assembler-safe while preserving exact ROM bytes.
+- Remaining mapper `2` failure classes are now:
+  - `Alfred Chicken` (large PRG mismatch)
+  - `Archon` (unexpected EOF / corrupt PRG load)
+
 ## Testing Plan
 
 1. Unit tests
@@ -1206,7 +1262,7 @@ Post-phase note:
 
 ## Immediate Next Steps
 
-1. Use new assembler forensic artifacts to implement a targeted fix for `Casino Kid` range-error sites (starting from `assembler_error_context.txt` hotspots).
-2. Investigate `Alfred Chicken` large PRG mismatch path with focused mapper-write/flow instrumentation (non-vector hotspot class).
+1. Investigate `Alfred Chicken` large PRG mismatch path with focused mapper-write/flow instrumentation (non-vector hotspot class).
+2. Add a fast failure classifier in benchmark scripts for corrupt/truncated ROM inputs (`Archon` class) to separate input-integrity failures from trace/mapper regressions.
 3. Replace mapper-1 branch guard with a condition-based alternate-path policy (mapper-safe heuristics) so branch exploration can be re-enabled without reintroducing the regression.
 4. Improve I/O stub realism (PPU/APU/controller hotspots) to reduce mapper-state divergence in startup/control loops.
