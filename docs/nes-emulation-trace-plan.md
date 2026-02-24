@@ -2568,6 +2568,136 @@ Post-phase note:
 - The active bottleneck has shifted and is now quantified: split candidates are reaching extraction, but extraction still yields zero accepted targets.
 - Next gains should target split extraction acceptance rules rather than further correlation relaxation.
 
+### Phase 37: Split Extraction Acceptance Tuning (Sparse/Short Runs)
+
+Status: Completed (2026-02-24)
+
+1. Tune split extraction acceptance rules to convert post-correlation candidates into real seeded targets.
+2. Keep the changes bounded via sparse-run limits and existing correlation/target gates.
+3. Re-measure Rom City code-density lift after extraction-focused tuning.
+
+Acceptance:
+
+1. Split extraction produces non-zero accepted targets on Rom City.
+2. Full tests and Rom City verification remain green.
+3. Output remains reassemblable for `ca65` and `asm6`.
+
+Implementation notes:
+
+- Extraction threshold tuning in `internal/disasm/banks.go`:
+  - split seeding configuration:
+    - `minRunEntries: 2 -> 1`
+    - `minDistinctTargets: 2 -> 1`
+  - extraction now tolerates sparse rows after run start:
+    - added `maxTrailingSkips = 2`
+  - correlation lookahead retained at widened value (`80`) from Phase 36.
+- Shape/acceptance behavior:
+  - single-target split runs can be accepted (`len(targets)==1`) when they pass all existing validity/opcode/correlation guards.
+  - multi-target runs still prefer table-shape checks, with code-evidence fallback.
+- Correlation variant path remains strict on indirect-use evidence, but indexed-store pair path no longer requires transfer/arithmetic signal.
+
+Validation:
+
+- Full tests:
+  - `GOCACHE=/tmp/gocache_retrodisasm go test ./... -count=1`
+  - Result: success.
+- Rom City Rampage verify/regeneration:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+  - Output:
+    - `internal/testroms/special/Rom City Rampage.asm6.asm` (`61042` lines)
+    - `internal/testroms/special/Rom City Rampage.ca65.asm` (`60967` lines)
+- Code-density result:
+  - `rg -n '^[[:space:]]+[a-z]{3}\b' ... | wc -l`
+  - After Phase 36: `7418`
+  - After Phase 37: `7542`
+  - Delta: `+124` code lines.
+- Telemetry delta (Rom City Rampage, asm6, hybrid profile):
+  - Before (Phase 36):
+    - `split_seed_candidate_pairs=47`
+    - `split_seed_rejected_correlation=38`
+    - `split_seed_rejected_extract=9`
+    - `split_seed_accepted_targets=0`
+    - `static_unique_pc=9232`
+    - `parsed_offsets=10151`
+    - `code_bytes_marked=15740`
+  - After (Phase 37):
+    - `split_seed_candidate_pairs=47`
+    - `split_seed_rejected_correlation=38`
+    - `split_seed_rejected_extract=5`
+    - `split_seed_accepted_targets=16`
+    - `static_unique_pc=9387`
+    - `parsed_offsets=10297`
+    - `code_bytes_marked=16032`
+
+Post-phase note:
+
+- Extraction acceptance tuning is now generating real split-derived seeds and measurable code lift on the priority ROM.
+- Remaining rejected-extract volume indicates additional gain is still available without broadening correlation criteria.
+
+### Phase 38: Extraction Reject-Breakdown Telemetry
+
+Status: Completed (2026-02-24)
+
+1. Add fine-grained extraction reject counters (`invalid_target`, `opcode_gate`, `shape`) to pinpoint the dominant blocker.
+2. Keep seeding behavior unchanged while adding observability.
+3. Use Rom City telemetry to identify the next highest-impact tuning target.
+
+Acceptance:
+
+1. Trace stats include split extraction reject-breakdown fields.
+2. Full tests and Rom City verification remain green.
+3. Code output remains stable versus Phase 37.
+
+Implementation notes:
+
+- Stats model/log updates:
+  - `internal/disasm/stats.go`
+  - Added fields:
+    - `splitSeedRejectInvalid`
+    - `splitSeedRejectOpcode`
+    - `splitSeedRejectShape`
+  - Added log keys:
+    - `split_seed_reject_invalid_target`
+    - `split_seed_reject_opcode_gate`
+    - `split_seed_reject_shape`
+- Extraction instrumentation:
+  - `internal/disasm/banks.go`
+  - `extractSplitPointerTargets(...)` now increments reject counters when:
+    - target pointer value is invalid/out-of-range/code-like source (`invalid_target`)
+    - target opcode fails routine-start gate (`opcode_gate`)
+    - final run fails shape/evidence acceptance (`shape`).
+
+Validation:
+
+- Full tests:
+  - `GOCACHE=/tmp/gocache_retrodisasm go test ./... -count=1`
+  - Result: success.
+- Rom City Rampage verify/regeneration:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+  - Output unchanged from Phase 37:
+    - `internal/testroms/special/Rom City Rampage.asm6.asm` (`61042` lines)
+    - `internal/testroms/special/Rom City Rampage.ca65.asm` (`60967` lines)
+- Telemetry sample (Rom City Rampage, asm6, hybrid profile):
+  - `split_seed_candidate_pairs=47`
+  - `split_seed_rejected_correlation=38`
+  - `split_seed_rejected_extract=5`
+  - `split_seed_reject_invalid_target=107`
+  - `split_seed_reject_opcode_gate=30`
+  - `split_seed_reject_shape=1`
+  - `split_seed_accepted_targets=16`
+- Code-density result:
+  - `rg -n '^[[:space:]]+[a-z]{3}\b' ... | wc -l`
+  - After Phase 37: `7542`
+  - After Phase 38: `7542`
+  - Delta: `+0` code lines (no regression).
+
+Post-phase note:
+
+- Reject-breakdown shows the dominant extraction blocker is `invalid_target`, not shape filtering.
+- Next gains should focus on reducing invalid-pointer noise before relaxing opcode/shape gates.
+
 ## Testing Plan
 
 1. Unit tests
@@ -2616,7 +2746,7 @@ Post-phase note:
 
 ## Immediate Next Steps
 
-1. Tune split extraction acceptance (post-correlation) using the new `split_seed_rejected_extract` counter: target opcode gating, run-shape criteria, and leading-skip policy.
+1. Reduce `split_seed_reject_invalid_target` by adding stricter table-byte plausibility checks (bank-locality/target-window coherence) before opcode reads.
 2. Use mapper-2 sweep telemetry to drive targeted PPU/frame-model experiments (starting with `Alfred Chicken` at hotspot `$C93F`) and re-measure `unique_pc` lift under the same preset matrix.
 3. Add a compact automated experiment matrix around `Alfred Chicken` (`max_visits` and PPU-stub variants) and feed results through class-aware clustering to quantify which changes shift failure class or hotspot region.
 4. Tune mapper-1 clamp thresholds from real benchmark telemetry (coverage/runtime deltas) to reduce unnecessary budget drops while preserving stability.

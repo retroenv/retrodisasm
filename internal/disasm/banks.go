@@ -484,6 +484,7 @@ func (dis *Disasm) extractSplitPointerTargets(lowTable, highTable, end uint16,
 		target := uint16(high)<<8 | uint16(low)
 		targetLooksValid := dis.isValidCodeAddress(target) && target <= end && !sourceLooksLikeCode
 		if !targetLooksValid {
+			dis.stats.splitSeedRejectInvalid++
 			if started {
 				trailingSkips++
 				if trailingSkips > maxTrailingSkips {
@@ -500,6 +501,7 @@ func (dis *Disasm) extractSplitPointerTargets(lowTable, highTable, end uint16,
 
 		targetOp, err := dis.ReadMemory(target)
 		if err != nil || !isLikelyM6502RoutineStartOpcode(targetOp) {
+			dis.stats.splitSeedRejectOpcode++
 			if started {
 				trailingSkips++
 				if trailingSkips > maxTrailingSkips {
@@ -530,6 +532,7 @@ func (dis *Disasm) extractSplitPointerTargets(lowTable, highTable, end uint16,
 	if hasSplitTargetCodeEvidence(dis, targets) {
 		return targets, true
 	}
+	dis.stats.splitSeedRejectShape++
 	return nil, false
 }
 
@@ -546,7 +549,7 @@ func hasSplitTargetCodeEvidence(dis *Disasm, targets []uint16) bool {
 func (dis *Disasm) readWordAt(address uint16) (uint16, bool) {
 	low, err := dis.ReadMemory(address)
 	if err != nil {
-		return nil, false
+		return 0, false
 	}
 	high, err := dis.ReadMemory(address + 1)
 	if err != nil {

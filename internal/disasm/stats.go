@@ -25,6 +25,9 @@ type traceStats struct {
 	splitSeedCandidatePairs   uint64
 	splitSeedRejectedByCorr   uint64
 	splitSeedRejectedExtract  uint64
+	splitSeedRejectInvalid    uint64
+	splitSeedRejectOpcode     uint64
+	splitSeedRejectShape      uint64
 	splitSeedAcceptedTargets  uint64
 
 	parsedOffsets       uint64
@@ -60,6 +63,9 @@ func (dis *Disasm) logTraceStats(start time.Time, completed bool) {
 		log.Uint64("split_seed_candidate_pairs", dis.stats.splitSeedCandidatePairs),
 		log.Uint64("split_seed_rejected_correlation", dis.stats.splitSeedRejectedByCorr),
 		log.Uint64("split_seed_rejected_extract", dis.stats.splitSeedRejectedExtract),
+		log.Uint64("split_seed_reject_invalid_target", dis.stats.splitSeedRejectInvalid),
+		log.Uint64("split_seed_reject_opcode_gate", dis.stats.splitSeedRejectOpcode),
+		log.Uint64("split_seed_reject_shape", dis.stats.splitSeedRejectShape),
 		log.Uint64("split_seed_accepted_targets", dis.stats.splitSeedAcceptedTargets),
 		log.Uint64("parsed_offsets", dis.stats.parsedOffsets),
 		log.Uint64("already_parsed_skips", dis.stats.alreadyParsedSkips),
