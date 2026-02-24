@@ -154,8 +154,10 @@ func isLikelyM6502EntryOpcode(op byte) bool {
 	}
 }
 
-// seedLikelyMappedBankCallTargets scans the currently mapped bank for absolute
-// JSR/JMP targets and queues targets that look like routine entry points.
+// seedLikelyMappedBankCallTargets scans already-classified code in the currently
+// mapped bank for absolute JSR/JMP targets and queues targets that look like
+// routine entry points. Only addresses already marked as CodeOffset are scanned,
+// preventing data bytes ($20/$4C) from being misinterpreted as JSR/JMP opcodes.
 func (dis *Disasm) seedLikelyMappedBankCallTargets() {
 	const maxCandidatesPerBank = 2048
 
@@ -171,38 +173,55 @@ func (dis *Disasm) seedLikelyMappedBankCallTargets() {
 			break
 		}
 
-		op, err := dis.ReadMemory(addr)
-		if err != nil {
-			continue
-		}
-		if op != 0x20 && op != 0x4C { // JSR abs / JMP abs
-			continue
-		}
-
-		low, err := dis.ReadMemory(addr + 1)
-		if err != nil {
-			continue
-		}
-		high, err := dis.ReadMemory(addr + 2)
-		if err != nil {
-			continue
-		}
-		target := uint16(high)<<8 | uint16(low)
-		if !dis.isValidCodeAddress(target) || target > end {
-			continue
-		}
-
-		targetOp, err := dis.ReadMemory(target)
-		if err != nil || !isLikelyM6502RoutineStartOpcode(targetOp) {
-			continue
-		}
-		if !dis.validateCodeSequence(target) {
+		target, ok := dis.extractCallTarget(addr, end)
+		if !ok {
 			continue
 		}
 
 		dis.AddAddressToParse(target, target, addr, nil, false)
 		queued++
 	}
+}
+
+// extractCallTarget checks if addr contains a JSR/JMP instruction in already-classified
+// code and returns the validated target address. Only scans bytes already marked as
+// CodeOffset, preventing data bytes from being misinterpreted as JSR/JMP opcodes.
+func (dis *Disasm) extractCallTarget(addr, end uint16) (uint16, bool) {
+	offsetInfo := dis.mapper.OffsetInfo(addr)
+	if !offsetInfo.IsType(program.CodeOffset) {
+		return 0, false
+	}
+
+	op, err := dis.ReadMemory(addr)
+	if err != nil {
+		return 0, false
+	}
+	if op != 0x20 && op != 0x4C { // JSR abs / JMP abs
+		return 0, false
+	}
+
+	low, err := dis.ReadMemory(addr + 1)
+	if err != nil {
+		return 0, false
+	}
+	high, err := dis.ReadMemory(addr + 2)
+	if err != nil {
+		return 0, false
+	}
+	target := uint16(high)<<8 | uint16(low)
+	if !dis.isValidCodeAddress(target) || target > end {
+		return 0, false
+	}
+
+	targetOp, err := dis.ReadMemory(target)
+	if err != nil || !isLikelyM6502RoutineStartOpcode(targetOp) {
+		return 0, false
+	}
+	if !dis.validateCodeSequence(target) {
+		return 0, false
+	}
+
+	return target, true
 }
 
 // seedLikelyMappedBankPointerTableTargets scans for contiguous little-endian
