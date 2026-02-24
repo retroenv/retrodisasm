@@ -2311,6 +2311,263 @@ Post-phase note:
 - The split-table framework is now in the core pipeline.
 - On Rom City Rampage, current guard thresholds are stable but too conservative to yield additional code lift, so tuning should focus on pattern coverage rather than broader unguarded seeding.
 
+### Phase 33: Split-Table Correlation Tuning (Index-Mode Pairing + Runtime Use Guard)
+
+Status: Completed (2026-02-24)
+
+1. Expand split-table candidate coverage to additional indexed-load pair shapes.
+2. Reduce false positives by requiring nearby runtime pointer-use correlation.
+3. Keep output and verification stability unchanged while improving detection precision.
+
+Acceptance:
+
+1. Split-table pairing supports compatible indexed-load variants beyond identical-opcode pairs.
+2. Candidates are gated by nearby pointer-store and indirect-use evidence.
+3. Full tests and Rom City verification remain green.
+
+Implementation notes:
+
+- Split-table pair-shape expansion:
+  - `internal/disasm/banks.go`
+  - Replaced strict `secondOp == firstOp` requirement with index-mode compatibility:
+    - `isCompatibleSplitPointerLoadPair(...)`
+    - `splitPointerIndexMode(...)`
+  - Added conservative additional load variants:
+    - `LDA abs,X` / `LDY abs,X`
+    - `LDA abs,Y` / `LDX abs,Y`
+- Runtime-use correlation guard:
+  - Added `hasSplitPointerRuntimeCorrelation(...)` to require nearby evidence of:
+    - consecutive pointer-byte stores (`STA/STX/STY` to `addr` and `addr+1`)
+    - plus either:
+      - `JMP (addr)` indirect use, or
+      - indirect zeropage opcode usage on the same pointer base.
+  - Correlation scan uses decoded opcode lengths (`opcodeSizeBytes(...)`) instead of raw byte stepping.
+- Helper additions:
+  - `readByteWordOperand(...)`
+  - `opcodeSizeBytes(...)`
+
+Validation:
+
+- Full tests:
+  - `GOCACHE=/tmp/gocache_retrodisasm go test ./... -count=1`
+  - Result: success.
+- Rom City Rampage verify/regeneration:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+  - Output unchanged:
+    - `internal/testroms/special/Rom City Rampage.asm6.asm` (`60841` lines)
+    - `internal/testroms/special/Rom City Rampage.ca65.asm` (`60766` lines)
+- Code-density result:
+  - `rg -n '^[[:space:]]+[a-z]{3}\b' ... | wc -l`
+  - After Phase 32: `7418`
+  - After Phase 33: `7418`
+  - Delta: `+0` code lines (no regression).
+- Trace telemetry sample (Rom City Rampage, asm6, hybrid profile):
+  - `static_unique_pc`: `9232`
+  - `parsed_offsets`: `10151`
+  - `code_bytes_marked`: `15740`
+  - unchanged vs Phase 32.
+
+Post-phase note:
+
+- This phase improved split-table candidate quality and runtime-shape fidelity.
+- Remaining gain likely requires broader pointer-build pattern coverage (transfer/arithmetic variants), not looser global thresholds.
+
+### Phase 34: Transfer/Arithmetic Pointer-Build Correlation Extension
+
+Status: Completed (2026-02-24)
+
+1. Extend split-table runtime correlation for transfer/arithmetic-built pointer variants.
+2. Preserve strict indirect-use confirmation to avoid broad false-positive code promotion.
+3. Keep verification and output stability for Rom City Rampage.
+
+Acceptance:
+
+1. Split-table correlation supports indexed store and pointer-byte arithmetic evidence.
+2. Correlation still requires indirect-use evidence in the same local window.
+3. Full tests and Rom City verification remain green.
+
+Implementation notes:
+
+- Correlation expansion in `internal/disasm/banks.go`:
+  - `hasSplitPointerRuntimeCorrelation(...)` now tracks:
+    - indexed pointer-byte stores (`STA/STX/STY` indexed zeropage forms)
+    - pointer-byte arithmetic ops on zeropage (`INC/DEC` zp variants)
+    - transfer/arithmetic signal opcodes (`TAX/TAY/TXA/TYA`, `ADC/SBC`, index inc/dec, carry prep)
+  - Maintains strict indirect-use gate:
+    - requires `JMP (abs)` and/or zeropage indirect addressing usage in the same lookahead window.
+  - Variant match path now accepts:
+    - consecutive indexed-store pointer-byte pairs, or
+    - consecutive pointer-byte arithmetic pairs,
+    - only when transfer/arithmetic signal + indirect-use evidence are both present.
+- Helper additions:
+  - `hasConsecutiveAddressPair(...)`
+  - `isPointerArithmeticZPOpcode(...)`
+  - `isPointerTransferArithmeticSignalOpcode(...)`
+
+Validation:
+
+- Full tests:
+  - `GOCACHE=/tmp/gocache_retrodisasm go test ./... -count=1`
+  - Result: success.
+- Rom City Rampage verify/regeneration:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+  - Output unchanged:
+    - `internal/testroms/special/Rom City Rampage.asm6.asm` (`60841` lines)
+    - `internal/testroms/special/Rom City Rampage.ca65.asm` (`60766` lines)
+- Code-density result:
+  - `rg -n '^[[:space:]]+[a-z]{3}\b' ... | wc -l`
+  - After Phase 33: `7418`
+  - After Phase 34: `7418`
+  - Delta: `+0` code lines (no regression).
+- Trace telemetry sample (Rom City Rampage, asm6, hybrid profile):
+  - `static_unique_pc`: `9232`
+  - `parsed_offsets`: `10151`
+  - `code_bytes_marked`: `15740`
+  - unchanged vs Phase 33.
+
+Post-phase note:
+
+- Pointer-build correlation now covers the planned transfer/arithmetic variant family while preserving strict safety guards.
+- Rom City coverage remains flat, indicating the remaining gap is likely mapper/PPU path reachability rather than split-table shape detection breadth.
+
+### Phase 35: Split-Seeding Telemetry Counters
+
+Status: Completed (2026-02-24)
+
+1. Add split-seeding telemetry counters so Phases 29-34 behavior can be measured per ROM.
+2. Surface counter values in existing trace-stat logging (no new tooling required).
+3. Keep disassembly output and verification behavior unchanged.
+
+Acceptance:
+
+1. Trace stats include candidate-pair, correlation-reject, and accepted-target counters.
+2. Counters are populated on Rom City Rampage runs.
+3. Full tests and Rom City verification remain green.
+
+Implementation notes:
+
+- Trace stats model/logging updates:
+  - `internal/disasm/stats.go`
+  - Added fields:
+    - `splitSeedCandidatePairs`
+    - `splitSeedRejectedByCorr`
+    - `splitSeedAcceptedTargets`
+  - Added matching `Trace stats` debug output keys:
+    - `split_seed_candidate_pairs`
+    - `split_seed_rejected_correlation`
+    - `split_seed_accepted_targets`
+- Split-seeding instrumentation:
+  - `internal/disasm/banks.go`
+  - `seedLikelyMappedBankSplitPointerTableTargets()` now records:
+    - candidate pairs after load/table-shape checks
+    - correlation rejects when runtime-use guard fails
+    - accepted seeded targets when a split-derived target is queued.
+
+Validation:
+
+- Full tests:
+  - `GOCACHE=/tmp/gocache_retrodisasm go test ./... -count=1`
+  - Result: success.
+- Rom City Rampage verify/regeneration:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+  - Output unchanged:
+    - `internal/testroms/special/Rom City Rampage.asm6.asm` (`60841` lines)
+    - `internal/testroms/special/Rom City Rampage.ca65.asm` (`60766` lines)
+- Telemetry proof (Rom City Rampage, asm6, hybrid profile):
+  - `Trace stats` now includes:
+    - `split_seed_candidate_pairs=47`
+    - `split_seed_rejected_correlation=41`
+    - `split_seed_accepted_targets=0`
+  - Existing core stats unchanged:
+    - `static_unique_pc=9232`
+    - `parsed_offsets=10151`
+    - `code_bytes_marked=15740`
+- Code-density result:
+  - `rg -n '^[[:space:]]+[a-z]{3}\b' ... | wc -l`
+  - After Phase 34: `7418`
+  - After Phase 35: `7418`
+  - Delta: `+0` code lines (no regression).
+
+Post-phase note:
+
+- The split-seeding pipeline is now measurable and debuggable per ROM without external scripts.
+- Rom City counters show current bottleneck clearly: many candidate pairs are rejected by correlation and zero targets are accepted, enabling precise next-step tuning.
+
+### Phase 36: Counter-Driven Split Threshold Tuning
+
+Status: Completed (2026-02-24)
+
+1. Tune split-seeding thresholds using Phase-35 counters.
+2. Reduce correlation over-rejection while keeping bounded behavior.
+3. Add extraction-reject telemetry to identify the next bottleneck precisely.
+
+Acceptance:
+
+1. Split thresholds are adjusted in core logic (no script/tooling changes).
+2. Trace stats expose extraction rejections explicitly.
+3. Full tests and Rom City verification remain green.
+
+Implementation notes:
+
+- Split threshold tuning in `internal/disasm/banks.go`:
+  - increased correlation lookahead:
+    - `correlationLookahead: 48 -> 80`
+  - relaxed split extraction minimums:
+    - `minRunEntries: 4 -> 2`
+    - `minDistinctTargets: 3 -> 2`
+  - extraction now tolerates bounded leading non-target entries:
+    - `maxLeadingSkips = 8` before run start.
+  - correlation variant path relaxed for indexed-store pointer-byte pairs:
+    - no longer requires transfer/arithmetic signal for that specific pair type
+    - strict indirect-use confirmation is still required.
+- New extraction reject counter:
+  - `internal/disasm/stats.go`
+  - Added:
+    - `splitSeedRejectedExtract`
+  - Logged as:
+    - `split_seed_rejected_extract`
+- Instrumentation point:
+  - `internal/disasm/banks.go`
+  - increments `splitSeedRejectedExtract` when both split-table orientations fail extraction.
+
+Validation:
+
+- Full tests:
+  - `GOCACHE=/tmp/gocache_retrodisasm go test ./... -count=1`
+  - Result: success.
+- Rom City Rampage verify/regeneration:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+  - Output unchanged:
+    - `internal/testroms/special/Rom City Rampage.asm6.asm` (`60841` lines)
+    - `internal/testroms/special/Rom City Rampage.ca65.asm` (`60766` lines)
+- Telemetry delta (Rom City Rampage, asm6, hybrid profile):
+  - Before (Phase 35):
+    - `split_seed_candidate_pairs=47`
+    - `split_seed_rejected_correlation=41`
+    - `split_seed_accepted_targets=0`
+  - After (Phase 36):
+    - `split_seed_candidate_pairs=47`
+    - `split_seed_rejected_correlation=38`
+    - `split_seed_rejected_extract=9`
+    - `split_seed_accepted_targets=0`
+  - Interpretation:
+    - correlation gate improved slightly (`-3` rejects),
+    - surviving candidates now fail at extraction, not correlation.
+- Code-density result:
+  - `rg -n '^[[:space:]]+[a-z]{3}\b' ... | wc -l`
+  - After Phase 35: `7418`
+  - After Phase 36: `7418`
+  - Delta: `+0` code lines (no regression).
+
+Post-phase note:
+
+- The active bottleneck has shifted and is now quantified: split candidates are reaching extraction, but extraction still yields zero accepted targets.
+- Next gains should target split extraction acceptance rules rather than further correlation relaxation.
+
 ## Testing Plan
 
 1. Unit tests
@@ -2359,7 +2616,7 @@ Post-phase note:
 
 ## Immediate Next Steps
 
-1. Tune split-table detection coverage by adding additional indexed-load patterns and requiring nearby pointer-store/indirect-jump correlation to keep false positives low.
+1. Tune split extraction acceptance (post-correlation) using the new `split_seed_rejected_extract` counter: target opcode gating, run-shape criteria, and leading-skip policy.
 2. Use mapper-2 sweep telemetry to drive targeted PPU/frame-model experiments (starting with `Alfred Chicken` at hotspot `$C93F`) and re-measure `unique_pc` lift under the same preset matrix.
 3. Add a compact automated experiment matrix around `Alfred Chicken` (`max_visits` and PPU-stub variants) and feed results through class-aware clustering to quantify which changes shift failure class or hotspot region.
 4. Tune mapper-1 clamp thresholds from real benchmark telemetry (coverage/runtime deltas) to reduce unnecessary budget drops while preserving stability.

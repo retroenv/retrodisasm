@@ -252,9 +252,10 @@ func (dis *Disasm) seedLikelyMappedBankSplitPointerTableTargets() {
 		maxSeedsPerBank      = 768
 		maxPairsPerBank      = 256
 		loadPairLookahead    = 16
+		correlationLookahead = 80
 		maxRunEntries        = 64
-		minRunEntries        = 4
-		minDistinctTargets   = 3
+		minRunEntries        = 1
+		minDistinctTargets   = 1
 		maxTableByteDistance = 0x0200
 	)
 
@@ -283,7 +284,7 @@ func (dis *Disasm) seedLikelyMappedBankSplitPointerTableTargets() {
 		for delta := uint16(3); delta <= loadPairLookahead && pc+delta+2 <= end; delta++ {
 			secondPC := pc + delta
 			secondOp, err := dis.ReadMemory(secondPC)
-			if err != nil || secondOp != firstOp {
+			if err != nil || !isCompatibleSplitPointerLoadPair(firstOp, secondOp) {
 				continue
 			}
 
@@ -295,6 +296,11 @@ func (dis *Disasm) seedLikelyMappedBankSplitPointerTableTargets() {
 			if tableByteDistance(firstTable, secondTable) > maxTableByteDistance {
 				continue
 			}
+			dis.stats.splitSeedCandidatePairs++
+			if !dis.hasSplitPointerRuntimeCorrelation(pc, secondPC, end, correlationLookahead) {
+				dis.stats.splitSeedRejectedByCorr++
+				continue
+			}
 
 			targets, ok := dis.extractSplitPointerTargets(
 				firstTable, secondTable, end, maxRunEntries, minRunEntries, minDistinctTargets)
@@ -302,6 +308,7 @@ func (dis *Disasm) seedLikelyMappedBankSplitPointerTableTargets() {
 				targets, ok = dis.extractSplitPointerTargets(
 					secondTable, firstTable, end, maxRunEntries, minRunEntries, minDistinctTargets)
 				if !ok {
+					dis.stats.splitSeedRejectedExtract++
 					continue
 				}
 			}
@@ -316,6 +323,7 @@ func (dis *Disasm) seedLikelyMappedBankSplitPointerTableTargets() {
 				dis.AddAddressToParse(target, target, pc, nil, false)
 				seededTargets[target] = struct{}{}
 				seeded++
+				dis.stats.splitSeedAcceptedTargets++
 			}
 			pairs++
 			paired = true
@@ -328,10 +336,130 @@ func (dis *Disasm) seedLikelyMappedBankSplitPointerTableTargets() {
 	}
 }
 
+func (dis *Disasm) hasSplitPointerRuntimeCorrelation(firstPC, secondPC, end, lookahead uint16) bool {
+	windowStart := firstPC
+	if secondPC < firstPC {
+		windowStart = secondPC
+	}
+	windowEnd := secondPC + lookahead
+	if windowEnd > end {
+		windowEnd = end
+	}
+
+	stores := map[uint16]struct{}{}
+	indexedStores := map[uint16]struct{}{}
+	pointerByteOps := map[uint16]struct{}{}
+	jumpPointers := map[uint16]struct{}{}
+	indirectZPRefs := map[uint16]struct{}{}
+	transferArithmeticSignal := false
+
+	for pc := windowStart; pc <= windowEnd; {
+		opByte, err := dis.ReadMemory(pc)
+		if err != nil {
+			break
+		}
+		opcode := cpum6502.Opcodes[opByte]
+		size := opcodeSizeBytes(opcode)
+		if size <= 0 {
+			size = 1
+		}
+		if pc+uint16(size)-1 > windowEnd {
+			break
+		}
+
+		switch opByte {
+		case 0x85, // STA zp
+			0x86, // STX zp
+			0x84: // STY zp
+			addr, ok := dis.readByteWordOperand(pc+1, 1)
+			if ok {
+				stores[addr] = struct{}{}
+			}
+		case 0x95, // STA zp,X
+			0x94, // STY zp,X
+			0x96: // STX zp,Y
+			addr, ok := dis.readByteWordOperand(pc+1, 1)
+			if ok {
+				indexedStores[addr] = struct{}{}
+			}
+		case 0x8D, // STA abs
+			0x8E, // STX abs
+			0x8C: // STY abs
+			addr, ok := dis.readByteWordOperand(pc+1, 2)
+			if ok {
+				stores[addr] = struct{}{}
+			}
+		case 0x6C: // JMP (abs)
+			addr, ok := dis.readByteWordOperand(pc+1, 2)
+			if ok {
+				jumpPointers[addr] = struct{}{}
+			}
+		default:
+			if opcode.Instruction != nil &&
+				(opcode.Addressing == cpum6502.IndirectXAddressing ||
+					opcode.Addressing == cpum6502.IndirectYAddressing) {
+				addr, ok := dis.readByteWordOperand(pc+1, 1)
+				if ok {
+					indirectZPRefs[addr] = struct{}{}
+				}
+			}
+		}
+		if isPointerArithmeticZPOpcode(opByte) {
+			addr, ok := dis.readByteWordOperand(pc+1, 1)
+			if ok {
+				pointerByteOps[addr] = struct{}{}
+			}
+		}
+		if isPointerTransferArithmeticSignalOpcode(opByte) {
+			transferArithmeticSignal = true
+		}
+
+		pc += uint16(size)
+	}
+
+	for base := range stores {
+		if base >= 0xFFFF {
+			continue
+		}
+		if _, ok := stores[base+1]; !ok {
+			continue
+		}
+		if _, ok := jumpPointers[base]; ok {
+			return true
+		}
+		if base <= 0x00FF {
+			if _, ok := indirectZPRefs[base]; ok {
+				return true
+			}
+		}
+	}
+
+	// Variant path: pointer bytes can be built via indexed stores and/or
+	// arithmetic/transfer sequences. Keep strict indirect-use confirmation.
+	if len(indirectZPRefs) == 0 && len(jumpPointers) == 0 {
+		return false
+	}
+
+	switch {
+	case hasConsecutiveAddressPair(indexedStores):
+		return true
+	case transferArithmeticSignal && hasConsecutiveAddressPair(pointerByteOps):
+		return true
+	default:
+		return false
+	}
+}
+
 func (dis *Disasm) extractSplitPointerTargets(lowTable, highTable, end uint16,
 	maxRunEntries, minRunEntries, minDistinctTargets int) ([]uint16, bool) {
 
+	const maxLeadingSkips = 8
+	const maxTrailingSkips = 2
+
 	targets := make([]uint16, 0, minRunEntries)
+	leadingSkips := 0
+	trailingSkips := 0
+	started := false
 	for i := 0; i < maxRunEntries; i++ {
 		lowAddr32 := uint32(lowTable) + uint32(i)
 		highAddr32 := uint32(highTable) + uint32(i)
@@ -341,10 +469,8 @@ func (dis *Disasm) extractSplitPointerTargets(lowTable, highTable, end uint16,
 		lowAddr := uint16(lowAddr32)
 		highAddr := uint16(highAddr32)
 
-		if dis.mapper.OffsetInfo(lowAddr).IsType(program.CodeOffset) ||
-			dis.mapper.OffsetInfo(highAddr).IsType(program.CodeOffset) {
-			break
-		}
+		sourceLooksLikeCode := dis.mapper.OffsetInfo(lowAddr).IsType(program.CodeOffset) ||
+			dis.mapper.OffsetInfo(highAddr).IsType(program.CodeOffset)
 
 		low, err := dis.ReadMemory(lowAddr)
 		if err != nil {
@@ -356,33 +482,92 @@ func (dis *Disasm) extractSplitPointerTargets(lowTable, highTable, end uint16,
 		}
 
 		target := uint16(high)<<8 | uint16(low)
-		if !dis.isValidCodeAddress(target) || target > end {
-			break
+		targetLooksValid := dis.isValidCodeAddress(target) && target <= end && !sourceLooksLikeCode
+		if !targetLooksValid {
+			if started {
+				trailingSkips++
+				if trailingSkips > maxTrailingSkips {
+					break
+				}
+				continue
+			}
+			leadingSkips++
+			if leadingSkips > maxLeadingSkips {
+				break
+			}
+			continue
 		}
 
 		targetOp, err := dis.ReadMemory(target)
 		if err != nil || !isLikelyM6502RoutineStartOpcode(targetOp) {
-			break
+			if started {
+				trailingSkips++
+				if trailingSkips > maxTrailingSkips {
+					break
+				}
+				continue
+			}
+			leadingSkips++
+			if leadingSkips > maxLeadingSkips {
+				break
+			}
+			continue
 		}
 		targets = append(targets, target)
+		started = true
+		trailingSkips = 0
 	}
 
-	if len(targets) < minRunEntries || !hasLikelyPointerTableShape(targets, minDistinctTargets) {
+	if len(targets) < minRunEntries {
 		return nil, false
 	}
-	return targets, true
+	if len(targets) == 1 {
+		return targets, true
+	}
+	if hasLikelyPointerTableShape(targets, minDistinctTargets) {
+		return targets, true
+	}
+	if hasSplitTargetCodeEvidence(dis, targets) {
+		return targets, true
+	}
+	return nil, false
+}
+
+func hasSplitTargetCodeEvidence(dis *Disasm, targets []uint16) bool {
+	for _, target := range targets {
+		offsetInfo := dis.mapper.OffsetInfo(target)
+		if offsetInfo.IsType(program.CodeOffset) || offsetInfo.IsType(program.CallDestination) {
+			return true
+		}
+	}
+	return false
 }
 
 func (dis *Disasm) readWordAt(address uint16) (uint16, bool) {
 	low, err := dis.ReadMemory(address)
 	if err != nil {
-		return 0, false
+		return nil, false
 	}
 	high, err := dis.ReadMemory(address + 1)
 	if err != nil {
 		return 0, false
 	}
 	return uint16(high)<<8 | uint16(low), true
+}
+
+func (dis *Disasm) readByteWordOperand(address uint16, size int) (uint16, bool) {
+	switch size {
+	case 1:
+		value, err := dis.ReadMemory(address)
+		if err != nil {
+			return 0, false
+		}
+		return uint16(value), true
+	case 2:
+		return dis.readWordAt(address)
+	default:
+		return 0, false
+	}
 }
 
 func (dis *Disasm) isLikelySplitTableAddress(address, end uint16) bool {
@@ -393,8 +578,85 @@ func (dis *Disasm) isLikelySplitTableAddress(address, end uint16) bool {
 }
 
 func isLikelySplitPointerLoadOpcode(op byte) bool {
-	// Conservative: only LDA abs,X and LDA abs,Y.
-	return op == 0xBD || op == 0xB9
+	return splitPointerIndexMode(op) != 0
+}
+
+func isCompatibleSplitPointerLoadPair(first, second byte) bool {
+	firstIndexMode := splitPointerIndexMode(first)
+	secondIndexMode := splitPointerIndexMode(second)
+	return firstIndexMode != 0 && firstIndexMode == secondIndexMode
+}
+
+func splitPointerIndexMode(op byte) byte {
+	switch op {
+	case 0xBD, // LDA abs,X
+		0xBC: // LDY abs,X
+		return 'X'
+	case 0xB9, // LDA abs,Y
+		0xBE: // LDX abs,Y
+		return 'Y'
+	default:
+		return 0
+	}
+}
+
+func opcodeSizeBytes(opcode cpum6502.Opcode) int {
+	if opcode.Instruction == nil {
+		return 1
+	}
+	opcodeInfo, ok := opcode.Instruction.Addressing[opcode.Addressing]
+	if !ok || opcodeInfo.Size == 0 {
+		return 1
+	}
+	return int(opcodeInfo.Size)
+}
+
+func hasConsecutiveAddressPair(addrs map[uint16]struct{}) bool {
+	for base := range addrs {
+		if base >= 0xFFFF {
+			continue
+		}
+		if _, ok := addrs[base+1]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func isPointerArithmeticZPOpcode(op byte) bool {
+	switch op {
+	case 0xE6, // INC zp
+		0xF6, // INC zp,X
+		0xC6, // DEC zp
+		0xD6: // DEC zp,X
+		return true
+	default:
+		return false
+	}
+}
+
+func isPointerTransferArithmeticSignalOpcode(op byte) bool {
+	switch op {
+	case 0xAA, // TAX
+		0xA8, // TAY
+		0x8A, // TXA
+		0x98, // TYA
+		0xE8, // INX
+		0xC8, // INY
+		0xCA, // DEX
+		0x88, // DEY
+		0x18, // CLC
+		0x38, // SEC
+		0x69, // ADC #
+		0xE9, // SBC #
+		0x65, // ADC zp
+		0x75, // ADC zp,X
+		0xE5, // SBC zp
+		0xF5: // SBC zp,X
+		return true
+	default:
+		return false
+	}
 }
 
 func tableByteDistance(a, b uint16) uint16 {

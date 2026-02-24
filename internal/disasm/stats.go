@@ -22,6 +22,10 @@ type traceStats struct {
 	additionalBanksConsidered uint64
 	additionalBanksProcessed  uint64
 	additionalBankQueueGrowth uint64
+	splitSeedCandidatePairs   uint64
+	splitSeedRejectedByCorr   uint64
+	splitSeedRejectedExtract  uint64
+	splitSeedAcceptedTargets  uint64
 
 	parsedOffsets       uint64
 	alreadyParsedSkips  uint64
@@ -53,6 +57,10 @@ func (dis *Disasm) logTraceStats(start time.Time, completed bool) {
 		log.Uint64("additional_banks_considered", dis.stats.additionalBanksConsidered),
 		log.Uint64("additional_banks_processed", dis.stats.additionalBanksProcessed),
 		log.Uint64("additional_bank_queue_growth", dis.stats.additionalBankQueueGrowth),
+		log.Uint64("split_seed_candidate_pairs", dis.stats.splitSeedCandidatePairs),
+		log.Uint64("split_seed_rejected_correlation", dis.stats.splitSeedRejectedByCorr),
+		log.Uint64("split_seed_rejected_extract", dis.stats.splitSeedRejectedExtract),
+		log.Uint64("split_seed_accepted_targets", dis.stats.splitSeedAcceptedTargets),
 		log.Uint64("parsed_offsets", dis.stats.parsedOffsets),
 		log.Uint64("already_parsed_skips", dis.stats.alreadyParsedSkips),
 		log.Uint64("inspect_skipped", dis.stats.inspectSkipped),
