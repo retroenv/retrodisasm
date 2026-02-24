@@ -2930,43 +2930,176 @@ Post-phase note:
 - The dominant opcode-gate class is now confirmed as `RTS` (13/30), followed by invalid opcodes (11/30).
 - The new `RTS/RTI + adjacent evidence` weak tier is active but produced no qualifying singleton in Rom City under current radius/evidence constraints.
 
+## Progress Summary (as of 2026-02-24)
+
+### Completed Phases
+
+| Phase | Title | Key Outcome |
+|-------|-------|-------------|
+| 0 | Instrumentation and Baseline | Stats, benchmark scripts, baseline metrics |
+| 0.5 | Multi-Bank Vector Tracing | `MapBank`, `RestoreDefaultMapping`, `BankVectors`, `InitializeBankVectors` |
+| 1 | Emulator Trace Prototype | `internal/trace/m6502emu` with NES bus, advisory mode |
+| 2 | Bank-Aware Parse Keys | `ParseKey{PC, MappingID}`, mapping-aware dedupe |
+| 3 | Mapper Runtime Integration | `ApplyMapperWrite`, `RestoreMappingSignature`, mapper 7/2/1 |
+| 4 | Symbol and Output Stabilization | `uniqueLabelName`, alias dedupe, missing-symbol fallback |
+| 5 | Controlled Branch Expansion | `BranchAlternate`, bounded alternate-path frontier |
+| 6 | CLI Trace Controls | `-trace-mode`, `-trace-max-*` flags with env fallback |
+| 7 | Benchmark Harness Hardening | Sweep script, corrected pass/fail classification |
+| 8 | True Alternate-Path Execution | CPU/RAM/mapper state snapshot+restore, real replay |
+| 9 | Failure Artifact Capture | Per-ROM artifact bundles in benchmark harnesses |
+| 10 | Artifact Clustering | Mapper-grouped mismatch-offset and label summaries |
+| 11 | Large-Matrix Sweep | Stability-filtered clusters, budget-invariant results |
+| 12 | Multi-Bank Vector Placement Fix | ca65 bank-tail vector emission, mapper 1: 2/2, mapper 2: 4/7 |
+| 13 | Branch-Expansion Regression Guard | Mapper-1 branch clamp, stable across budget matrix |
+| 14 | Assembler Failure Forensics | Assembler error context extraction in artifacts |
+| 15 | Unresolved Relative-Branch Hardening | Raw-byte rewrite for unresolved branch targets, mapper 2: 5/7 |
+| 16 | Alfred Flow Instrumentation | Mapper-write hotspot aggregation telemetry |
+| 17 | Startup Loop Escape Realism | PPU status alternation, counter-loop relaxation |
+| 18 | JOYPAD Serial Stub Realism | Strobe/latch/shift controller emulation |
+| 19 | PPU Data-Loop Progression Hook | `STA $2007` stream-loop visit relaxation |
+| 20 | Rom City Rampage Hybrid Stabilization | Two-pass hybrid, long indexed clear loops, `code=973` |
+| 21 | Rom City Bank-Context Expansion | Same-address vector seeding, raised budgets, `code=1075` |
+| 22 | Deterministic JOYPAD Input Controls | `-trace-joypad1/2` static masks |
+| 23 | JOYPAD Timeline Scripting | `-trace-joypad1-seq/-joypad2-seq` per-latch sequences |
+| 24 | JOYPAD Timeline Preset Sweep | Rom City Rampage preset sweep automation |
+| 25 | Mapper-Triage JOYPAD Sweep | Mapper-2 notworking sweep with telemetry capture |
+| 26 | Benchmark Failure-Class Classifier | `failure_class` in baseline and sweep CSVs |
+| 27 | Classifier-Aware Clustering | Class-grouped cluster outputs in markdown/CSV |
+| 28 | Core Code-Density Lift | Bank-entry seeding + synthetic NMI, `code=1191` |
+| 29 | Mapped-Bank Call-Target Expansion | Official opcode gate, `code=4764` |
+| 30 | Pointer-Table Target Seeding | Shape-guarded contiguous pointer-table pass, `code=7418` |
+| 31 | Mapper-1 Branch Policy | Clamp-not-disable, tiered budget caps |
+| 32 | Split Pointer-Table Seeding | `tbl_lo`/`tbl_hi` framework (stable, `code=7418`) |
+| 33 | Split-Table Correlation Tuning | Index-mode pairing + runtime-use guard |
+| 34 | Transfer/Arithmetic Correlation | Broader pointer-build pattern coverage |
+| 35 | Split-Seeding Telemetry | Candidate/reject/accept counters |
+| 36 | Counter-Driven Threshold Tuning | Reduced correlation over-rejection |
+| 37 | Split Extraction Acceptance | Sparse/short runs, `code=7542` (+124) |
+| 38 | Extraction Reject-Breakdown | `invalid_target`/`opcode_gate`/`shape` counters |
+| 39 | Plausibility Prefilter | Target-window coherence gate |
+| 40 | Weak Singleton Acceptance | Code-evidence-gated weak entry tier |
+| 41 | Opcode-Class Reject Telemetry | RTS/RTI adjacent-evidence weak tier |
+
+### Current Metrics
+
+| Metric | Value |
+|--------|-------|
+| Mapper 0 pass rate | 41/41 |
+| Mapper 3 pass rate | 6/6 |
+| Mapper 7 pass rate | 1/1 |
+| Mapper 1 pass rate (notworking) | 2/2 |
+| Mapper 2 pass rate (notworking) | 5/7 |
+| Rom City Rampage code lines | 7542 |
+| Rom City Rampage asm6 lines | 61042 |
+| Rom City Rampage ca65 lines | 60967 |
+| Go test suite | all pass |
+| Build status | clean |
+
+### Remaining Failure Classes
+
+| ROM | Mapper | Failure Class | Notes |
+|-----|--------|---------------|-------|
+| Alfred Chicken (USA) | 2 | `prg_mismatch` | 24061 offset mismatches; trace halts at `$C93F` PPU loop; `unique_pc=111`, `mapper_writes=4` |
+| Archon (USA) | 2 | `input_corrupt` | Unexpected EOF on PRG load; likely truncated/corrupt ROM dump |
+
+### Key Architecture Decisions Made
+
+1. **Hybrid two-pass model** (Phase 20): Static pass first, then emulator-seeded additive pass prevents emu queue from suppressing static discovery.
+2. **Advisory trace** (Phase 1+): Emulator trace is informational; disassembly decisions remain independent, preventing cascade from emu-path errors.
+3. **Mapper-1 branch clamp** (Phase 31): Tiered budget caps (512/128/64) based on instruction/visit budgets; pragmatic guard until mapper-1-safe heuristics are available.
+4. **Split-table pipeline** (Phases 32-41): Multi-stage gated pipeline: plausibility → correlation → extraction → opcode gate → shape → weak-entry tiers.
+5. **Deterministic I/O stubs** (Phases 17-19): PPU status alternation, controller serial emulation, PPU data-loop relaxation; all snapshot-safe for branch replay.
+6. **Non-default mapping label safety** (Phase 20): Branch/call operands in non-default mapping contexts keep literal targets to prevent cross-mapping address drift.
+
+### Files Added/Modified on Branch
+
+New packages:
+- `internal/trace/m6502emu/` — Advisory emulator trace engine (trace.go, bus.go, trace_test.go)
+- `internal/mapper/runtime.go` — Mapper runtime write emulation + snapshot/restore
+- `internal/mapper/processor.go` — Multi-bank symbol alias + relative-branch rewrite
+- `internal/disasm/banks.go` — Additional bank tracing + pointer-table seeding pipeline
+- `internal/disasm/emutrace.go` — Advisory emu-trace integration + config parsing
+- `internal/disasm/parsekey.go` — `ParseKey{PC, MappingID}` type
+- `internal/disasm/stats.go` — Trace statistics model
+
+Modified core:
+- `internal/disasm/disasm.go` — Hybrid two-pass flow, architecture interface extension
+- `internal/disasm/parser.go` — Mapping-aware dedupe and per-key state restore
+- `internal/disasm/code.go` — `uniqueLabelName`, non-default mapping label safety
+- `internal/disasm/data.go` — ParseKey threading
+- `internal/mapper/mapper.go` — `MapBank`, `RestoreDefaultMapping`, `BankCount`, `BankVectors`, `MappingSignature`, `ResolveAddress`
+- `internal/mapper/cdl.go` — Multi-bank CDL handling
+- `internal/assembler/ca65/file.go` — Bank-tail vector placement
+- `internal/writer/writer.go` — Alias dedupe
+- `internal/options/options.go` — Trace CLI options
+- `internal/cli/cli.go` — Trace flag parsing/validation
+- `internal/arch/m6502/vectors.go` — `InitializeBankVectors`
+- `internal/arch/chip8/chip8.go` — No-op `InitializeBankVectors`
+- `main.go` — Exit code fix for multi-file failures
+
+Scripts:
+- `scripts/benchmark_mapper_corpus.sh` — Baseline benchmark with artifact capture + failure classification
+- `scripts/benchmark_trace_sweep.sh` — Budget-matrix sweep with artifact capture
+- `scripts/cluster_failure_artifacts.sh` — Failure artifact clustering + stability extraction
+- `scripts/sweep_mapper_joypad_timeline.sh` — Mapper-triage JOYPAD sweep
+- `scripts/sweep_rom_city_rampage_joypad_timeline.sh` — Rom City JOYPAD preset sweep
+- `scripts/verify_rom_city_rampage.sh` — Quick verify script
+
 ## Testing Plan
 
 1. Unit tests
-   - Mapper register write semantics per mapper.
-   - Snapshot hash/apply correctness.
-   - Parse key dedupe behavior.
+   - Mapper register write semantics per mapper (7/2/1).
+   - Snapshot hash/apply correctness (CPU, RAM, mapper runtime, MMC1 shift state).
+   - Parse key dedupe behavior (same PC across mappings).
+   - Split-table extraction with plausibility/correlation/opcode gates.
+   - JOYPAD serial protocol and sequence advancement.
+   - PPU status alternation and snapshot determinism.
 
 2. Integration tests
    - Existing `internal/disasm` and `internal/mapper` suites.
-   - New ROM fixtures targeting deliberate bank switches.
-   - Comparison tests: `static` vs `emu` trace mode.
+   - Advisory emu-trace config parsing and env fallback.
+   - Multi-bank vector tracing with same-address vector seeding.
+   - Hybrid two-pass ordering (static first, emu additive).
+   - Comparison tests: `static` vs `emu` vs `hybrid` trace mode.
 
 3. End-to-end verification
-   - Run `-verify` on existing working ROM corpus.
-   - Track mapper-specific pass rate progression.
+   - Run `-verify` on existing working ROM corpus (mapper 0/3/7).
+   - Track mapper-specific pass rate progression (mapper 1/2 notworking).
+   - Rom City Rampage dual-assembler verification.
+   - Benchmark sweep scripts for regression detection.
 
 ## Risks and Mitigations
 
 1. State explosion from branch/path forking.
    - Mitigation: strict budgets + deterministic primary path default.
+   - Status: mitigated via `MaxBranchStates`, per-PC visit limits, mapper-1 tiered clamp.
 
 2. Performance regressions.
-   - Mitigation: opt-in mode first, profile hot paths, cache snapshot transitions.
+   - Mitigation: opt-in mode first (`-trace-mode`), profile hot paths, cache snapshot transitions.
+   - Status: hybrid mode is opt-in; default remains `static`.
 
 3. Symbol instability/output diffs.
    - Mitigation: deterministic naming rules, compatibility mode for existing output style.
+   - Status: resolved via `uniqueLabelName`, alias dedupe, non-default mapping label safety.
 
 4. Incorrect mapper write emulation.
    - Mitigation: mapper-specific unit tests and ROM-based regression tests.
+   - Status: mapper 7/2/1 covered by unit tests and corpus sweeps.
 
 5. I/O-dependent infinite loops.
    - Stub values may not satisfy wait conditions (e.g., polling $2002 for specific PPU state).
-   - Mitigation: per-PC visit limit (e.g., 8 visits) terminates stuck paths.
+   - Mitigation: per-PC visit limit, boot-loop relaxation, PPU data-loop relaxation.
+   - Status: materially improved via Phases 17-19; remaining halts are PPU frame progression.
 
 6. Mapper state divergence.
    - Stubs cause different code paths than real hardware, potentially missing or mis-tracing branches.
    - Mitigation: trace is advisory; static heuristics remain as fallback. Compare coverage metrics.
+   - Status: advisory model proven stable across 41 phases.
+
+7. Split-table false-positive code promotion.
+   - Aggressive pointer-table seeding can promote data as code, causing verification failures.
+   - Mitigation: multi-stage gated pipeline (plausibility → correlation → extraction → opcode → shape → weak tiers).
+   - Status: zero false-positive regressions through Phase 41.
 
 ## Glossary
 
@@ -2975,12 +3108,34 @@ Post-phase note:
 - **Parse Key**: `(PC, MappingID)` tuple that uniquely identifies an instruction in context. Replaces plain `uint16` PC for multi-bank awareness.
 - **Bank Window**: An 8KB region of CPU address space ($8000, $A000, $C000, $E000 for PRG). The mapper assigns a physical bank to each window.
 - **Physical PRG Offset**: The byte position within the ROM's PRG data. Computed from the bank's `dataStart` + address offset within the 8KB window.
+- **Advisory Trace**: Emulator trace output that informs but does not directly control disassembly decisions. Disasm pass consumes trace states as additive seed sources.
+- **Hybrid Mode**: Two-pass disassembly where static analysis runs first, then emulator-discovered states are seeded additively.
+- **Split Pointer Table**: NES pattern where jump/callback targets are stored as separate low-byte and high-byte arrays, reconstructed at runtime via indexed loads.
 
 ## Immediate Next Steps
 
-1. Add targeted `RTS` singleton rescue heuristics with an explicit safety cap (per-bank max accepts), driven by the now-dominant `split_seed_reject_opcode_rts` class.
-2. Add distance-aware adjacent evidence telemetry (minimum delta from target to nearest code evidence) to tune the current radius=8 guard with data.
-3. Add a limited invalid-opcode salvage experiment for singleton targets that have both local code evidence and upstream split correlation, and compare noise against `split_seed_reject_shape`.
-4. Use mapper-2 sweep telemetry to drive targeted PPU/frame-model experiments (starting with `Alfred Chicken` at hotspot `$C93F`) and re-measure `unique_pc` lift under the same preset matrix.
-5. Add a compact automated experiment matrix around `Alfred Chicken` (`max_visits` and PPU-stub variants) and feed results through class-aware clustering to quantify which changes shift failure class or hotspot region.
-6. Tune mapper-1 clamp thresholds from real benchmark telemetry (coverage/runtime deltas) to reduce unnecessary budget drops while preserving stability.
+### High Priority — Code Density and Coverage
+
+1. **RTS singleton rescue heuristics** — Add targeted rescue for the dominant `split_seed_reject_opcode_rts` class (13/30 rejects on Rom City). Use explicit per-bank max-accepts cap and require adjacent code evidence within tunable radius.
+2. **Distance-aware adjacent evidence telemetry** — Emit minimum delta from split target to nearest code evidence to data-drive the current `radius=8` guard. This enables evidence-based radius tuning.
+3. **Invalid-opcode salvage experiment** — For singleton targets with both local code evidence and upstream split correlation, test limited acceptance. Compare noise against `split_seed_reject_shape` to bound risk.
+
+### Medium Priority — Remaining Failure Triage
+
+4. **Alfred Chicken PPU/frame-model experiments** — Current trace halts at `$C93F` (PPU update loop) with `unique_pc=111` and `mapper_writes=4`. Progress requires either:
+   - Synthetic frame-progression hooks (e.g., periodic PPUSTATUS vblank + NMI cycling that advances past repeated PPU update flows), or
+   - Aggressive visit-cap relaxation for PPU update patterns beyond the current `ppuLoopVisitLimit=8192`.
+5. **Alfred Chicken experiment matrix** — Compact `max_visits` × PPU-stub variant matrix fed through class-aware clustering to identify which changes shift failure class or hotspot region.
+6. **Archon input integrity** — Confirm whether `Archon (USA).nes` is a genuinely truncated/corrupt dump or requires loader-side tolerance for non-standard PRG sizes.
+
+### Lower Priority — Policy Refinement
+
+7. **Mapper-1 clamp threshold tuning** — Use real benchmark telemetry (coverage deltas, runtime impact) to relax tiered caps where data shows stability. Current caps (512/128/64) may be unnecessarily conservative for some visit/instruction profiles.
+8. **Default trace-mode evaluation** — Once coverage and stability are proven across the full corpus, evaluate promoting `hybrid` as default trace mode (currently `static`).
+9. **Mapper 4 (MMC3) support** — The next most common mapper after 0/1/2/3/7. Requires IRQ counter emulation for scanline-based bank switching. Design should follow the established `ApplyMapperWrite` + runtime snapshot pattern.
+
+### Optimization and Cleanup
+
+10. **Split-seeding pipeline consolidation** — Phases 32-41 added incremental tuning knobs and telemetry counters. Consider consolidating threshold constants into a configurable struct for easier experimentation.
+11. **Benchmark script deduplication** — `benchmark_mapper_corpus.sh`, `benchmark_trace_sweep.sh`, and `sweep_mapper_joypad_timeline.sh` share significant verify/classify logic. Extract common helpers to reduce maintenance burden.
+12. **Trace stats field rationalization** — Some split-seed telemetry fields (40+) may be better grouped or conditionally emitted to reduce log noise for non-split-seeding use cases.
