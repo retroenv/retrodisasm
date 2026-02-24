@@ -896,7 +896,46 @@ func isStoreOpcode(op byte) bool {
 	}
 }
 
+// isPPUStatusPollingLoopPC checks whether pc is inside a PPU status polling
+// loop: BIT/LDA $2002 followed by a conditional backward branch. These loops
+// are reached many times across branch states and need the higher PPU visit
+// limit rather than the boot-loop limit.
+func isPPUStatusPollingLoopPC(mapper Mapper, pc uint16) bool {
+	for back := range uint16(6) {
+		if pc < back {
+			continue
+		}
+		start := pc - back
+		if isPPUStatusPollingPatternAt(mapper, start) && pc <= start+5 {
+			return true
+		}
+	}
+	return false
+}
+
+func isPPUStatusPollingPatternAt(mapper Mapper, start uint16) bool {
+	op := mapper.ReadMemory(start)
+	if op != 0x2C && op != 0xAD { // BIT abs / LDA abs
+		return false
+	}
+	low := mapper.ReadMemory(start + 1)
+	high := mapper.ReadMemory(start + 2)
+	if uint16(high)<<8|uint16(low) != 0x2002 {
+		return false
+	}
+	branchOp := mapper.ReadMemory(start + 3)
+	if !isConditionalBranchOpcode(branchOp) {
+		return false
+	}
+	target := start + 5 + uint16(int16(int8(mapper.ReadMemory(start+4))))
+	return target <= start
+}
+
 func isPPUDataStreamLoopPC(mapper Mapper, pc uint16) bool {
+	if isPPUStatusPollingLoopPC(mapper, pc) {
+		return true
+	}
+
 	// Check current PC and nearby PCs for a short streaming loop:
 	//   STA $2007
 	//   INY/DEX/...

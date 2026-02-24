@@ -3094,6 +3094,54 @@ Validation:
   - Emu trace halt moved from `$E2E7` to `$E2F1` — the inside-loop body detector successfully relaxed the visit limit at the non-branch instruction, allowing the trace to escape and reach further code.
   - `unique_pc=495` (unchanged — the newly reachable PCs between `$E2E7` and `$E2F1` were already visited via other paths).
 
+### Phase 45: PPU Status Polling Loop Detection
+
+Status: Completed (2026-02-24)
+
+1. Add `isPPUStatusPollingLoopPC()` — detects `BIT/LDA $2002 + conditional backward branch` patterns, the classic NES vblank-wait idiom.
+2. Wire into `isPPUDataStreamLoopPC()` so PPU status polling loops get `ppuLoopVisitLimit` (8192) instead of `bootLoopVisitLimit` (2048).
+3. Add `TestRunEscapesPPUStatusPollingLoopWithHighVisitBudget` — verifies the trace escapes a PPU polling loop even when `MaxVisitsPerPC >= bootLoopVisitLimit`, proving the higher PPU limit fires.
+
+Acceptance:
+
+1. Both `asm6` and `ca65` outputs verify successfully for Rom City Rampage.
+2. Full test suite and lint remain clean.
+3. Emu trace instructions increased from 288,831 to 292,138 (+3,307 — the higher PPU limit is active at some hot sites).
+
+Implementation notes:
+
+- `internal/trace/m6502emu/trace.go`:
+  - Added `isPPUStatusPollingLoopPC(mapper, pc)` that scans backward up to 6 bytes for `BIT/LDA $2002` (opcodes `$2C/$AD`) followed by a conditional backward branch.
+  - Added `isPPUStatusPollingPatternAt(mapper, start)` helper that validates the full pattern: read opcode + $2002 address + branch opcode + backward target.
+  - Inserted call at top of `isPPUDataStreamLoopPC`, checked before the existing `STA $2007` stream-loop detector.
+- `internal/trace/m6502emu/trace_test.go`:
+  - Added `TestRunEscapesPPUStatusPollingLoopWithHighVisitBudget`: uses `MaxVisitsPerPC=2048` (equal to `bootLoopVisitLimit`), proving only `ppuLoopVisitLimit=8192` allows escape.
+
+Validation:
+
+- Full tests:
+  - `go test ./...`
+  - Result: success.
+- Lint:
+  - `make lint`
+  - Result: `0 issues`.
+- Rom City Rampage verify/regeneration:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+  - Output:
+    - `internal/testroms/special/Rom City Rampage.asm6.asm` (`61102` lines)
+    - `internal/testroms/special/Rom City Rampage.ca65.asm` (`61027` lines)
+- Code-density result:
+  - After Phase 44: `7580`
+  - After Phase 45: `7580`
+  - Delta: `+0` code lines (PPU-limit-only change; PPU polling sites don't produce new split-table entries).
+- Telemetry:
+  - Emu trace instructions: 292,138 (up from 288,831) — the PPU polling detector grants the higher limit at legitimate vblank-wait sites.
+  - Halt still at `$E2F1` — investigation reveals this address contains `$E2 $19` (unofficial NOP #imm), indicating the trace is executing through **data**, not stuck in a PPU loop. The visit limit correctly halts data-execution paths.
+  - `unique_pc=495`, `emu_only_pc=0` (unchanged — the trace hasn't broken through to bank-switched code that static analysis can't reach).
+
+Analysis: The halt at `$E2F1` is a data-execution issue, not a loop detection gap. The address range `$E2E0-$E2FF` contains repeated `$E2 $19` data bytes that the CPU interprets as unofficial 2-byte NOPs. The visit limit correctly stops this path. Future trace quality improvements should focus on detecting when the trace enters data regions (e.g., unofficial opcode sequences) and aborting early rather than consuming visit budget.
+
 ## Progress Summary (as of 2026-02-24)
 
 ### Completed Phases
@@ -3146,6 +3194,7 @@ Validation:
 | 42 | Bank-Switch Comments | `MapperRegisterDescription`, emu-trace-driven annotation |
 | 43 | Loop Relaxation + Mid-Run RTS | Remove bank-switch guard, mid-run RTS/RTI split acceptance, `code=7580` |
 | 44 | Inside-Loop Body Relaxation | Non-branch instruction loop-body detection, trace halt advanced `$E2E7`→`$E2F1` |
+| 45 | PPU Status Polling Detection | `BIT/LDA $2002` loop detection with `ppuLoopVisitLimit=8192`, +3,307 trace instructions |
 
 ### Current Metrics
 
@@ -3176,7 +3225,7 @@ Validation:
 2. **Advisory trace** (Phase 1+): Emulator trace is informational; disassembly decisions remain independent, preventing cascade from emu-path errors.
 3. **Mapper-1 branch clamp** (Phase 31): Tiered budget caps (512/128/64) based on instruction/visit budgets; pragmatic guard until mapper-1-safe heuristics are available.
 4. **Split-table pipeline** (Phases 32-41, 43): Multi-stage gated pipeline: plausibility → correlation → extraction → opcode gate → shape → weak-entry tiers → mid-run RTS/RTI acceptance.
-5. **Deterministic I/O stubs** (Phases 17-19, 43-44): PPU status alternation, controller serial emulation, PPU data-loop relaxation; all snapshot-safe for branch replay. Phase 43 removed the bank-switch guard that blocked loop relaxation for mapper-heavy ROMs. Phase 44 added inside-loop body detection so non-branch instructions within tight loops also get relaxed visit limits.
+5. **Deterministic I/O stubs** (Phases 17-19, 43-45): PPU status alternation, controller serial emulation, PPU data-loop relaxation; all snapshot-safe for branch replay. Phase 43 removed the bank-switch guard that blocked loop relaxation for mapper-heavy ROMs. Phase 44 added inside-loop body detection so non-branch instructions within tight loops also get relaxed visit limits. Phase 45 added PPU status polling (`BIT/LDA $2002`) detection for the higher `ppuLoopVisitLimit`.
 6. **Non-default mapping label safety** (Phase 20): Branch/call operands in non-default mapping contexts keep literal targets to prevent cross-mapping address drift.
 7. **Emu-trace-driven bank-switch comments** (Phase 42): Only annotates writes that actually changed PRG mapping during emulation, avoiding noise from CHR/misc register writes. Static-only mode gets no bank-switch comments.
 
@@ -3258,7 +3307,7 @@ Scripts:
 5. I/O-dependent infinite loops.
    - Stub values may not satisfy wait conditions (e.g., polling $2002 for specific PPU state).
    - Mitigation: per-PC visit limit, boot-loop relaxation, PPU data-loop relaxation.
-   - Status: materially improved via Phases 17-19, 44; remaining halts are PPU frame progression.
+   - Status: materially improved via Phases 17-19, 44-45. Current halt at `$E2F1` is data execution (unofficial opcodes), not an I/O loop. Remaining improvement: early data-region detection.
 
 6. Mapper state divergence.
    - Stubs cause different code paths than real hardware, potentially missing or mis-tracing branches.
@@ -3268,7 +3317,7 @@ Scripts:
 7. Split-table false-positive code promotion.
    - Aggressive pointer-table seeding can promote data as code, causing verification failures.
    - Mitigation: multi-stage gated pipeline (plausibility → correlation → extraction → opcode → shape → weak tiers → mid-run RTS/RTI).
-   - Status: zero false-positive regressions through Phase 44.
+   - Status: zero false-positive regressions through Phase 45.
 
 ## Glossary
 
