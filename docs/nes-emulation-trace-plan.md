@@ -1051,6 +1051,113 @@ Post-phase note:
   - `Casino Kid` (assembler range errors)
   - `Archon` (cartridge/PRG load error: unexpected EOF)
 
+### Phase 13: Branch-Expansion Regression Guard (Mapper 1)
+
+Status: Completed (2026-02-24)
+
+1. Isolate and mitigate mapper `1` regression that reappeared when branch alternate budgets were enabled.
+2. Tighten advisory-trace seeding policy to avoid speculative parse roots not executed by emulator.
+3. Re-run branch-budget sweeps to confirm mapper `1` stability across `max_branch` settings.
+
+Acceptance:
+
+1. `Bomberman II` no longer regresses when `-trace-max-branch-states > 0`.
+2. Mapper `1` pass rate remains stable across branch-budget matrix settings.
+3. No regressions in mapper `2` and full test suite remains green.
+
+Implementation notes:
+
+- Removed speculative non-executed alternate seeding:
+  - `internal/disasm/emutrace.go`
+  - `seedFromAdvisoryEmuTrace()` now seeds parse roots only from `result.Steps` (executed instructions), and no longer adds parse roots from `result.BranchAlternates` directly.
+- Added mapper-aware branch alternate guard:
+  - `internal/disasm/emutrace.go`
+  - In `runAdvisoryEmuTrace()`, when cartridge mapper is `1` and requested `MaxBranchStates > 0`, branch alternate exploration is clamped to `0`.
+  - Rationale: current mapper `1` corpus shows branch alternates are net-negative and can introduce single-byte mismatches under expanded branch budgets.
+
+Validation:
+
+- Full tests:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase13 go test ./...`
+  - Result: success.
+- Targeted regression check:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase13 go run . -verify -q -a ca65 -s nes -trace-mode hybrid -trace-max-instr 200000 -trace-max-visits-per-state 8 -trace-max-branch-states 64 -o /tmp/phase13_bomberman_b64_guard.asm "internal/testroms/commercial/notworking/Bomberman II (USA).nes"`
+  - Result: success (`EXIT:0`).
+- Mapper 1/2 branch-budget sweep (`v=8`):
+  - `scripts/benchmark_trace_sweep.sh -g notworking -m 1,2 -i 200000 -v 8 -b 0,64,128,256 -o /tmp/phase13_trace_sweep_m12_v8.csv`
+  - Summary:
+    - mapper `1`: `2/2` pass for branch `0,64,128,256` (regression removed)
+    - mapper `2`: `4/7` pass for branch `0,64,128,256` (unchanged by this guard)
+- Matrix confirmation (`v=8,16,32`):
+  - `scripts/benchmark_trace_sweep.sh -g notworking -m 1,2 -i 200000 -v 8,16,32 -b 0,64,128,256 -o /tmp/phase13_trace_sweep_m12_matrix.csv`
+  - Summary:
+    - mapper `1`: `2/2` pass for all 12 configs
+    - mapper `2`: `4/7` pass for all 12 configs
+
+Post-phase note:
+
+- Branch budget tuning for mapper `1` is now stabilized through a conservative guard; this is intentionally pragmatic and can be relaxed later once mapper-1-safe alternate-path heuristics are available.
+- Remaining improvement opportunity is concentrated in mapper `2` ROM-specific failures, not branch-budget instability.
+
+### Phase 14: Assembler Failure Forensics in Artifact Capture
+
+Status: Completed (2026-02-24)
+
+1. Improve failure artifacts for mapper-specific triage by capturing assembler error diagnostics directly from verify logs.
+2. Add source-line context extraction for `ca65` line-based errors (e.g. `Range error`).
+3. Keep disassembly behavior unchanged while increasing failure observability.
+
+Acceptance:
+
+1. Failure artifacts include parsed assembler error lines when present.
+2. Artifacts include concise error-type summary and source-line context snippets.
+3. Existing pass/fail benchmark behavior remains unchanged.
+
+Implementation notes:
+
+- Enhanced artifact capture in both benchmark scripts:
+  - `scripts/benchmark_mapper_corpus.sh`
+  - `scripts/benchmark_trace_sweep.sh`
+- New per-failure files (only when assembler line errors are present in logs):
+  - `assembler_errors.txt`
+    - extracted entries like: `out.asm(2361): Error: Range error`
+  - `assembler_error_summary.txt`
+    - grouped counts by error type
+  - `assembler_error_context.txt`
+    - nearby `disasm.asm` lines (`line-3` to `line+3`) for each extracted error
+    - context extraction is capped (40 entries) to keep artifacts bounded
+- Parsing behavior:
+  - regex extracts all embedded `out.asm(<line>): Error: ...` fragments even when logged as escaped `\n` in one JSON log line.
+  - no new behavior changes in disassembly or mapper runtime; this phase is observability only.
+
+Validation:
+
+- Syntax sanity:
+  - `bash -n scripts/benchmark_trace_sweep.sh scripts/benchmark_mapper_corpus.sh scripts/cluster_failure_artifacts.sh`
+  - Result: success.
+- Not-working baseline with artifact capture:
+  - `scripts/benchmark_mapper_corpus.sh -g notworking -a ca65 -d /tmp/phase14_artifacts -o /tmp/phase14_mapper_corpus_notworking.csv`
+  - Summary unchanged from Phase 13 baseline:
+    - mapper `1`: `2/2` pass
+    - mapper `2`: `4/7` pass
+  - `Casino Kid` failure artifact now includes:
+    - `assembler_errors.txt`
+    - `assembler_error_summary.txt`
+    - `assembler_error_context.txt`
+- Mapper 2 focused sweep with artifact capture:
+  - `scripts/benchmark_trace_sweep.sh -g notworking -m 2 -i 200000 -v 8 -b 0 -d /tmp/phase14_artifacts_sweep -o /tmp/phase14_trace_sweep_m2.csv`
+  - Summary:
+    - mapper `2`: `4 pass / 3 fail / 7 total`
+  - `Casino Kid` sweep artifact also includes assembler forensic files.
+
+Post-phase note:
+
+- Failure triage now has immediate line-level evidence for assembler failures, removing manual reproduction steps for `Casino Kid` and similar issues.
+- Remaining mapper `2` failures now split cleanly into:
+  - assembler-range class (`Casino Kid`)
+  - large PRG mismatch class (`Alfred Chicken`)
+  - invalid/corrupt input class (`Archon` unexpected EOF on PRG load)
+
 ## Testing Plan
 
 1. Unit tests
@@ -1099,8 +1206,7 @@ Post-phase note:
 
 ## Immediate Next Steps
 
-1. Investigate remaining mapper `2` failures with targeted artifact triage:
-   - `Alfred Chicken`: large PRG mismatch (non-vector hotspot pattern).
-   - `Casino Kid`: `ca65` range errors in generated asm.
-2. Isolate branch-expansion regression for mapper `1` (`Bomberman II` passes at branch `0` but fails at `64+`) and tighten alternate-path enqueue policy.
-3. Improve I/O stub realism (PPU/APU/controller hotspots) to reduce mapper-state divergence in startup/control loops.
+1. Use new assembler forensic artifacts to implement a targeted fix for `Casino Kid` range-error sites (starting from `assembler_error_context.txt` hotspots).
+2. Investigate `Alfred Chicken` large PRG mismatch path with focused mapper-write/flow instrumentation (non-vector hotspot class).
+3. Replace mapper-1 branch guard with a condition-based alternate-path policy (mapper-safe heuristics) so branch exploration can be re-enabled without reintroducing the regression.
+4. Improve I/O stub realism (PPU/APU/controller hotspots) to reduce mapper-state divergence in startup/control loops.

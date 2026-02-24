@@ -19,6 +19,7 @@ set -u
 ASSEMBLER="ca65"
 GROUP="all" # all|working|notworking
 ARTIFACT_DIR=""
+MAX_ASM_ERROR_CONTEXTS=40
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -102,6 +103,57 @@ sanitize_name() {
     echo "$name"
 }
 
+write_assembler_error_artifacts() {
+    local log_file="$1"
+    local asm_file="$2"
+    local artifact_path="$3"
+
+    local errors_file summary_file context_file
+    errors_file="${artifact_path}/assembler_errors.txt"
+    summary_file="${artifact_path}/assembler_error_summary.txt"
+    context_file="${artifact_path}/assembler_error_context.txt"
+
+    rg -o 'out\.asm\([0-9]+\): Error: [^\\"]+' "$log_file" > "$errors_file" || true
+    if [[ ! -s "$errors_file" ]]; then
+        rm -f "$errors_file" "$summary_file" "$context_file"
+        return 0
+    fi
+
+    awk -F': Error: ' '{print $2}' "$errors_file" | sort | uniq -c | sort -nr > "$summary_file"
+
+    if [[ ! -f "$asm_file" ]]; then
+        return 0
+    fi
+
+    : > "$context_file"
+    local count=0
+    while IFS= read -r err; do
+        local line start end
+        line="$(echo "$err" | sed -E 's/.*out\.asm\(([0-9]+)\).*/\1/')"
+        if [[ -z "$line" ]]; then
+            continue
+        fi
+
+        start=$(( line - 3 ))
+        if (( start < 1 )); then
+            start=1
+        fi
+        end=$(( line + 3 ))
+
+        {
+            echo "=== ${err} ==="
+            nl -ba "$asm_file" | sed -n "${start},${end}p"
+            echo
+        } >> "$context_file"
+
+        count=$((count + 1))
+        if (( count >= MAX_ASM_ERROR_CONTEXTS )); then
+            echo "... truncated after ${MAX_ASM_ERROR_CONTEXTS} contexts ..." >> "$context_file"
+            break
+        fi
+    done < "$errors_file"
+}
+
 write_failure_artifacts() {
     local rom="$1"
     local rom_name="$2"
@@ -121,6 +173,9 @@ write_failure_artifacts() {
     if [[ -f "${tmp_dir}/out.asm" ]]; then
         cp "${tmp_dir}/out.asm" "${artifact_path}/disasm.asm"
         rg -n '^[A-Za-z_.][A-Za-z0-9_.]*:' "${artifact_path}/disasm.asm" > "${artifact_path}/labels.txt" || true
+        write_assembler_error_artifacts "$log_file" "${artifact_path}/disasm.asm" "$artifact_path"
+    else
+        write_assembler_error_artifacts "$log_file" "" "$artifact_path"
     fi
 
     rg -n "Offset mismatch|verification failed|Disassembling failed" "$log_file" > "${artifact_path}/mismatch_offsets.txt" || true
