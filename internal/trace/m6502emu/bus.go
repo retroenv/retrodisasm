@@ -8,6 +8,14 @@ const (
 	ppuRegisterStart = 0x2000
 	ppuRegisterMask  = 0x0007
 	ppuStatusVBlank  = 0x80
+
+	joypad1Address = 0x4016
+	joypad2Address = 0x4017
+
+	joypadButtonCount = 8
+	joypadOpenBusBit6 = 0x40
+	joypadButtonAMask = 0x01
+	joypadButtonData  = 0x01
 )
 
 type nesBus struct {
@@ -19,6 +27,11 @@ type nesBus struct {
 
 	ppuStatusReadCount uint64
 
+	joypadStrobe   bool
+	joypadLatched  [2]byte
+	joypadShift    [2]byte
+	joypadBitsLeft [2]uint8
+
 	onMapperWrite func(address uint16, value byte)
 }
 
@@ -27,6 +40,10 @@ type busSnapshot struct {
 	prgRAM [prgRAMSize]byte
 
 	ppuStatusReadCount uint64
+	joypadStrobe       bool
+	joypadLatched      [2]byte
+	joypadShift        [2]byte
+	joypadBitsLeft     [2]uint8
 }
 
 func newNesBus(cart *cartridge.Cartridge, mapper Mapper) *nesBus {
@@ -41,6 +58,10 @@ func (b *nesBus) snapshot() busSnapshot {
 		ram:                b.ram,
 		prgRAM:             b.prgRAM,
 		ppuStatusReadCount: b.ppuStatusReadCount,
+		joypadStrobe:       b.joypadStrobe,
+		joypadLatched:      b.joypadLatched,
+		joypadShift:        b.joypadShift,
+		joypadBitsLeft:     b.joypadBitsLeft,
 	}
 }
 
@@ -48,6 +69,10 @@ func (b *nesBus) restore(state busSnapshot) {
 	b.ram = state.ram
 	b.prgRAM = state.prgRAM
 	b.ppuStatusReadCount = state.ppuStatusReadCount
+	b.joypadStrobe = state.joypadStrobe
+	b.joypadLatched = state.joypadLatched
+	b.joypadShift = state.joypadShift
+	b.joypadBitsLeft = state.joypadBitsLeft
 }
 
 func (b *nesBus) Read(address uint16) uint8 {
@@ -64,8 +89,10 @@ func (b *nesBus) Read(address uint16) uint8 {
 
 	case address <= 0x401F:
 		switch address {
-		case 0x4016, 0x4017:
-			return 0x00 // controller input stub
+		case joypad1Address:
+			return b.readJoypad(0)
+		case joypad2Address:
+			return b.readJoypad(1)
 		default:
 			return 0x00 // APU/IO stubs
 		}
@@ -102,7 +129,11 @@ func (b *nesBus) Write(address uint16, value uint8) {
 		return
 
 	case address <= 0x401F:
-		// APU/IO writes are ignored in advisory mode.
+		if address == joypad1Address {
+			b.writeJoypadStrobe(value)
+			return
+		}
+		// APU/IO writes (besides controller strobe) are ignored in advisory mode.
 		return
 
 	case address <= 0x5FFF:
@@ -117,4 +148,52 @@ func (b *nesBus) Write(address uint16, value uint8) {
 			b.onMapperWrite(address, value)
 		}
 	}
+}
+
+func (b *nesBus) writeJoypadStrobe(value byte) {
+	newStrobe := value&joypadButtonData != 0
+	if newStrobe {
+		b.latchJoypads()
+	} else if b.joypadStrobe {
+		// Latch on high->low transition, matching CPU polling behavior.
+		b.latchJoypads()
+	}
+	b.joypadStrobe = newStrobe
+}
+
+func (b *nesBus) latchJoypads() {
+	for controller := 0; controller < len(b.joypadLatched); controller++ {
+		state := b.sampleJoypadState(controller)
+		b.joypadLatched[controller] = state
+		b.joypadShift[controller] = state
+		b.joypadBitsLeft[controller] = joypadButtonCount
+	}
+}
+
+func (b *nesBus) sampleJoypadState(controller int) byte {
+	// Neutral deterministic input by default (no pressed buttons).
+	// State bit order: A, B, Select, Start, Up, Down, Left, Right.
+	if controller < 0 || controller > 1 {
+		return 0
+	}
+	return 0
+}
+
+func (b *nesBus) readJoypad(controller int) byte {
+	if controller < 0 || controller > 1 {
+		return joypadOpenBusBit6
+	}
+
+	if b.joypadStrobe {
+		return joypadOpenBusBit6 | (b.joypadLatched[controller] & joypadButtonAMask)
+	}
+
+	var bit byte = 1
+	if b.joypadBitsLeft[controller] > 0 {
+		bit = b.joypadShift[controller] & joypadButtonAMask
+		b.joypadShift[controller] >>= 1
+		b.joypadBitsLeft[controller]--
+	}
+
+	return joypadOpenBusBit6 | bit
 }

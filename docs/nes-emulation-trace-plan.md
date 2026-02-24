@@ -145,8 +145,8 @@ The `BasicMemory` implementation needs this concrete address map:
 
 ### I/O Stub Strategy
 
-- `$2002` (PPUSTATUS): Return `0x80` (VBlank set) — satisfies common `waitVBlank` loops
-- `$4016/$4017` (controllers): Return 0 (no input)
+- `$2002` (PPUSTATUS): deterministic alternating read (`0x00`, `0x80`, ...) to avoid hard-wiring one phase
+- `$4016/$4017` (controllers): serial strobe/latch/shift emulation (neutral input state by default)
 - All other PPU/APU: Return 0
 - Rationale: explores "normal startup" path for most games
 
@@ -1339,6 +1339,70 @@ Post-phase note:
 - Startup-loop realism materially improved Alfred trace depth under default budgets (5x+ unique PC coverage gain), but ROM verification mismatch remains unchanged.
 - The current halt hotspot (`$81FA`) sits in repeated PPU update flow, and nearby control flow includes JOYPAD polling (`$8217`), indicating the next likely gains come from richer IO timing/input stubs rather than mapper-write handling.
 
+### Phase 18: JOYPAD Serial Stub Realism
+
+Status: Completed (2026-02-24)
+
+1. Implement hardware-like controller strobe/latch/shift semantics for `$4016/$4017` in advisory emu mode.
+2. Preserve determinism and branch-state reproducibility by snapshotting controller internal state.
+3. Re-measure Alfred loop hotspots after controller realism improvements.
+
+Acceptance:
+
+1. JOYPAD reads follow NES serial behavior (strobe, latched shift register, post-8-bit reads).
+2. Controller emulation state survives snapshot/restore correctly.
+3. No regressions in corpus pass/fail baseline.
+
+Implementation notes:
+
+- `internal/trace/m6502emu/bus.go`:
+  - Added controller state:
+    - `joypadStrobe`
+    - `joypadLatched[2]`
+    - `joypadShift[2]`
+    - `joypadBitsLeft[2]`
+  - Added controller handlers:
+    - `writeJoypadStrobe()`
+    - `latchJoypads()`
+    - `sampleJoypadState()`
+    - `readJoypad()`
+  - Current input policy is intentionally conservative:
+    - deterministic neutral state (no buttons pressed) so behavior remains stable while read protocol becomes realistic.
+  - Snapshot/restore now includes all JOYPAD internal fields to keep advisory branch replay deterministic.
+- `internal/trace/m6502emu/trace_test.go`:
+  - Added:
+    - `TestNesBusJoypadStrobeLatchShift`
+    - `TestNesBusJoypadSnapshotRestore`
+
+Validation:
+
+- Focused tests:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase18 go test ./internal/trace/m6502emu -count=1`
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase18 go test ./internal/disasm -count=1`
+  - Result: success.
+- Full tests:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase18 go test ./...`
+  - Result: success.
+- Alfred check (`visits=8`):
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase18 go run . -debug -verify -q -a ca65 -s nes -trace-mode hybrid -trace-max-instr 200000 -trace-max-visits-per-state 8 -trace-max-branch-states 0 -o /tmp/alfred_phase18_v8_TOUT/out.asm "internal/testroms/commercial/notworking/Alfred Chicken (USA).nes"`
+  - Result: verify still fails with `segment PRG mismatch: 24061 offset mismatches`.
+  - Telemetry remained effectively unchanged from Phase 17:
+    - `instructions=8103`
+    - `unique_pc=87`
+    - `mapper_writes=3`
+    - `halt_reason="pc visit limit exceeded at $81FA"`
+- Baseline checks:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase18 scripts/benchmark_mapper_corpus.sh -g notworking -a ca65 -o /tmp/phase18_mapper_corpus_notworking.csv`
+    - mapper `1`: `2/2` pass
+    - mapper `2`: `5/7` pass
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase18 scripts/benchmark_trace_sweep.sh -g notworking -m 2 -i 200000 -v 8 -b 0 -o /tmp/phase18_trace_sweep_m2.csv`
+    - mapper `2`: `5 pass / 2 fail / 7 total`
+
+Post-phase note:
+
+- Controller protocol fidelity is now materially better, but Alfred remains dominated by PPU update/control-loop behavior (`$81FA` hotspot).
+- Next gains should focus on PPU-side progression semantics and selective input scripting, not additional controller protocol changes.
+
 ## Testing Plan
 
 1. Unit tests
@@ -1387,7 +1451,7 @@ Post-phase note:
 
 ## Immediate Next Steps
 
-1. Add JOYPAD serial input stub realism (`$4016/$4017` latch + shift behavior) and re-measure Alfred hotspot movement from `$81FA`/`$8217` loops.
-2. Add lightweight PPU timing progression hooks for repeated `PPU_DATA` update loops so startup/frame loops can advance without inflating global visit budgets.
+1. Add lightweight PPU timing progression hooks for repeated `PPU_DATA` update loops so startup/frame loops can advance without inflating global visit budgets.
+2. Add optional deterministic input scripting (controller button timeline) for advisory mode to test menu/progression gates after startup.
 3. Add a fast failure classifier in benchmark scripts for corrupt/truncated ROM inputs (`Archon` class) to separate input-integrity failures from trace/mapper regressions.
 4. Replace mapper-1 branch guard with a condition-based alternate-path policy (mapper-safe heuristics) so branch exploration can be re-enabled without reintroducing the regression.

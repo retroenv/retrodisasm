@@ -45,6 +45,46 @@ func TestNesBusPPUStatusSnapshotRestore(t *testing.T) {
 	assert.Equal(t, expected, byte(bus.Read(0x2002)))
 }
 
+func TestNesBusJoypadStrobeLatchShift(t *testing.T) {
+	mapper := &mockMapper{
+		memory: map[uint16]byte{},
+	}
+	bus := newNesBus(&cartridge.Cartridge{}, mapper)
+
+	// Latch neutral controller state.
+	bus.Write(joypad1Address, 0x01)
+	bus.Write(joypad1Address, 0x00)
+
+	for i := 0; i < joypadButtonCount; i++ {
+		value := byte(bus.Read(joypad1Address))
+		assert.Equal(t, byte(0), value&joypadButtonAMask)
+		assert.Equal(t, byte(joypadOpenBusBit6), value&joypadOpenBusBit6)
+	}
+
+	// After the 8 button reads, controller keeps returning 1.
+	assert.Equal(t, byte(1), byte(bus.Read(joypad1Address))&joypadButtonAMask)
+}
+
+func TestNesBusJoypadSnapshotRestore(t *testing.T) {
+	mapper := &mockMapper{
+		memory: map[uint16]byte{},
+	}
+	bus := newNesBus(&cartridge.Cartridge{}, mapper)
+
+	bus.Write(joypad1Address, 0x01)
+	bus.Write(joypad1Address, 0x00)
+
+	// Consume three button bits, then snapshot.
+	_ = bus.Read(joypad1Address)
+	_ = bus.Read(joypad1Address)
+	_ = bus.Read(joypad1Address)
+	snapshot := bus.snapshot()
+
+	expected := byte(bus.Read(joypad1Address))
+	bus.restore(snapshot)
+	assert.Equal(t, expected, byte(bus.Read(joypad1Address)))
+}
+
 func TestRunCollectsStepsAndMapperWrites(t *testing.T) {
 	mapper := &mockMapper{
 		memory: map[uint16]byte{
