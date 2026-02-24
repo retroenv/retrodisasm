@@ -2,6 +2,7 @@ package disasm
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -66,6 +67,12 @@ func (dis *Disasm) runAdvisoryEmuTrace(ctx context.Context) *m6502emu.Result {
 		log.Int("unique_mapping", result.UniqueMappingCount),
 		log.Int("mapper_writes", len(result.BankSwitchWrites)),
 		log.Int("mapping_changes", changed),
+		log.Int("mapper_write_unique_addresses", result.MapperWriteUniqueAddresses),
+		log.Int("mapper_write_unique_pcs", result.MapperWriteUniquePCs),
+		log.Int("mapper_write_unique_transitions", result.MapperWriteUniqueTransitions),
+		log.String("mapper_write_top_addresses", formatMapperWriteAddressHotspots(result.MapperWriteAddressHotspots)),
+		log.String("mapper_write_top_pcs", formatMapperWritePCHotspots(result.MapperWritePCHotspots)),
+		log.String("mapper_write_top_transitions", formatMapperWriteTransitionHotspots(result.MapperWriteTransitionHotspots)),
 		log.Int("conditional_branches", result.ConditionalBranchCount),
 		log.Int("branch_alternates", result.BranchAlternateCount),
 		log.Int("branch_alternate_budget_drops", result.BranchAlternateBudgetDrops),
@@ -192,4 +199,40 @@ func intSetting(cliValue int, envKey string, defaultValue int) int {
 		return cliValue
 	}
 	return envIntOrDefault(envKey, defaultValue)
+}
+
+func formatMapperWriteAddressHotspots(hotspots []m6502emu.MapperWriteAddressHotspot) string {
+	if len(hotspots) == 0 {
+		return "none"
+	}
+	parts := make([]string, 0, len(hotspots))
+	for _, hotspot := range hotspots {
+		parts = append(parts, fmt.Sprintf("$%04X:%d(chg=%d)",
+			hotspot.Address, hotspot.Count, hotspot.ChangedCount))
+	}
+	return strings.Join(parts, ",")
+}
+
+func formatMapperWritePCHotspots(hotspots []m6502emu.MapperWritePCHotspot) string {
+	if len(hotspots) == 0 {
+		return "none"
+	}
+	parts := make([]string, 0, len(hotspots))
+	for _, hotspot := range hotspots {
+		parts = append(parts, fmt.Sprintf("$%04X:%d(chg=%d)",
+			hotspot.PC, hotspot.Count, hotspot.ChangedCount))
+	}
+	return strings.Join(parts, ",")
+}
+
+func formatMapperWriteTransitionHotspots(hotspots []m6502emu.MapperWriteTransitionHotspot) string {
+	if len(hotspots) == 0 {
+		return "none"
+	}
+	parts := make([]string, 0, len(hotspots))
+	for _, hotspot := range hotspots {
+		parts = append(parts, fmt.Sprintf("%d->%d:%d",
+			hotspot.BeforeMapping, hotspot.AfterMapping, hotspot.Count))
+	}
+	return strings.Join(parts, ",")
 }

@@ -126,6 +126,45 @@ func TestRunCollectsBranchAlternatesForTakenBranch(t *testing.T) {
 	assert.True(t, res.BranchAlternates[0].Taken)
 }
 
+func TestRunBuildsMapperWriteHotspots(t *testing.T) {
+	mapper := &mockMapper{
+		memory: map[uint16]byte{
+			0xFFFC: 0x00, // reset vector low
+			0xFFFD: 0x80, // reset vector high -> $8000
+			0x8000: 0xA9, // lda #$01
+			0x8001: 0x01,
+			0x8002: 0x8D, // sta $8000
+			0x8003: 0x00,
+			0x8004: 0x80,
+			0x8005: 0x8D, // sta $A000
+			0x8006: 0x00,
+			0x8007: 0xA0,
+			0x8008: 0x8D, // sta $8000
+			0x8009: 0x00,
+			0x800A: 0x80,
+			0x800B: 0x4C, // jmp $800B
+			0x800C: 0x0B,
+			0x800D: 0x80,
+		},
+		signature: 0x42,
+	}
+
+	res, err := Run(context.Background(), &cartridge.Cartridge{}, mapper, Config{
+		MaxInstructions: 32,
+		MaxVisitsPerPC:  4,
+	})
+	assert.NoError(t, err)
+
+	assert.Equal(t, 3, len(res.BankSwitchWrites))
+	assert.Equal(t, 2, res.MapperWriteUniqueAddresses)
+	assert.Equal(t, 3, res.MapperWriteUniquePCs)
+	assert.Equal(t, 3, res.MapperWriteUniqueTransitions)
+	assert.True(t, len(res.MapperWriteAddressHotspots) > 0)
+	assert.Equal(t, uint16(0x8000), res.MapperWriteAddressHotspots[0].Address)
+	assert.Equal(t, 2, res.MapperWriteAddressHotspots[0].Count)
+	assert.Equal(t, 2, res.MapperWriteAddressHotspots[0].ChangedCount)
+}
+
 func TestRunBranchAlternatesBudget(t *testing.T) {
 	mapper := &mockMapper{
 		memory: map[uint16]byte{

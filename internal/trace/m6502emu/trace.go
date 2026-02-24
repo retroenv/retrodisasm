@@ -4,6 +4,7 @@ package m6502emu
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ const (
 	defaultMaxInstructions = 100000
 	defaultMaxVisitsPerPC  = 8
 	defaultMaxBranchStates = 0
+	mapperHotspotLimit     = 8
 )
 
 // Mapper defines the mapper functions needed by the emulator trace.
@@ -65,6 +67,27 @@ type BankSwitchWrite struct {
 	Changed       bool
 }
 
+// MapperWriteAddressHotspot summarizes mapper writes grouped by write address.
+type MapperWriteAddressHotspot struct {
+	Address      uint16
+	Count        int
+	ChangedCount int
+}
+
+// MapperWritePCHotspot summarizes mapper writes grouped by write source PC.
+type MapperWritePCHotspot struct {
+	PC           uint16
+	Count        int
+	ChangedCount int
+}
+
+// MapperWriteTransitionHotspot summarizes mapper writes grouped by mapping transition.
+type MapperWriteTransitionHotspot struct {
+	BeforeMapping uint64
+	AfterMapping  uint64
+	Count         int
+}
+
 // Result holds all advisory trace output.
 type Result struct {
 	Steps            []TraceStep
@@ -80,6 +103,13 @@ type Result struct {
 	Instructions               int
 	HaltReason                 string
 	Duration                   time.Duration
+
+	MapperWriteUniqueAddresses    int
+	MapperWriteUniquePCs          int
+	MapperWriteUniqueTransitions  int
+	MapperWriteAddressHotspots    []MapperWriteAddressHotspot
+	MapperWritePCHotspots         []MapperWritePCHotspot
+	MapperWriteTransitionHotspots []MapperWriteTransitionHotspot
 }
 
 type cpuSnapshot struct {
@@ -288,6 +318,136 @@ func finalizeResult(res *Result, uniquePCs map[uint16]struct{}, uniqueMappings m
 	res.UniquePCCount = len(uniquePCs)
 	res.UniqueMappingCount = len(uniqueMappings)
 	res.BranchAlternateCount = len(res.BranchAlternates)
+	summarizeMapperWrites(res)
+}
+
+func summarizeMapperWrites(res *Result) {
+	if len(res.BankSwitchWrites) == 0 {
+		return
+	}
+
+	type countPair struct {
+		count   int
+		changed int
+	}
+	type transitionKey struct {
+		before uint64
+		after  uint64
+	}
+
+	addressCounts := map[uint16]countPair{}
+	pcCounts := map[uint16]countPair{}
+	transitionCounts := map[transitionKey]int{}
+
+	for _, event := range res.BankSwitchWrites {
+		addr := addressCounts[event.Address]
+		addr.count++
+		if event.Changed {
+			addr.changed++
+		}
+		addressCounts[event.Address] = addr
+
+		pc := pcCounts[event.PC]
+		pc.count++
+		if event.Changed {
+			pc.changed++
+		}
+		pcCounts[event.PC] = pc
+
+		key := transitionKey{before: event.BeforeMapping, after: event.AfterMapping}
+		transitionCounts[key]++
+	}
+
+	res.MapperWriteUniqueAddresses = len(addressCounts)
+	res.MapperWriteUniquePCs = len(pcCounts)
+	res.MapperWriteUniqueTransitions = len(transitionCounts)
+
+	addressHotspots := make([]MapperWriteAddressHotspot, 0, len(addressCounts))
+	for address, c := range addressCounts {
+		addressHotspots = append(addressHotspots, MapperWriteAddressHotspot{
+			Address:      address,
+			Count:        c.count,
+			ChangedCount: c.changed,
+		})
+	}
+	slices.SortFunc(addressHotspots, func(a, b MapperWriteAddressHotspot) int {
+		if a.Count != b.Count {
+			return b.Count - a.Count
+		}
+		if a.ChangedCount != b.ChangedCount {
+			return b.ChangedCount - a.ChangedCount
+		}
+		switch {
+		case a.Address < b.Address:
+			return -1
+		case a.Address > b.Address:
+			return 1
+		default:
+			return 0
+		}
+	})
+	res.MapperWriteAddressHotspots = truncateHotspots(addressHotspots, mapperHotspotLimit)
+
+	pcHotspots := make([]MapperWritePCHotspot, 0, len(pcCounts))
+	for pc, c := range pcCounts {
+		pcHotspots = append(pcHotspots, MapperWritePCHotspot{
+			PC:           pc,
+			Count:        c.count,
+			ChangedCount: c.changed,
+		})
+	}
+	slices.SortFunc(pcHotspots, func(a, b MapperWritePCHotspot) int {
+		if a.Count != b.Count {
+			return b.Count - a.Count
+		}
+		if a.ChangedCount != b.ChangedCount {
+			return b.ChangedCount - a.ChangedCount
+		}
+		switch {
+		case a.PC < b.PC:
+			return -1
+		case a.PC > b.PC:
+			return 1
+		default:
+			return 0
+		}
+	})
+	res.MapperWritePCHotspots = truncateHotspots(pcHotspots, mapperHotspotLimit)
+
+	transitionHotspots := make([]MapperWriteTransitionHotspot, 0, len(transitionCounts))
+	for key, count := range transitionCounts {
+		transitionHotspots = append(transitionHotspots, MapperWriteTransitionHotspot{
+			BeforeMapping: key.before,
+			AfterMapping:  key.after,
+			Count:         count,
+		})
+	}
+	slices.SortFunc(transitionHotspots, func(a, b MapperWriteTransitionHotspot) int {
+		if a.Count != b.Count {
+			return b.Count - a.Count
+		}
+		if a.BeforeMapping != b.BeforeMapping {
+			if a.BeforeMapping < b.BeforeMapping {
+				return -1
+			}
+			return 1
+		}
+		if a.AfterMapping < b.AfterMapping {
+			return -1
+		}
+		if a.AfterMapping > b.AfterMapping {
+			return 1
+		}
+		return 0
+	})
+	res.MapperWriteTransitionHotspots = truncateHotspots(transitionHotspots, mapperHotspotLimit)
+}
+
+func truncateHotspots[T any](items []T, limit int) []T {
+	if len(items) <= limit {
+		return items
+	}
+	return items[:limit]
 }
 
 func isConditionalBranch(opName string) bool {

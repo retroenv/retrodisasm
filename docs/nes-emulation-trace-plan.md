@@ -1214,6 +1214,70 @@ Post-phase note:
   - `Alfred Chicken` (large PRG mismatch)
   - `Archon` (unexpected EOF / corrupt PRG load)
 
+### Phase 16: Alfred Flow Instrumentation (Mapper-Write Hotspots)
+
+Status: Completed (2026-02-24)
+
+1. Add focused trace instrumentation for mapper-write/flow triage on `Alfred Chicken`.
+2. Keep disassembly behavior unchanged while improving observability of mapper activity.
+3. Produce concrete next-step evidence for why large PRG mismatch remains.
+
+Acceptance:
+
+1. Advisory emulator trace emits mapper-write concentration metrics (address/PC/transition).
+2. Instrumentation is covered by tests and does not regress existing suites.
+3. `Alfred Chicken` run captures actionable telemetry to guide the next implementation phase.
+
+Implementation notes:
+
+- Added mapper-write hotspot aggregation to `internal/trace/m6502emu/trace.go`:
+  - New result metadata:
+    - `MapperWriteUniqueAddresses`
+    - `MapperWriteUniquePCs`
+    - `MapperWriteUniqueTransitions`
+    - `MapperWriteAddressHotspots`
+    - `MapperWritePCHotspots`
+    - `MapperWriteTransitionHotspots`
+  - Hotspot aggregation is computed during result finalization from `BankSwitchWrites`.
+  - Top-N hotspot slices are bounded (`mapperHotspotLimit=8`) and sorted deterministically.
+- Emu trace logging in `internal/disasm/emutrace.go` now emits:
+  - `mapper_write_unique_addresses`
+  - `mapper_write_unique_pcs`
+  - `mapper_write_unique_transitions`
+  - `mapper_write_top_addresses`
+  - `mapper_write_top_pcs`
+  - `mapper_write_top_transitions`
+- Added coverage in `internal/trace/m6502emu/trace_test.go`:
+  - `TestRunBuildsMapperWriteHotspots`
+
+Validation:
+
+- Focused tests:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase16 go test ./internal/trace/m6502emu -count=1`
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase16 go test ./internal/disasm -count=1`
+  - Result: success.
+- Full tests:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase16 go test ./...`
+  - Result: success.
+- Alfred instrumentation run:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase16 go run . -debug -verify -q -a ca65 -s nes -trace-mode hybrid -trace-max-instr 500000 -trace-max-visits-per-state 64 -trace-max-branch-states 0 -o /tmp/alfred_phase16_v64_UoKU/out.asm "internal/testroms/commercial/notworking/Alfred Chicken (USA).nes"`
+  - Result: verify still fails with `segment PRG mismatch: 24061 offset mismatches` (expected for this phase).
+  - New telemetry:
+    - `instructions=212`, `unique_pc=17`, `halt_reason="pc visit limit exceeded at $C5E1"`
+    - `mapper_writes=0`
+    - `mapper_write_unique_addresses=0`
+    - `mapper_write_top_addresses="none"`
+- Baseline guard check:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase16 scripts/benchmark_mapper_corpus.sh -g notworking -a ca65 -o /tmp/phase16_mapper_corpus_notworking.csv`
+  - Summary unchanged from Phase 15:
+    - mapper `1`: `2/2` pass
+    - mapper `2`: `5/7` pass
+
+Post-phase note:
+
+- The new instrumentation confirms current Alfred failure is not a late mapper-switch reconstruction issue in traced paths; the advisory trace remains trapped in an early loop (`$C5E1`) and never executes mapper writes.
+- This narrows the next corrective work to startup-loop escape realism (I/O stub behavior and/or seeded alternate path policy), not additional mapper-write postprocessing.
+
 ## Testing Plan
 
 1. Unit tests
@@ -1262,7 +1326,10 @@ Post-phase note:
 
 ## Immediate Next Steps
 
-1. Investigate `Alfred Chicken` large PRG mismatch path with focused mapper-write/flow instrumentation (non-vector hotspot class).
+1. Improve startup loop escape realism for mapper-2 triage (first target: dynamic/non-constant PPU status stub strategy around `$C5E1` loop behavior).
 2. Add a fast failure classifier in benchmark scripts for corrupt/truncated ROM inputs (`Archon` class) to separate input-integrity failures from trace/mapper regressions.
 3. Replace mapper-1 branch guard with a condition-based alternate-path policy (mapper-safe heuristics) so branch exploration can be re-enabled without reintroducing the regression.
-4. Improve I/O stub realism (PPU/APU/controller hotspots) to reduce mapper-state divergence in startup/control loops.
+4. Re-run Alfred-focused debug traces after stub/branch-policy changes and compare:
+   - `mapper_writes`
+   - `unique_pc`
+   - verify mismatch count
