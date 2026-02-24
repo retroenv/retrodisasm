@@ -62,9 +62,10 @@ Current tracing is primarily address-based and assumes one active mapping per CP
 Not all mappers switch PRG banks. Only mappers that remap PRG code at runtime need emulator support:
 
 **Needs PRG runtime emulation:**
-- **Mapper 2 (UxROM)**: 16KB switchable bank at $8000-$BFFF, $C000-$FFFF fixed to last bank
-- **Mapper 7 (AxROM)**: 32KB switchable bank at $8000-$FFFF
 - **Mapper 1 (MMC1)**: 16KB or 32KB switchable via serial register
+- **Mapper 2 (UxROM)**: 16KB switchable bank at $8000-$BFFF, $C000-$FFFF fixed to last bank
+- **Mapper 5 (MMC5)**: Configurable PRG mode ($5100), 4 individual 8KB PRG bank select registers ($5114-$5117)
+- **Mapper 7 (AxROM)**: 32KB switchable bank at $8000-$FFFF
 
 **No PRG switching (mapper 0 equivalent for disassembly):**
 - **Mapper 0 (NROM)**: Fixed PRG, no bank switching
@@ -77,19 +78,22 @@ Not all mappers switch PRG banks. Only mappers that remap PRG code at runtime ne
 - **Mapper 3**: $8000-$FFFF write → CHR bank select only (ignore for PRG disassembly)
 - **Mapper 7**: $8000-$FFFF write → bits 0-2 select 32KB PRG bank; bit 4 = VRAM mirror (irrelevant for disassembly)
 - **Mapper 1 (MMC1)**: Serial 5-bit shift register at $8000-$FFFF; bit 7 resets; address bits 14-13 select target register (control, CHR0, CHR1, PRG)
+- **Mapper 5 (MMC5)**: $5100 write → PRG mode (0-3); $5114-$5117 write → per-window 8KB PRG bank select (bit 7 = ROM flag)
 
 ### Internal 8KB Windowing
 
 The `Mapper` struct uses a fixed `bankWindowSize` of `0x2000` (8KB) with 8 slots covering the full 64KB address space. Runtime mapper writes must update the correct number of 8KB slots:
 
-- **Mapper 7** (32KB switch): update all 4 PRG slots ($8000, $A000, $C000, $E000)
-- **Mapper 2** (16KB at $8000-$BFFF): update 2 slots ($8000, $A000); $C000/$E000 fixed to last bank
 - **Mapper 1** (variable): depends on PRG mode register (16KB or 32KB switching)
+- **Mapper 2** (16KB at $8000-$BFFF): update 2 slots ($8000, $A000); $C000/$E000 fixed to last bank
+- **Mapper 5** (variable): depends on PRG mode ($5100); mode 3 = 4 individual 8KB slots, mode 0 = single 32KB slot
+- **Mapper 7** (32KB switch): update all 4 PRG slots ($8000, $A000, $C000, $E000)
 
 ### Working Corpus
 
 - Working corpus: mapper `0` (41 ROMs), `3` (6 ROMs), `7` (1 ROM)
 - Not-working corpus: mapper `1` (2 ROMs), `2` (7 ROMs)
+- Special corpus: mapper `5` (Rom City Rampage — MMC5, verified with both `ca65` and `asm6`)
 
 ## Proposed Architecture
 
@@ -2930,6 +2934,74 @@ Post-phase note:
 - The dominant opcode-gate class is now confirmed as `RTS` (13/30), followed by invalid opcodes (11/30).
 - The new `RTS/RTI + adjacent evidence` weak tier is active but produced no qualifying singleton in Rom City under current radius/evidence constraints.
 
+### Phase 42: Bank-Switch Comments in Assembly Output
+
+Status: Completed (2026-02-24)
+
+1. Add bank-switch comments to assembly output at instructions that perform observed PRG bank switches.
+2. Use emu trace `BankSwitchWrite` events (only `Changed=true`) for precise annotation — no static guessing.
+3. Add mapper register description helper for human-readable register names.
+
+Acceptance:
+
+1. Bank-switch instructions in Rom City Rampage output show `; bank switch: MMC5 PRG bank select` comments.
+2. Both `asm6` and `ca65` outputs verify successfully.
+3. Full test suite and lint remain clean.
+
+Implementation notes:
+
+- New mapper register description method:
+  - `internal/mapper/mapper.go`
+  - Added `MapperRegisterDescription(address uint16) (string, bool)`:
+    - Mapper 1 (MMC1): `$8000+` → "MMC1 bank select"
+    - Mapper 2 (UxROM): `$8000+` → "UxROM bank select"
+    - Mapper 5 (MMC5): `$5100` → "MMC5 PRG mode", `$5114-$5117` → "MMC5 PRG bank select"
+    - Mapper 7 (AxROM): `$8000+` → "AxROM bank select"
+- Bank-switch annotation pass:
+  - `internal/disasm/emutrace.go`
+  - Added `annotateBankSwitchWrites(result)`:
+    - iterates `BankSwitchWrites` where `Changed == true`
+    - deduplicates by `(PC, BeforeMapping)` to avoid repeat comments
+    - restores correct mapping context before offset lookup
+    - skips offsets that already have a comment
+    - sets comment to `"bank switch: <description>"` or `"bank switch"` for unknown mappers
+- Wiring in Process flow:
+  - `internal/disasm/disasm.go`
+  - `annotateBankSwitchWrites(emuTrace)` called after `logAdvisoryEmuTraceComparison` and before `PostProcessCode`.
+- Static-only mode is unaffected: no bank-switch comments without emu trace data, avoiding noise from ambiguous register writes.
+
+Validation:
+
+- Full tests:
+  - `go test ./...`
+  - Result: success.
+- Lint:
+  - `make lint`
+  - Result: `0 issues`.
+- Rom City Rampage verify/regeneration:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+  - Output:
+    - `internal/testroms/special/Rom City Rampage.asm6.asm` (`61045` lines)
+    - `internal/testroms/special/Rom City Rampage.ca65.asm` (`60970` lines)
+- Bank-switch comment verification:
+  - `grep "bank switch" "internal/testroms/special/Rom City Rampage.ca65.asm"`
+  - Result: 2 bank-switch comments found:
+    - `sta a:_var_5115  ; $D79E  8D 15 51  bank switch: MMC5 PRG bank select`
+    - `sta a:$5116      ; $E0A0  8D 16 51  bank switch: MMC5 PRG bank select`
+  - Both are `STA` instructions writing to MMC5 PRG bank select registers (`$5115`, `$5116`).
+- Code-density result:
+  - `grep -cE '^\s+[a-z]{3}\b' ... | wc -l`
+  - After Phase 41: `7542`
+  - After Phase 42: `7542`
+  - Delta: `+0` code lines (annotation-only change, no code-density impact).
+
+Post-phase note:
+
+- Bank-switch comments provide immediate readability improvement for reverse engineering mapper-heavy ROMs without changing disassembly behavior.
+- The annotation is purely observational — it marks only writes that the emulator actually observed changing PRG mapping, not all mapper register writes.
+- Output is still deterministic and reassemblable with both target assemblers.
+
 ## Progress Summary (as of 2026-02-24)
 
 ### Completed Phases
@@ -2979,6 +3051,7 @@ Post-phase note:
 | 39 | Plausibility Prefilter | Target-window coherence gate |
 | 40 | Weak Singleton Acceptance | Code-evidence-gated weak entry tier |
 | 41 | Opcode-Class Reject Telemetry | RTS/RTI adjacent-evidence weak tier |
+| 42 | Bank-Switch Comments | `MapperRegisterDescription`, emu-trace-driven annotation |
 
 ### Current Metrics
 
@@ -2990,8 +3063,9 @@ Post-phase note:
 | Mapper 1 pass rate (notworking) | 2/2 |
 | Mapper 2 pass rate (notworking) | 5/7 |
 | Rom City Rampage code lines | 7542 |
-| Rom City Rampage asm6 lines | 61042 |
-| Rom City Rampage ca65 lines | 60967 |
+| Rom City Rampage asm6 lines | 61045 |
+| Rom City Rampage ca65 lines | 60970 |
+| Rom City Rampage bank-switch comments | 2 |
 | Go test suite | all pass |
 | Build status | clean |
 
@@ -3010,6 +3084,7 @@ Post-phase note:
 4. **Split-table pipeline** (Phases 32-41): Multi-stage gated pipeline: plausibility → correlation → extraction → opcode gate → shape → weak-entry tiers.
 5. **Deterministic I/O stubs** (Phases 17-19): PPU status alternation, controller serial emulation, PPU data-loop relaxation; all snapshot-safe for branch replay.
 6. **Non-default mapping label safety** (Phase 20): Branch/call operands in non-default mapping contexts keep literal targets to prevent cross-mapping address drift.
+7. **Emu-trace-driven bank-switch comments** (Phase 42): Only annotates writes that actually changed PRG mapping during emulation, avoiding noise from CHR/misc register writes. Static-only mode gets no bank-switch comments.
 
 ### Files Added/Modified on Branch
 
@@ -3018,7 +3093,7 @@ New packages:
 - `internal/mapper/runtime.go` — Mapper runtime write emulation + snapshot/restore
 - `internal/mapper/processor.go` — Multi-bank symbol alias + relative-branch rewrite
 - `internal/disasm/banks.go` — Additional bank tracing + pointer-table seeding pipeline
-- `internal/disasm/emutrace.go` — Advisory emu-trace integration + config parsing
+- `internal/disasm/emutrace.go` — Advisory emu-trace integration + config parsing + bank-switch annotation
 - `internal/disasm/parsekey.go` — `ParseKey{PC, MappingID}` type
 - `internal/disasm/stats.go` — Trace statistics model
 
@@ -3027,7 +3102,7 @@ Modified core:
 - `internal/disasm/parser.go` — Mapping-aware dedupe and per-key state restore
 - `internal/disasm/code.go` — `uniqueLabelName`, non-default mapping label safety
 - `internal/disasm/data.go` — ParseKey threading
-- `internal/mapper/mapper.go` — `MapBank`, `RestoreDefaultMapping`, `BankCount`, `BankVectors`, `MappingSignature`, `ResolveAddress`
+- `internal/mapper/mapper.go` — `MapBank`, `RestoreDefaultMapping`, `BankCount`, `BankVectors`, `MappingSignature`, `ResolveAddress`, `MapperRegisterDescription`
 - `internal/mapper/cdl.go` — Multi-bank CDL handling
 - `internal/assembler/ca65/file.go` — Bank-tail vector placement
 - `internal/writer/writer.go` — Alias dedupe
@@ -3084,7 +3159,7 @@ Scripts:
 
 4. Incorrect mapper write emulation.
    - Mitigation: mapper-specific unit tests and ROM-based regression tests.
-   - Status: mapper 7/2/1 covered by unit tests and corpus sweeps.
+   - Status: mapper 7/2/1/5 covered by unit tests and corpus sweeps.
 
 5. I/O-dependent infinite loops.
    - Stub values may not satisfy wait conditions (e.g., polling $2002 for specific PPU state).
