@@ -582,6 +582,41 @@ func TestRunTriggersSyntheticNMIWhenEnabled(t *testing.T) {
 	assert.True(t, sawNMIHandler)
 }
 
+func TestRunEscapesPPUStatusPollingLoopAtNonBranchPC(t *testing.T) {
+	// BIT $2002 / BPL .-3 is a classic PPU vblank wait loop.
+	// The visit limit can be hit at the BIT instruction (a non-branch opcode)
+	// rather than the BPL. The inside-loop body detector should relax the
+	// visit limit so the trace escapes and reaches the code after the loop.
+	mapper := &mockMapper{
+		memory: map[uint16]byte{
+			0xFFFC: 0x00, // reset vector low
+			0xFFFD: 0x80, // reset vector high -> $8000
+			0x8000: 0x2C, // bit $2002
+			0x8001: 0x02,
+			0x8002: 0x20,
+			0x8003: 0x10, // bpl $8000 (branch back to BIT)
+			0x8004: 0xFB,
+			0x8005: 0xA9, // lda #$01
+			0x8006: 0x01,
+			0x8007: 0x8D, // sta $8000 (mapper write marker)
+			0x8008: 0x00,
+			0x8009: 0x80,
+			0x800A: 0x4C, // jmp $800A
+			0x800B: 0x0A,
+			0x800C: 0x80,
+		},
+		signature: 0x59,
+	}
+
+	res, err := Run(context.Background(), &cartridge.Cartridge{}, mapper, Config{
+		MaxInstructions: 5000,
+		MaxVisitsPerPC:  8,
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(res.BankSwitchWrites))
+	assert.Equal(t, uint16(0x8007), res.BankSwitchWrites[0].PC)
+}
+
 type mockMapper struct {
 	memory    map[uint16]byte
 	signature uint64

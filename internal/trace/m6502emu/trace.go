@@ -720,6 +720,9 @@ func isTightCounterLoopPC(mapper Mapper, pc uint16) bool {
 	if isTightBackwardBranchLoop(mapper, pc, op0) {
 		return true
 	}
+	if isInsideTightBackwardBranchLoop(mapper, pc) {
+		return true
+	}
 	if isNearbyCounterBranchPattern(mapper, pc) {
 		return true
 	}
@@ -736,6 +739,26 @@ func isTightBackwardBranchLoop(mapper Mapper, pc uint16, op0 byte) bool {
 	}
 	target := pc + 2 + uint16(int16(int8(mapper.ReadMemory(pc+1))))
 	return target <= pc && pc-target <= 0x40
+}
+
+// isInsideTightBackwardBranchLoop checks whether pc is inside a short loop
+// body by scanning forward for a nearby conditional backward branch.
+func isInsideTightBackwardBranchLoop(mapper Mapper, pc uint16) bool {
+	for offset := uint16(1); offset <= 12; offset++ {
+		checkPC := pc + offset
+		if checkPC < 0x8000 {
+			continue
+		}
+		op := mapper.ReadMemory(checkPC)
+		if !isConditionalBranchOpcode(op) {
+			continue
+		}
+		target := checkPC + 2 + uint16(int16(int8(mapper.ReadMemory(checkPC+1))))
+		if target <= pc && checkPC+2-target <= 0x40 {
+			return true
+		}
+	}
+	return false
 }
 
 // isNearbyCounterBranchPattern checks for DEX/DEY/INX/INY + BNE patterns near pc.
