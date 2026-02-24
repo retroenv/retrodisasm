@@ -354,6 +354,34 @@ func (m *Mapper) OffsetInfo(address uint16) *offset.DisasmOffset {
 	return offsetInfo
 }
 
+// MapperRegisterDescription returns a human-readable description of a mapper
+// register address, but only for addresses that affect PRG bank mapping.
+// The second return value indicates whether the address is a known PRG register.
+func (m *Mapper) MapperRegisterDescription(address uint16) (string, bool) {
+	switch m.mapperNumber {
+	case 1:
+		if address >= 0x8000 {
+			return "MMC1 bank select", true
+		}
+	case 2:
+		if address >= 0x8000 {
+			return "UxROM bank select", true
+		}
+	case 5:
+		switch address {
+		case 0x5100:
+			return "MMC5 PRG mode", true
+		case 0x5114, 0x5115, 0x5116, 0x5117:
+			return "MMC5 PRG bank select", true
+		}
+	case 7:
+		if address >= 0x8000 {
+			return "AxROM bank select", true
+		}
+	}
+	return "", false
+}
+
 // log2 computes the binary logarithm of x, rounded up to the next integer.
 func log2(i int) int {
 	var n, p int

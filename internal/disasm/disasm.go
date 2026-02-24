@@ -158,6 +158,7 @@ func (dis *Disasm) Process(ctx context.Context, mainWriter io.Writer, newBankWri
 		return nil, err
 	}
 	dis.logAdvisoryEmuTraceComparison(emuTrace)
+	dis.annotateBankSwitchWrites(emuTrace)
 
 	// Post-process architecture-specific patterns after all branch destinations are known
 	if err := dis.arch.PostProcessCode(); err != nil {

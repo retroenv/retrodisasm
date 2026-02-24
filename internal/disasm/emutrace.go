@@ -201,6 +201,57 @@ func (dis *Disasm) seedVectorsForAdvisoryMappings(result *m6502emu.Result) {
 	}
 }
 
+func (dis *Disasm) annotateBankSwitchWrites(result *m6502emu.Result) {
+	if result == nil {
+		return
+	}
+
+	type pcMapping struct {
+		pc      uint16
+		mapping uint64
+	}
+	seen := map[pcMapping]struct{}{}
+
+	startSignature := dis.mapper.MappingSignature()
+	defer func() {
+		if !dis.mapper.RestoreMappingSignature(startSignature) {
+			dis.mapper.RestoreDefaultMapping()
+		}
+	}()
+
+	for _, event := range result.BankSwitchWrites {
+		if !event.Changed {
+			continue
+		}
+
+		key := pcMapping{pc: event.PC, mapping: event.BeforeMapping}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+
+		if !dis.mapper.RestoreMappingSignature(event.BeforeMapping) {
+			continue
+		}
+
+		offsetInfo := dis.mapper.OffsetInfo(event.PC)
+		if offsetInfo == nil {
+			continue
+		}
+		if offsetInfo.Comment != "" {
+			continue
+		}
+
+		desc, ok := dis.mapper.MapperRegisterDescription(event.Address)
+		if !ok {
+			desc = "bank switch"
+		} else {
+			desc = "bank switch: " + desc
+		}
+		offsetInfo.Comment = desc
+	}
+}
+
 func (dis *Disasm) logAdvisoryEmuTraceComparison(result *m6502emu.Result) {
 	if result == nil {
 		return
