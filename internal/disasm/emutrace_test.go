@@ -1,7 +1,6 @@
 package disasm
 
 import (
-	"os"
 	"testing"
 
 	"github.com/retroenv/retrogolib/assert"
@@ -19,12 +18,7 @@ func TestParseJoypadSequenceInvalidToken(t *testing.T) {
 }
 
 func TestParseJoypadSequenceSettingPrefersCLI(t *testing.T) {
-	oldValue := os.Getenv(envEmuTraceJoypad1Seq)
-	t.Cleanup(func() {
-		_ = os.Setenv(envEmuTraceJoypad1Seq, oldValue)
-	})
-
-	_ = os.Setenv(envEmuTraceJoypad1Seq, "1,2,3")
+	t.Setenv(envEmuTraceJoypad1Seq, "1,2,3")
 
 	sequence, err := parseJoypadSequenceSetting("4,5", envEmuTraceJoypad1Seq)
 	assert.NoError(t, err)
@@ -32,12 +26,7 @@ func TestParseJoypadSequenceSettingPrefersCLI(t *testing.T) {
 }
 
 func TestParseJoypadSequenceSettingUsesEnv(t *testing.T) {
-	oldValue := os.Getenv(envEmuTraceJoypad2Seq)
-	t.Cleanup(func() {
-		_ = os.Setenv(envEmuTraceJoypad2Seq, oldValue)
-	})
-
-	_ = os.Setenv(envEmuTraceJoypad2Seq, "0x01,$02,3")
+	t.Setenv(envEmuTraceJoypad2Seq, "0x01,$02,3")
 
 	sequence, err := parseJoypadSequenceSetting("", envEmuTraceJoypad2Seq)
 	assert.NoError(t, err)

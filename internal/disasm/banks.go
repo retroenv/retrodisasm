@@ -23,7 +23,7 @@ func (dis *Disasm) processAdditionalBanks(ctx context.Context) error {
 	dis.stats.additionalBanksConsidered += uint64(bankCount - 1)
 	defer dis.mapper.RestoreDefaultMapping()
 
-	for bankIndex := 0; bankIndex < bankCount-1; bankIndex++ {
+	for bankIndex := range bankCount - 1 {
 		dis.mapper.MapBank(bankIndex)
 
 		dis.seedLikelyMappedBankEntryPoints()
@@ -159,59 +159,81 @@ func (dis *Disasm) seedLikelyMappedBankPointerTableTargets() {
 		if addr&1 != 0 {
 			continue
 		}
-		if dis.mapper.OffsetInfo(addr).IsType(program.CodeOffset) ||
-			dis.mapper.OffsetInfo(addr+1).IsType(program.CodeOffset) {
+		if dis.isPointerTableAddressBlocked(addr) {
 			continue
 		}
 
-		targets := make([]uint16, 0, minRunEntries)
-		for entryAddr := addr; entryAddr < end-1 && len(targets) < maxRunEntries; entryAddr += 2 {
-			if dis.mapper.OffsetInfo(entryAddr).IsType(program.CodeOffset) ||
-				dis.mapper.OffsetInfo(entryAddr+1).IsType(program.CodeOffset) {
-				break
-			}
-
-			low, err := dis.ReadMemory(entryAddr)
-			if err != nil {
-				break
-			}
-			high, err := dis.ReadMemory(entryAddr + 1)
-			if err != nil {
-				break
-			}
-
-			target := uint16(high)<<8 | uint16(low)
-			if !dis.isValidCodeAddress(target) || target > end {
-				break
-			}
-
-			targetOp, err := dis.ReadMemory(target)
-			if err != nil || !isLikelyM6502RoutineStartOpcode(targetOp) {
-				break
-			}
-
-			targets = append(targets, target)
-		}
-
+		targets := dis.scanPointerTableRun(addr, end, maxRunEntries)
 		if len(targets) < minRunEntries || !hasLikelyPointerTableShape(targets, minDistinctTargets) {
 			continue
 		}
 
-		for _, target := range targets {
-			if seeded >= maxSeedsPerBank {
-				break
-			}
-			if _, ok := seededTargets[target]; ok {
-				continue
-			}
-			dis.AddAddressToParse(target, target, addr, nil, false)
-			seededTargets[target] = struct{}{}
-			seeded++
-		}
+		seeded += dis.seedPointerTableTargets(targets, addr, &seededTargets, maxSeedsPerBank-seeded)
 
 		// Skip across the accepted table run.
 		addr += uint16(len(targets)*2 - 1)
 	}
+}
+
+// isPointerTableAddressBlocked returns true if either byte at addr or addr+1 is already code.
+func (dis *Disasm) isPointerTableAddressBlocked(addr uint16) bool {
+	return dis.mapper.OffsetInfo(addr).IsType(program.CodeOffset) ||
+		dis.mapper.OffsetInfo(addr+1).IsType(program.CodeOffset)
+}
+
+// scanPointerTableRun scans for a contiguous run of valid pointer table entries starting at addr.
+func (dis *Disasm) scanPointerTableRun(addr, end uint16, maxRunEntries int) []uint16 {
+	targets := make([]uint16, 0, maxRunEntries)
+	for entryAddr := addr; entryAddr < end-1 && len(targets) < maxRunEntries; entryAddr += 2 {
+		if dis.mapper.OffsetInfo(entryAddr).IsType(program.CodeOffset) ||
+			dis.mapper.OffsetInfo(entryAddr+1).IsType(program.CodeOffset) {
+
+			break
+		}
+
+		low, err := dis.ReadMemory(entryAddr)
+		if err != nil {
+			break
+		}
+		high, err := dis.ReadMemory(entryAddr + 1)
+		if err != nil {
+			break
+		}
+
+		target := uint16(high)<<8 | uint16(low)
+		if !dis.isValidCodeAddress(target) || target > end {
+			break
+		}
+
+		targetOp, err := dis.ReadMemory(target)
+		if err != nil || !isLikelyM6502RoutineStartOpcode(targetOp) {
+			break
+		}
+
+		targets = append(targets, target)
+	}
+	return targets
+}
+
+// seedPointerTableTargets queues unique targets from a validated pointer table.
+// Returns the number of newly seeded targets.
+func (dis *Disasm) seedPointerTableTargets(
+	targets []uint16, fromAddr uint16, seededTargets *map[uint16]struct{}, budget int,
+) int {
+
+	seeded := 0
+	for _, target := range targets {
+		if seeded >= budget {
+			break
+		}
+		if _, ok := (*seededTargets)[target]; ok {
+			continue
+		}
+		dis.AddAddressToParse(target, target, fromAddr, nil, false)
+		(*seededTargets)[target] = struct{}{}
+		seeded++
+	}
+	return seeded
 }
 
 func hasLikelyPointerTableShape(targets []uint16, minDistinct int) bool {
@@ -270,84 +292,142 @@ func (dis *Disasm) seedLikelyMappedBankSplitPointerTableTargets() {
 	seededTargets := map[uint16]struct{}{}
 
 	for pc := start; pc < end-5 && seeded < maxSeedsPerBank && pairs < maxPairsPerBank; pc++ {
-		firstOp, err := dis.ReadMemory(pc)
-		if err != nil || !isLikelySplitPointerLoadOpcode(firstOp) {
+		firstOp, firstTable, ok := dis.readSplitLoadOpAndTable(pc, end)
+		if !ok {
 			continue
 		}
 
-		firstTable, ok := dis.readWordAt(pc + 1)
-		if !ok || !dis.isLikelySplitTableAddress(firstTable, end) {
-			continue
-		}
-
-		paired := false
-		for delta := uint16(3); delta <= loadPairLookahead && pc+delta+2 <= end; delta++ {
-			secondPC := pc + delta
-			secondOp, err := dis.ReadMemory(secondPC)
-			if err != nil || !isCompatibleSplitPointerLoadPair(firstOp, secondOp) {
-				continue
-			}
-
-			secondTable, ok := dis.readWordAt(secondPC + 1)
-			if !ok || !dis.isLikelySplitTableAddress(secondTable, end) || secondTable == firstTable {
-				continue
-			}
-
-			if tableByteDistance(firstTable, secondTable) > maxTableByteDistance {
-				continue
-			}
-
-			plausibleForward := dis.hasSplitTableTargetWindowCoherence(firstTable, secondTable, end)
-			plausibleReverse := dis.hasSplitTableTargetWindowCoherence(secondTable, firstTable, end)
-			if !plausibleForward && !plausibleReverse {
-				dis.stats.splitSeedRejectedPlaus++
-				continue
-			}
-
-			dis.stats.splitSeedCandidatePairs++
-			if !dis.hasSplitPointerRuntimeCorrelation(pc, secondPC, end, correlationLookahead) {
-				dis.stats.splitSeedRejectedByCorr++
-				continue
-			}
-
-			var (
-				targets   []uint16
-				extracted bool
-			)
-			if plausibleForward {
-				targets, extracted = dis.extractSplitPointerTargets(
-					firstTable, secondTable, end, maxRunEntries, minRunEntries, minDistinctTargets)
-			}
-			if !extracted && plausibleReverse {
-				targets, extracted = dis.extractSplitPointerTargets(
-					secondTable, firstTable, end, maxRunEntries, minRunEntries, minDistinctTargets)
-			}
-			if !extracted {
-				dis.stats.splitSeedRejectedExtract++
-				continue
-			}
-
-			for _, target := range targets {
-				if seeded >= maxSeedsPerBank {
-					break
-				}
-				if _, exists := seededTargets[target]; exists {
-					continue
-				}
-				dis.AddAddressToParse(target, target, pc, nil, false)
-				seededTargets[target] = struct{}{}
-				seeded++
-				dis.stats.splitSeedAcceptedTargets++
-			}
-			pairs++
-			paired = true
-			break
-		}
+		paired, count := dis.trySplitPointerPair(pc, firstOp, firstTable, end,
+			loadPairLookahead, correlationLookahead, maxTableByteDistance,
+			maxRunEntries, minRunEntries, minDistinctTargets,
+			maxSeedsPerBank-seeded, &seededTargets)
 
 		if paired {
+			seeded += count
+			pairs++
 			pc += 2
 		}
 	}
+}
+
+// readSplitLoadOpAndTable reads the opcode and table address at pc, returning false if not a valid split load.
+func (dis *Disasm) readSplitLoadOpAndTable(pc, end uint16) (byte, uint16, bool) {
+	op, err := dis.ReadMemory(pc)
+	if err != nil || !isLikelySplitPointerLoadOpcode(op) {
+		return 0, 0, false
+	}
+	table, ok := dis.readWordAt(pc + 1)
+	if !ok || !dis.isLikelySplitTableAddress(table, end) {
+		return 0, 0, false
+	}
+	return op, table, true
+}
+
+// trySplitPointerPair searches for a compatible second load instruction and attempts to extract targets.
+// Returns (paired, seededCount).
+func (dis *Disasm) trySplitPointerPair(
+	pc uint16, firstOp byte, firstTable, end uint16,
+	loadPairLookahead, correlationLookahead, maxTableByteDistance uint16,
+	maxRunEntries, minRunEntries, minDistinctTargets, budget int,
+	seededTargets *map[uint16]struct{},
+) (bool, int) {
+
+	for delta := uint16(3); delta <= loadPairLookahead && pc+delta+2 <= end; delta++ {
+		secondPC := pc + delta
+		secondTable, ok := dis.readCompatibleSecondLoad(pc, secondPC, firstOp, firstTable, end, maxTableByteDistance)
+		if !ok {
+			continue
+		}
+
+		targets, extracted := dis.tryExtractSplitPairTargets(pc, secondPC, firstTable, secondTable, end,
+			correlationLookahead, maxRunEntries, minRunEntries, minDistinctTargets)
+		if !extracted {
+			continue
+		}
+
+		count := dis.seedSplitPairTargets(targets, pc, seededTargets, budget)
+		return true, count
+	}
+	return false, 0
+}
+
+// readCompatibleSecondLoad reads the second instruction of a split pointer load pair.
+// Returns the second table address and false if invalid or incompatible.
+func (dis *Disasm) readCompatibleSecondLoad(
+	firstPC, secondPC uint16, firstOp byte, firstTable, end uint16, maxTableByteDistance uint16,
+) (uint16, bool) {
+
+	secondOp, err := dis.ReadMemory(secondPC)
+	if err != nil || !isCompatibleSplitPointerLoadPair(firstOp, secondOp) {
+		return 0, false
+	}
+	secondTable, ok := dis.readWordAt(secondPC + 1)
+	if !ok || !dis.isLikelySplitTableAddress(secondTable, end) || secondTable == firstTable {
+		return 0, false
+	}
+	if tableByteDistance(firstTable, secondTable) > maxTableByteDistance {
+		return 0, false
+	}
+	_ = firstPC // used by caller for correlation check
+	return secondTable, true
+}
+
+// tryExtractSplitPairTargets checks coherence and correlation then extracts targets from the pair.
+func (dis *Disasm) tryExtractSplitPairTargets(
+	firstPC, secondPC uint16, firstTable, secondTable, end uint16,
+	correlationLookahead uint16, maxRunEntries, minRunEntries, minDistinctTargets int,
+) ([]uint16, bool) {
+
+	plausibleForward := dis.hasSplitTableTargetWindowCoherence(firstTable, secondTable, end)
+	plausibleReverse := dis.hasSplitTableTargetWindowCoherence(secondTable, firstTable, end)
+	if !plausibleForward && !plausibleReverse {
+		dis.stats.splitSeedRejectedPlaus++
+		return nil, false
+	}
+
+	dis.stats.splitSeedCandidatePairs++
+	if !dis.hasSplitPointerRuntimeCorrelation(firstPC, secondPC, end, correlationLookahead) {
+		dis.stats.splitSeedRejectedByCorr++
+		return nil, false
+	}
+
+	var targets []uint16
+	extracted := false
+	if plausibleForward {
+		targets, extracted = dis.extractSplitPointerTargets(
+			firstTable, secondTable, end, maxRunEntries, minRunEntries, minDistinctTargets)
+	}
+	if !extracted && plausibleReverse {
+		targets, extracted = dis.extractSplitPointerTargets(
+			secondTable, firstTable, end, maxRunEntries, minRunEntries, minDistinctTargets)
+	}
+	if !extracted {
+		dis.stats.splitSeedRejectedExtract++
+		return nil, false
+	}
+	return targets, true
+}
+
+// seedSplitPairTargets queues unique targets from an extracted split pointer table.
+// Returns the number of newly seeded targets.
+func (dis *Disasm) seedSplitPairTargets(
+	targets []uint16, pc uint16, seededTargets *map[uint16]struct{}, budget int,
+) int {
+
+	seeded := 0
+	for _, target := range targets {
+		if seeded >= budget {
+			break
+		}
+		if _, exists := (*seededTargets)[target]; exists {
+			continue
+		}
+		dis.AddAddressToParse(target, target, pc, nil, false)
+		(*seededTargets)[target] = struct{}{}
+		seeded++
+		dis.stats.splitSeedAcceptedTargets++
+	}
+	return seeded
 }
 
 // hasSplitTableTargetWindowCoherence performs a cheap prefilter on split table
@@ -363,7 +443,7 @@ func (dis *Disasm) hasSplitTableTargetWindowCoherence(lowTable, highTable, end u
 	pages := map[byte]struct{}{}
 	valid := 0
 
-	for i := 0; i < sampleEntries; i++ {
+	for i := range sampleEntries {
 		lowAddr32 := uint32(lowTable) + uint32(i)
 		highAddr32 := uint32(highTable) + uint32(i)
 		if lowAddr32 > uint32(end) || highAddr32 > uint32(end) {
@@ -394,6 +474,26 @@ func (dis *Disasm) hasSplitTableTargetWindowCoherence(lowTable, highTable, end u
 	return valid >= minValid
 }
 
+// correlationState collects address sets during a split pointer correlation window scan.
+type correlationState struct {
+	stores                   map[uint16]struct{}
+	indexedStores            map[uint16]struct{}
+	pointerByteOps           map[uint16]struct{}
+	jumpPointers             map[uint16]struct{}
+	indirectZPRefs           map[uint16]struct{}
+	transferArithmeticSignal bool
+}
+
+func newCorrelationState() correlationState {
+	return correlationState{
+		stores:         map[uint16]struct{}{},
+		indexedStores:  map[uint16]struct{}{},
+		pointerByteOps: map[uint16]struct{}{},
+		jumpPointers:   map[uint16]struct{}{},
+		indirectZPRefs: map[uint16]struct{}{},
+	}
+}
+
 func (dis *Disasm) hasSplitPointerRuntimeCorrelation(firstPC, secondPC, end, lookahead uint16) bool {
 	windowStart := firstPC
 	if secondPC < firstPC {
@@ -404,13 +504,13 @@ func (dis *Disasm) hasSplitPointerRuntimeCorrelation(firstPC, secondPC, end, loo
 		windowEnd = end
 	}
 
-	stores := map[uint16]struct{}{}
-	indexedStores := map[uint16]struct{}{}
-	pointerByteOps := map[uint16]struct{}{}
-	jumpPointers := map[uint16]struct{}{}
-	indirectZPRefs := map[uint16]struct{}{}
-	transferArithmeticSignal := false
+	state := newCorrelationState()
+	dis.scanCorrelationWindow(windowStart, windowEnd, &state)
+	return checkCorrelationSignals(&state)
+}
 
+// scanCorrelationWindow iterates instructions in the correlation window and populates state.
+func (dis *Disasm) scanCorrelationWindow(windowStart, windowEnd uint16, state *correlationState) {
 	for pc := windowStart; pc <= windowEnd; {
 		opByte, err := dis.ReadMemory(pc)
 		if err != nil {
@@ -424,69 +524,83 @@ func (dis *Disasm) hasSplitPointerRuntimeCorrelation(firstPC, secondPC, end, loo
 		if pc+uint16(size)-1 > windowEnd {
 			break
 		}
-
-		switch opByte {
-		case 0x85, // STA zp
-			0x86, // STX zp
-			0x84: // STY zp
-			addr, ok := dis.readByteWordOperand(pc+1, 1)
-			if ok {
-				stores[addr] = struct{}{}
-			}
-		case 0x95, // STA zp,X
-			0x94, // STY zp,X
-			0x96: // STX zp,Y
-			addr, ok := dis.readByteWordOperand(pc+1, 1)
-			if ok {
-				indexedStores[addr] = struct{}{}
-			}
-		case 0x8D, // STA abs
-			0x8E, // STX abs
-			0x8C: // STY abs
-			addr, ok := dis.readByteWordOperand(pc+1, 2)
-			if ok {
-				stores[addr] = struct{}{}
-			}
-		case 0x6C: // JMP (abs)
-			addr, ok := dis.readByteWordOperand(pc+1, 2)
-			if ok {
-				jumpPointers[addr] = struct{}{}
-			}
-		default:
-			if opcode.Instruction != nil &&
-				(opcode.Addressing == cpum6502.IndirectXAddressing ||
-					opcode.Addressing == cpum6502.IndirectYAddressing) {
-				addr, ok := dis.readByteWordOperand(pc+1, 1)
-				if ok {
-					indirectZPRefs[addr] = struct{}{}
-				}
-			}
-		}
-		if isPointerArithmeticZPOpcode(opByte) {
-			addr, ok := dis.readByteWordOperand(pc+1, 1)
-			if ok {
-				pointerByteOps[addr] = struct{}{}
-			}
-		}
-		if isPointerTransferArithmeticSignalOpcode(opByte) {
-			transferArithmeticSignal = true
-		}
-
+		dis.collectCorrelationOp(pc, opByte, opcode, state)
 		pc += uint16(size)
 	}
+}
 
-	for base := range stores {
-		if base >= 0xFFFF {
+// collectCorrelationOp records address-set membership for a single instruction.
+func (dis *Disasm) collectCorrelationOp(pc uint16, opByte byte, opcode cpum6502.Opcode, state *correlationState) {
+	dis.collectCorrelationStoreOp(pc, opByte, opcode, state)
+	if isPointerArithmeticZPOpcode(opByte) {
+		if addr, ok := dis.readByteWordOperand(pc+1, 1); ok {
+			state.pointerByteOps[addr] = struct{}{}
+		}
+	}
+	if isPointerTransferArithmeticSignalOpcode(opByte) {
+		state.transferArithmeticSignal = true
+	}
+}
+
+// collectCorrelationStoreOp records store, jump pointer, and indirect ZP reference addresses.
+func (dis *Disasm) collectCorrelationStoreOp(pc uint16, opByte byte, opcode cpum6502.Opcode, state *correlationState) {
+	switch opByte {
+	case 0x85, // STA zp
+		0x86, // STX zp
+		0x84: // STY zp
+		if addr, ok := dis.readByteWordOperand(pc+1, 1); ok {
+			state.stores[addr] = struct{}{}
+		}
+	case 0x95, // STA zp,X
+		0x94, // STY zp,X
+		0x96: // STX zp,Y
+		if addr, ok := dis.readByteWordOperand(pc+1, 1); ok {
+			state.indexedStores[addr] = struct{}{}
+		}
+	case 0x8D, // STA abs
+		0x8E, // STX abs
+		0x8C: // STY abs
+		if addr, ok := dis.readByteWordOperand(pc+1, 2); ok {
+			state.stores[addr] = struct{}{}
+		}
+	case 0x6C: // JMP (abs)
+		if addr, ok := dis.readByteWordOperand(pc+1, 2); ok {
+			state.jumpPointers[addr] = struct{}{}
+		}
+	default:
+		dis.collectIndirectZPRef(pc, opcode, state)
+	}
+}
+
+// collectIndirectZPRef records indirect zero-page references from indirect-X or indirect-Y addressing.
+func (dis *Disasm) collectIndirectZPRef(pc uint16, opcode cpum6502.Opcode, state *correlationState) {
+	if opcode.Instruction == nil {
+		return
+	}
+	if opcode.Addressing != cpum6502.IndirectXAddressing &&
+		opcode.Addressing != cpum6502.IndirectYAddressing {
+
+		return
+	}
+	if addr, ok := dis.readByteWordOperand(pc+1, 1); ok {
+		state.indirectZPRefs[addr] = struct{}{}
+	}
+}
+
+// checkCorrelationSignals evaluates the collected address sets for split pointer correlation evidence.
+func checkCorrelationSignals(state *correlationState) bool {
+	for base := range state.stores {
+		if base == 0xFFFF {
 			continue
 		}
-		if _, ok := stores[base+1]; !ok {
+		if _, ok := state.stores[base+1]; !ok {
 			continue
 		}
-		if _, ok := jumpPointers[base]; ok {
+		if _, ok := state.jumpPointers[base]; ok {
 			return true
 		}
 		if base <= 0x00FF {
-			if _, ok := indirectZPRefs[base]; ok {
+			if _, ok := state.indirectZPRefs[base]; ok {
 				return true
 			}
 		}
@@ -494,19 +608,29 @@ func (dis *Disasm) hasSplitPointerRuntimeCorrelation(firstPC, secondPC, end, loo
 
 	// Variant path: pointer bytes can be built via indexed stores and/or
 	// arithmetic/transfer sequences. Keep strict indirect-use confirmation.
-	if len(indirectZPRefs) == 0 && len(jumpPointers) == 0 {
+	if len(state.indirectZPRefs) == 0 && len(state.jumpPointers) == 0 {
 		return false
 	}
 
 	switch {
-	case hasConsecutiveAddressPair(indexedStores):
+	case hasConsecutiveAddressPair(state.indexedStores):
 		return true
-	case transferArithmeticSignal && hasConsecutiveAddressPair(pointerByteOps):
+	case state.transferArithmeticSignal && hasConsecutiveAddressPair(state.pointerByteOps):
 		return true
 	default:
 		return false
 	}
 }
+
+// splitEntryResult describes what happened when evaluating a split table entry.
+type splitEntryResult int
+
+const (
+	splitEntryAccept      splitEntryResult = iota // append target and continue
+	splitEntryAcceptBreak                         // append target and stop
+	splitEntrySkip                                // entry rejected, track skip counters
+	splitEntryStop                                // stop immediately (bounds/read error)
+)
 
 func (dis *Disasm) extractSplitPointerTargets(lowTable, highTable, end uint16,
 	maxRunEntries, minRunEntries, minDistinctTargets int) ([]uint16, bool) {
@@ -518,94 +642,25 @@ func (dis *Disasm) extractSplitPointerTargets(lowTable, highTable, end uint16,
 	leadingSkips := 0
 	trailingSkips := 0
 	started := false
-	for i := 0; i < maxRunEntries; i++ {
-		lowAddr32 := uint32(lowTable) + uint32(i)
-		highAddr32 := uint32(highTable) + uint32(i)
-		if lowAddr32 > uint32(end) || highAddr32 > uint32(end) {
+
+	for i := range maxRunEntries {
+		target, result := dis.evalSplitTableEntry(lowTable, highTable, end, i, started, len(targets) == 0)
+		if result == splitEntryStop {
 			break
 		}
-		lowAddr := uint16(lowAddr32)
-		highAddr := uint16(highAddr32)
-
-		sourceLooksLikeCode := dis.mapper.OffsetInfo(lowAddr).IsType(program.CodeOffset) ||
-			dis.mapper.OffsetInfo(highAddr).IsType(program.CodeOffset)
-
-		low, err := dis.ReadMemory(lowAddr)
-		if err != nil {
+		if result == splitEntryAcceptBreak {
+			targets = append(targets, target)
 			break
 		}
-		high, err := dis.ReadMemory(highAddr)
-		if err != nil {
-			break
-		}
-
-		target := uint16(high)<<8 | uint16(low)
-		targetLooksValid := dis.isValidCodeAddress(target) && target <= end && !sourceLooksLikeCode
-		if !targetLooksValid {
-			dis.stats.splitSeedRejectInvalid++
-			if started {
-				trailingSkips++
-				if trailingSkips > maxTrailingSkips {
-					break
-				}
-				continue
-			}
-			leadingSkips++
-			if leadingSkips > maxLeadingSkips {
+		if result == splitEntrySkip {
+			stop := dis.updateSplitSkipCounters(&leadingSkips, &trailingSkips, started,
+				maxLeadingSkips, maxTrailingSkips)
+			if stop {
 				break
 			}
 			continue
 		}
-
-		targetOp, err := dis.ReadMemory(target)
-		if err != nil || !isLikelyM6502RoutineStartOpcode(targetOp) {
-			if err != nil {
-				dis.stats.splitSeedRejectOpcode++
-				dis.stats.splitSeedRejectOpcodeRead++
-				if started {
-					trailingSkips++
-					if trailingSkips > maxTrailingSkips {
-						break
-					}
-					continue
-				}
-				leadingSkips++
-				if leadingSkips > maxLeadingSkips {
-					break
-				}
-				continue
-			}
-			if len(targets) == 0 && !started && dis.isWeakSplitEntryCandidate(target) {
-				targets = append(targets, target)
-				started = true
-				trailingSkips = 0
-				dis.stats.splitSeedAcceptedWeak++
-				break
-			}
-			if len(targets) == 0 && !started && isWeakSplitEntryTerminatorOpcode(targetOp) &&
-				dis.hasAdjacentSplitEntryEvidence(target, end) {
-				targets = append(targets, target)
-				started = true
-				trailingSkips = 0
-				dis.stats.splitSeedAcceptedWeak++
-				dis.stats.splitSeedAcceptedWeakRT++
-				break
-			}
-			dis.stats.splitSeedRejectOpcode++
-			dis.recordSplitOpcodeGateReject(targetOp)
-			if started {
-				trailingSkips++
-				if trailingSkips > maxTrailingSkips {
-					break
-				}
-				continue
-			}
-			leadingSkips++
-			if leadingSkips > maxLeadingSkips {
-				break
-			}
-			continue
-		}
+		// splitEntryAccept
 		targets = append(targets, target)
 		started = true
 		trailingSkips = 0
@@ -625,6 +680,83 @@ func (dis *Disasm) extractSplitPointerTargets(lowTable, highTable, end uint16,
 	}
 	dis.stats.splitSeedRejectShape++
 	return nil, false
+}
+
+// evalSplitTableEntry reads and classifies a single split table entry at index i.
+func (dis *Disasm) evalSplitTableEntry(
+	lowTable, highTable, end uint16, i int, started, isEmpty bool,
+) (uint16, splitEntryResult) {
+
+	lowAddr32 := uint32(lowTable) + uint32(i)
+	highAddr32 := uint32(highTable) + uint32(i)
+	if lowAddr32 > uint32(end) || highAddr32 > uint32(end) {
+		return 0, splitEntryStop
+	}
+	lowAddr := uint16(lowAddr32)
+	highAddr := uint16(highAddr32)
+
+	sourceLooksLikeCode := dis.mapper.OffsetInfo(lowAddr).IsType(program.CodeOffset) ||
+		dis.mapper.OffsetInfo(highAddr).IsType(program.CodeOffset)
+
+	low, err := dis.ReadMemory(lowAddr)
+	if err != nil {
+		return 0, splitEntryStop
+	}
+	high, err := dis.ReadMemory(highAddr)
+	if err != nil {
+		return 0, splitEntryStop
+	}
+
+	target := uint16(high)<<8 | uint16(low)
+	if !dis.isValidCodeAddress(target) || target > end || sourceLooksLikeCode {
+		dis.stats.splitSeedRejectInvalid++
+		return 0, splitEntrySkip
+	}
+
+	return target, dis.classifySplitTarget(target, end, started, isEmpty)
+}
+
+// classifySplitTarget determines whether a valid target address should be accepted or rejected.
+func (dis *Disasm) classifySplitTarget(target, end uint16, started, isEmpty bool) splitEntryResult {
+	targetOp, err := dis.ReadMemory(target)
+	if err != nil {
+		dis.stats.splitSeedRejectOpcode++
+		dis.stats.splitSeedRejectOpcodeRead++
+		return splitEntrySkip
+	}
+
+	if isLikelyM6502RoutineStartOpcode(targetOp) {
+		return splitEntryAccept
+	}
+
+	if isEmpty && !started && dis.isWeakSplitEntryCandidate(target) {
+		dis.stats.splitSeedAcceptedWeak++
+		return splitEntryAcceptBreak
+	}
+	if isEmpty && !started && isWeakSplitEntryTerminatorOpcode(targetOp) &&
+		dis.hasAdjacentSplitEntryEvidence(target, end) {
+
+		dis.stats.splitSeedAcceptedWeak++
+		dis.stats.splitSeedAcceptedWeakRT++
+		return splitEntryAcceptBreak
+	}
+
+	dis.stats.splitSeedRejectOpcode++
+	dis.recordSplitOpcodeGateReject(targetOp)
+	return splitEntrySkip
+}
+
+// updateSplitSkipCounters increments the appropriate skip counter and returns true if the loop should stop.
+func (dis *Disasm) updateSplitSkipCounters(
+	leadingSkips, trailingSkips *int, started bool, maxLeading, maxTrailing int,
+) bool {
+
+	if started {
+		*trailingSkips++
+		return *trailingSkips > maxTrailing
+	}
+	*leadingSkips++
+	return *leadingSkips > maxLeading
 }
 
 func hasSplitTargetCodeEvidence(dis *Disasm, targets []uint16) bool {
@@ -669,6 +801,7 @@ func (dis *Disasm) hasAdjacentSplitEntryEvidence(target, end uint16) bool {
 				program.FunctionReference |
 				program.JumpEngine,
 		) {
+
 			return true
 		}
 	}
@@ -767,7 +900,7 @@ func opcodeSizeBytes(opcode cpum6502.Opcode) int {
 
 func hasConsecutiveAddressPair(addrs map[uint16]struct{}) bool {
 	for base := range addrs {
-		if base >= 0xFFFF {
+		if base == 0xFFFF {
 			continue
 		}
 		if _, ok := addrs[base+1]; ok {

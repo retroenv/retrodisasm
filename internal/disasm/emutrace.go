@@ -2,6 +2,7 @@ package disasm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -14,6 +15,8 @@ import (
 )
 
 const (
+	mapperWriteHotspotNone = "none"
+
 	envEmuTraceEnable     = "RETRODISASM_EMU_TRACE"
 	envEmuTraceMaxInstr   = "RETRODISASM_EMU_TRACE_MAX_INSTR"
 	envEmuTraceMaxVisits  = "RETRODISASM_EMU_TRACE_MAX_VISITS"
@@ -39,6 +42,26 @@ func (dis *Disasm) runAdvisoryEmuTrace(ctx context.Context) *m6502emu.Result {
 		return nil
 	}
 
+	cfg := dis.buildEmuTraceConfig()
+
+	startSignature := dis.mapper.MappingSignature()
+	defer func() {
+		if !dis.mapper.RestoreMappingSignature(startSignature) {
+			dis.mapper.RestoreDefaultMapping()
+		}
+	}()
+
+	result, err := m6502emu.Run(ctx, dis.cart, dis.mapper, cfg)
+	if err != nil {
+		dis.logger.Warn("Advisory emu trace failed", log.Err(err))
+		return nil
+	}
+
+	dis.logEmuTraceResult(result, cfg)
+	return result
+}
+
+func (dis *Disasm) buildEmuTraceConfig() m6502emu.Config {
 	cfg := m6502emu.Config{
 		MaxInstructions: intSetting(dis.options.TraceMaxInstructions, envEmuTraceMaxInstr, 100000),
 		MaxVisitsPerPC:  intSetting(dis.options.TraceMaxVisitsPerPC, envEmuTraceMaxVisits, 8),
@@ -69,20 +92,10 @@ func (dis *Disasm) runAdvisoryEmuTrace(ctx context.Context) *m6502emu.Result {
 			cfg.MaxBranchStates = tuned
 		}
 	}
+	return cfg
+}
 
-	startSignature := dis.mapper.MappingSignature()
-	defer func() {
-		if !dis.mapper.RestoreMappingSignature(startSignature) {
-			dis.mapper.RestoreDefaultMapping()
-		}
-	}()
-
-	result, err := m6502emu.Run(ctx, dis.cart, dis.mapper, cfg)
-	if err != nil {
-		dis.logger.Warn("Advisory emu trace failed", log.Err(err))
-		return nil
-	}
-
+func (dis *Disasm) logEmuTraceResult(result *m6502emu.Result, cfg m6502emu.Config) {
 	changed := 0
 	for _, event := range result.BankSwitchWrites {
 		if event.Changed {
@@ -113,8 +126,6 @@ func (dis *Disasm) runAdvisoryEmuTrace(ctx context.Context) *m6502emu.Result {
 		log.String("halt_reason", result.HaltReason),
 		log.Duration("elapsed", result.Duration),
 	)
-
-	return result
 }
 
 func (dis *Disasm) seedFromAdvisoryEmuTrace(result *m6502emu.Result) {
@@ -326,7 +337,7 @@ func parseJoypadSequence(value string) ([]byte, error) {
 		return r == ',' || r == ';' || r == ':' || r == ' ' || r == '\t' || r == '\n' || r == '\r'
 	})
 	if len(tokens) == 0 {
-		return nil, fmt.Errorf("empty joypad sequence")
+		return nil, errors.New("empty joypad sequence")
 	}
 	sequence := make([]byte, 0, len(tokens))
 	for _, token := range tokens {
@@ -342,7 +353,7 @@ func parseJoypadSequence(value string) ([]byte, error) {
 func parseJoypadToken(token string) (byte, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
-		return 0, fmt.Errorf("empty token")
+		return 0, errors.New("empty token")
 	}
 	if strings.HasPrefix(token, "$") {
 		token = "0x" + token[1:]
@@ -354,14 +365,14 @@ func parseJoypadToken(token string) (byte, error) {
 	}
 	value, err := strconv.ParseUint(token, base, 8)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("parsing joypad sequence token: %w", err)
 	}
 	return byte(value), nil
 }
 
 func formatMapperWriteAddressHotspots(hotspots []m6502emu.MapperWriteAddressHotspot) string {
 	if len(hotspots) == 0 {
-		return "none"
+		return mapperWriteHotspotNone
 	}
 	parts := make([]string, 0, len(hotspots))
 	for _, hotspot := range hotspots {
@@ -373,7 +384,7 @@ func formatMapperWriteAddressHotspots(hotspots []m6502emu.MapperWriteAddressHots
 
 func formatMapperWritePCHotspots(hotspots []m6502emu.MapperWritePCHotspot) string {
 	if len(hotspots) == 0 {
-		return "none"
+		return mapperWriteHotspotNone
 	}
 	parts := make([]string, 0, len(hotspots))
 	for _, hotspot := range hotspots {
@@ -385,7 +396,7 @@ func formatMapperWritePCHotspots(hotspots []m6502emu.MapperWritePCHotspot) strin
 
 func formatMapperWriteTransitionHotspots(hotspots []m6502emu.MapperWriteTransitionHotspot) string {
 	if len(hotspots) == 0 {
-		return "none"
+		return mapperWriteHotspotNone
 	}
 	parts := make([]string, 0, len(hotspots))
 	for _, hotspot := range hotspots {

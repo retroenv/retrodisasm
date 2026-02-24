@@ -152,6 +152,30 @@ type branchStateKey struct {
 	Flags     uint8
 }
 
+// traceState holds the mutable state for a single Run execution.
+type traceState struct {
+	visits         map[visitKey]int
+	visitCaps      map[visitKey]int
+	uniquePCs      map[uint16]struct{}
+	uniqueMappings map[uint64]struct{}
+	queuedBranches map[branchStateKey]struct{}
+	frontier       []executionSnapshot
+
+	instructionsSinceNMI int
+	lastHaltReason       string
+}
+
+func newTraceState(cfg Config) *traceState {
+	return &traceState{
+		visits:         make(map[visitKey]int, 4096),
+		visitCaps:      make(map[visitKey]int, 128),
+		uniquePCs:      make(map[uint16]struct{}, 4096),
+		uniqueMappings: make(map[uint64]struct{}, 64),
+		queuedBranches: make(map[branchStateKey]struct{}, cfg.MaxBranchStates),
+		frontier:       make([]executionSnapshot, 0, cfg.MaxBranchStates),
+	}
+}
+
 // Run executes a bounded advisory 6502 trace over a NES cartridge using mapper-backed PRG reads.
 func Run(ctx context.Context, cart *cartridge.Cartridge, mapper Mapper, cfg Config) (*Result, error) {
 	cfg = normalizeConfig(cfg)
@@ -191,144 +215,188 @@ func Run(ctx context.Context, cart *cartridge.Cartridge, mapper Mapper, cfg Conf
 		}),
 	)
 
-	visits := make(map[visitKey]int, 4096)
-	visitCaps := make(map[visitKey]int, 128)
-	uniquePCs := make(map[uint16]struct{}, 4096)
-	uniqueMappings := make(map[uint64]struct{}, 64)
-	queuedBranches := make(map[branchStateKey]struct{}, cfg.MaxBranchStates)
-	frontier := make([]executionSnapshot, 0, cfg.MaxBranchStates)
-	lastHaltReason := ""
-	instructionsSinceNMI := 0
-
-	for len(res.Steps) < cfg.MaxInstructions {
-		select {
-		case <-ctx.Done():
-			res.HaltReason = "context cancelled"
-			finalizeResult(res, uniquePCs, uniqueMappings)
-			return res, nil
-		default:
-		}
-
-		if shouldTriggerSyntheticNMI(bus, instructionsSinceNMI) {
-			cpu.TriggerNMI()
-			instructionsSinceNMI = 0
-		}
-		cpu.CheckInterrupts()
-
-		signatureBefore := mapper.MappingSignature()
-		vk := visitKey{PC: cpu.PC, MappingID: signatureBefore}
-		limit := cfg.MaxVisitsPerPC
-		if capLimit, ok := visitCaps[vk]; ok {
-			limit = capLimit
-		}
-		visits[vk]++
-		if visits[vk] > limit {
-			if limit == cfg.MaxVisitsPerPC && shouldRelaxVisitLimitForStartupLoop(mapper, res, cpu.PC) {
-				limit = relaxedVisitLimit(cfg.MaxVisitsPerPC)
-				visitCaps[vk] = limit
-			} else if limit == cfg.MaxVisitsPerPC && shouldRelaxVisitLimitForPPUDataLoop(mapper, res, cpu.PC) {
-				limit = relaxedPPULoopVisitLimit(cfg.MaxVisitsPerPC)
-				visitCaps[vk] = limit
-			}
-		}
-		if visits[vk] > limit {
-			lastHaltReason = fmt.Sprintf("pc visit limit exceeded at $%04X", cpu.PC)
-			if !restoreNextState(&frontier, cpu, bus, mapper, &instructionsSinceNMI, res) {
-				break
-			}
-			continue
-		}
-
-		pre := snapshotExecutionState(cpu, bus, mapper, instructionsSinceNMI)
-		if err := cpu.Step(); err != nil {
-			lastHaltReason = err.Error()
-			if !restoreNextState(&frontier, cpu, bus, mapper, &instructionsSinceNMI, res) {
-				break
-			}
-			continue
-		}
-		instructionsSinceNMI++
-
-		ts := cpu.TraceStep
-		signatureAfter := mapper.MappingSignature()
-		uniquePCs[ts.PC] = struct{}{}
-		uniqueMappings[signatureAfter] = struct{}{}
-
-		bankID, physicalOffset, hasPhysical := mapper.ResolveAddress(ts.PC)
-
-		operands := make([]byte, len(ts.OpcodeOperands))
-		copy(operands, ts.OpcodeOperands)
-
-		step := TraceStep{
-			PC:               ts.PC,
-			OpcodeName:       ts.Opcode.Instruction.Name,
-			OpcodeOperands:   operands,
-			MappingSignature: signatureAfter,
-			BankID:           bankID,
-			PhysicalOffset:   physicalOffset,
-			HasPhysical:      hasPhysical,
-		}
-		res.Steps = append(res.Steps, step)
-
-		if !isConditionalBranch(step.OpcodeName) || len(step.OpcodeOperands) == 0 {
-			continue
-		}
-		res.ConditionalBranchCount++
-
-		if cfg.MaxBranchStates <= 0 {
-			continue
-		}
-
-		altPC, target, fallthroughPC, taken, ok := alternateBranchTarget(step, cpu.PC)
-		if !ok {
-			continue
-		}
-
-		branchSnapshot := pre
-		branchSnapshot.cpu.PC = altPC
-		key := branchStateKey{
-			PC:        altPC,
-			MappingID: signatureBefore,
-			A:         branchSnapshot.cpu.A,
-			X:         branchSnapshot.cpu.X,
-			Y:         branchSnapshot.cpu.Y,
-			SP:        branchSnapshot.cpu.SP,
-			Flags:     flagsByte(branchSnapshot.cpu.Flags),
-		}
-		if _, exists := queuedBranches[key]; exists {
-			continue
-		}
-		queuedBranches[key] = struct{}{}
-
-		if len(frontier) >= cfg.MaxBranchStates {
-			res.BranchAlternateBudgetDrops++
-			continue
-		}
-
-		frontier = append(frontier, branchSnapshot)
-		res.BranchAlternates = append(res.BranchAlternates, BranchAlternate{
-			FromPC:            step.PC,
-			Address:           altPC,
-			MappingSignature:  signatureBefore,
-			BranchTarget:      target,
-			FallthroughTarget: fallthroughPC,
-			Taken:             taken,
-		})
-	}
+	ts := newTraceState(cfg)
+	runTraceLoop(ctx, cpu, bus, mapper, cfg, res, ts)
 
 	if res.HaltReason == "" {
 		switch {
 		case len(res.Steps) >= cfg.MaxInstructions:
 			res.HaltReason = "instruction budget exhausted"
-		case lastHaltReason != "":
-			res.HaltReason = lastHaltReason
+		case ts.lastHaltReason != "":
+			res.HaltReason = ts.lastHaltReason
 		default:
 			res.HaltReason = "trace halted"
 		}
 	}
 
-	finalizeResult(res, uniquePCs, uniqueMappings)
+	finalizeResult(res, ts.uniquePCs, ts.uniqueMappings)
 	return res, nil
+}
+
+// runTraceLoop is the main execution loop for the advisory trace.
+func runTraceLoop(
+	ctx context.Context, cpu *cpu6502.CPU, bus *nesBus, mapper Mapper,
+	cfg Config, res *Result, ts *traceState,
+) {
+
+	for len(res.Steps) < cfg.MaxInstructions {
+		select {
+		case <-ctx.Done():
+			res.HaltReason = "context cancelled"
+			finalizeResult(res, ts.uniquePCs, ts.uniqueMappings)
+			return
+		default:
+		}
+
+		if shouldTriggerSyntheticNMI(bus, ts.instructionsSinceNMI) {
+			cpu.TriggerNMI()
+			ts.instructionsSinceNMI = 0
+		}
+		cpu.CheckInterrupts()
+
+		signatureBefore := mapper.MappingSignature()
+		if !checkAndHandleVisitLimit(cpu, bus, mapper, cfg, res, ts, signatureBefore) {
+			break
+		}
+		if res.HaltReason != "" {
+			return
+		}
+
+		pre := snapshotExecutionState(cpu, bus, mapper, ts.instructionsSinceNMI)
+		if err := cpu.Step(); err != nil {
+			ts.lastHaltReason = err.Error()
+			if !restoreNextState(&ts.frontier, cpu, bus, mapper, &ts.instructionsSinceNMI, res) {
+				break
+			}
+			continue
+		}
+		ts.instructionsSinceNMI++
+
+		step := recordTraceStep(cpu, mapper, res, ts.uniquePCs, ts.uniqueMappings)
+		recordBranchAlternate(step, pre, signatureBefore, cpu.PC, cfg, res, ts)
+	}
+}
+
+// checkAndHandleVisitLimit checks the visit limit for the current PC and handles limit exceeded.
+// Returns false if the loop should break.
+func checkAndHandleVisitLimit(
+	cpu *cpu6502.CPU, bus *nesBus, mapper Mapper, cfg Config,
+	res *Result, ts *traceState, signatureBefore uint64,
+) bool {
+
+	vk := visitKey{PC: cpu.PC, MappingID: signatureBefore}
+	limit := cfg.MaxVisitsPerPC
+	if capLimit, ok := ts.visitCaps[vk]; ok {
+		limit = capLimit
+	}
+	ts.visits[vk]++
+	if ts.visits[vk] > limit {
+		limit = maybeRelaxVisitLimit(cpu, mapper, cfg, res, ts, vk, limit)
+	}
+	if ts.visits[vk] > limit {
+		ts.lastHaltReason = fmt.Sprintf("pc visit limit exceeded at $%04X", cpu.PC)
+		return restoreNextState(&ts.frontier, cpu, bus, mapper, &ts.instructionsSinceNMI, res)
+	}
+	return true
+}
+
+// maybeRelaxVisitLimit attempts to raise the visit limit for known loop patterns.
+func maybeRelaxVisitLimit(
+	cpu *cpu6502.CPU, mapper Mapper, cfg Config,
+	res *Result, ts *traceState, vk visitKey, limit int,
+) int {
+
+	if limit != cfg.MaxVisitsPerPC {
+		return limit
+	}
+	if shouldRelaxVisitLimitForStartupLoop(mapper, res, cpu.PC) {
+		limit = relaxedVisitLimit(cfg.MaxVisitsPerPC)
+		ts.visitCaps[vk] = limit
+	} else if shouldRelaxVisitLimitForPPUDataLoop(mapper, res, cpu.PC) {
+		limit = relaxedPPULoopVisitLimit(cfg.MaxVisitsPerPC)
+		ts.visitCaps[vk] = limit
+	}
+	return limit
+}
+
+// recordTraceStep appends the executed instruction to the result and returns the step.
+func recordTraceStep(
+	cpu *cpu6502.CPU, mapper Mapper, res *Result,
+	uniquePCs map[uint16]struct{}, uniqueMappings map[uint64]struct{},
+) TraceStep {
+
+	rawStep := cpu.TraceStep
+	signatureAfter := mapper.MappingSignature()
+	uniquePCs[rawStep.PC] = struct{}{}
+	uniqueMappings[signatureAfter] = struct{}{}
+
+	bankID, physicalOffset, hasPhysical := mapper.ResolveAddress(rawStep.PC)
+	operands := make([]byte, len(rawStep.OpcodeOperands))
+	copy(operands, rawStep.OpcodeOperands)
+
+	step := TraceStep{
+		PC:               rawStep.PC,
+		OpcodeName:       rawStep.Opcode.Instruction.Name,
+		OpcodeOperands:   operands,
+		MappingSignature: signatureAfter,
+		BankID:           bankID,
+		PhysicalOffset:   physicalOffset,
+		HasPhysical:      hasPhysical,
+	}
+	res.Steps = append(res.Steps, step)
+	return step
+}
+
+// recordBranchAlternate enqueues an alternate branch state if applicable.
+func recordBranchAlternate(
+	step TraceStep, pre executionSnapshot, signatureBefore uint64, nextPC uint16,
+	cfg Config, res *Result, ts *traceState,
+) {
+
+	if !isConditionalBranch(step.OpcodeName) || len(step.OpcodeOperands) == 0 {
+		return
+	}
+	res.ConditionalBranchCount++
+
+	if cfg.MaxBranchStates <= 0 {
+		return
+	}
+
+	altPC, target, fallthroughPC, taken, ok := alternateBranchTarget(step, nextPC)
+	if !ok {
+		return
+	}
+
+	branchSnapshot := pre
+	branchSnapshot.cpu.PC = altPC
+	key := branchStateKey{
+		PC:        altPC,
+		MappingID: signatureBefore,
+		A:         branchSnapshot.cpu.A,
+		X:         branchSnapshot.cpu.X,
+		Y:         branchSnapshot.cpu.Y,
+		SP:        branchSnapshot.cpu.SP,
+		Flags:     flagsByte(branchSnapshot.cpu.Flags),
+	}
+	if _, exists := ts.queuedBranches[key]; exists {
+		return
+	}
+	ts.queuedBranches[key] = struct{}{}
+
+	if len(ts.frontier) >= cfg.MaxBranchStates {
+		res.BranchAlternateBudgetDrops++
+		return
+	}
+
+	ts.frontier = append(ts.frontier, branchSnapshot)
+	res.BranchAlternates = append(res.BranchAlternates, BranchAlternate{
+		FromPC:            step.PC,
+		Address:           altPC,
+		MappingSignature:  signatureBefore,
+		BranchTarget:      target,
+		FallthroughTarget: fallthroughPC,
+		Taken:             taken,
+	})
 }
 
 func normalizeConfig(cfg Config) Config {
@@ -372,23 +440,24 @@ func finalizeResult(res *Result, uniquePCs map[uint16]struct{}, uniqueMappings m
 	summarizeMapperWrites(res)
 }
 
+type mapperWriteCountPair struct {
+	count   int
+	changed int
+}
+
+type mapperWriteTransitionKey struct {
+	before uint64
+	after  uint64
+}
+
 func summarizeMapperWrites(res *Result) {
 	if len(res.BankSwitchWrites) == 0 {
 		return
 	}
 
-	type countPair struct {
-		count   int
-		changed int
-	}
-	type transitionKey struct {
-		before uint64
-		after  uint64
-	}
-
-	addressCounts := map[uint16]countPair{}
-	pcCounts := map[uint16]countPair{}
-	transitionCounts := map[transitionKey]int{}
+	addressCounts := map[uint16]mapperWriteCountPair{}
+	pcCounts := map[uint16]mapperWriteCountPair{}
+	transitionCounts := map[mapperWriteTransitionKey]int{}
 
 	for _, event := range res.BankSwitchWrites {
 		addr := addressCounts[event.Address]
@@ -405,7 +474,7 @@ func summarizeMapperWrites(res *Result) {
 		}
 		pcCounts[event.PC] = pc
 
-		key := transitionKey{before: event.BeforeMapping, after: event.AfterMapping}
+		key := mapperWriteTransitionKey{before: event.BeforeMapping, after: event.AfterMapping}
 		transitionCounts[key]++
 	}
 
@@ -413,67 +482,75 @@ func summarizeMapperWrites(res *Result) {
 	res.MapperWriteUniquePCs = len(pcCounts)
 	res.MapperWriteUniqueTransitions = len(transitionCounts)
 
-	addressHotspots := make([]MapperWriteAddressHotspot, 0, len(addressCounts))
-	for address, c := range addressCounts {
-		addressHotspots = append(addressHotspots, MapperWriteAddressHotspot{
+	res.MapperWriteAddressHotspots = buildAddressHotspots(addressCounts)
+	res.MapperWritePCHotspots = buildPCHotspots(pcCounts)
+	res.MapperWriteTransitionHotspots = buildTransitionHotspots(transitionCounts)
+}
+
+func buildAddressHotspots(counts map[uint16]mapperWriteCountPair) []MapperWriteAddressHotspot {
+	hotspots := make([]MapperWriteAddressHotspot, 0, len(counts))
+	for address, c := range counts {
+		hotspots = append(hotspots, MapperWriteAddressHotspot{
 			Address:      address,
 			Count:        c.count,
 			ChangedCount: c.changed,
 		})
 	}
-	slices.SortFunc(addressHotspots, func(a, b MapperWriteAddressHotspot) int {
+	slices.SortFunc(hotspots, func(a, b MapperWriteAddressHotspot) int {
 		if a.Count != b.Count {
 			return b.Count - a.Count
 		}
 		if a.ChangedCount != b.ChangedCount {
 			return b.ChangedCount - a.ChangedCount
 		}
-		switch {
-		case a.Address < b.Address:
+		if a.Address < b.Address {
 			return -1
-		case a.Address > b.Address:
-			return 1
-		default:
-			return 0
 		}
+		if a.Address > b.Address {
+			return 1
+		}
+		return 0
 	})
-	res.MapperWriteAddressHotspots = truncateHotspots(addressHotspots, mapperHotspotLimit)
+	return truncateHotspots(hotspots, mapperHotspotLimit)
+}
 
-	pcHotspots := make([]MapperWritePCHotspot, 0, len(pcCounts))
-	for pc, c := range pcCounts {
-		pcHotspots = append(pcHotspots, MapperWritePCHotspot{
+func buildPCHotspots(counts map[uint16]mapperWriteCountPair) []MapperWritePCHotspot {
+	hotspots := make([]MapperWritePCHotspot, 0, len(counts))
+	for pc, c := range counts {
+		hotspots = append(hotspots, MapperWritePCHotspot{
 			PC:           pc,
 			Count:        c.count,
 			ChangedCount: c.changed,
 		})
 	}
-	slices.SortFunc(pcHotspots, func(a, b MapperWritePCHotspot) int {
+	slices.SortFunc(hotspots, func(a, b MapperWritePCHotspot) int {
 		if a.Count != b.Count {
 			return b.Count - a.Count
 		}
 		if a.ChangedCount != b.ChangedCount {
 			return b.ChangedCount - a.ChangedCount
 		}
-		switch {
-		case a.PC < b.PC:
+		if a.PC < b.PC {
 			return -1
-		case a.PC > b.PC:
-			return 1
-		default:
-			return 0
 		}
+		if a.PC > b.PC {
+			return 1
+		}
+		return 0
 	})
-	res.MapperWritePCHotspots = truncateHotspots(pcHotspots, mapperHotspotLimit)
+	return truncateHotspots(hotspots, mapperHotspotLimit)
+}
 
-	transitionHotspots := make([]MapperWriteTransitionHotspot, 0, len(transitionCounts))
-	for key, count := range transitionCounts {
-		transitionHotspots = append(transitionHotspots, MapperWriteTransitionHotspot{
+func buildTransitionHotspots(counts map[mapperWriteTransitionKey]int) []MapperWriteTransitionHotspot {
+	hotspots := make([]MapperWriteTransitionHotspot, 0, len(counts))
+	for key, count := range counts {
+		hotspots = append(hotspots, MapperWriteTransitionHotspot{
 			BeforeMapping: key.before,
 			AfterMapping:  key.after,
 			Count:         count,
 		})
 	}
-	slices.SortFunc(transitionHotspots, func(a, b MapperWriteTransitionHotspot) int {
+	slices.SortFunc(hotspots, func(a, b MapperWriteTransitionHotspot) int {
 		if a.Count != b.Count {
 			return b.Count - a.Count
 		}
@@ -491,7 +568,7 @@ func summarizeMapperWrites(res *Result) {
 		}
 		return 0
 	})
-	res.MapperWriteTransitionHotspots = truncateHotspots(transitionHotspots, mapperHotspotLimit)
+	return truncateHotspots(hotspots, mapperHotspotLimit)
 }
 
 func truncateHotspots[T any](items []T, limit int) []T {
@@ -512,6 +589,7 @@ func isConditionalBranch(opName string) bool {
 
 func alternateBranchTarget(step TraceStep, nextPC uint16) (alternate, target, fallthroughPC uint16,
 	taken, ok bool) {
+
 	operand := step.OpcodeOperands[len(step.OpcodeOperands)-1]
 	fallthroughPC = step.PC + 2
 	target = uint16(int32(fallthroughPC) + int32(int8(operand)))
@@ -553,6 +631,7 @@ func snapshotExecutionState(cpu *cpu6502.CPU, bus *nesBus, mapper Mapper, instru
 
 func restoreExecutionState(state executionSnapshot, cpu *cpu6502.CPU, bus *nesBus, mapper Mapper,
 	instructionsSinceNMI *int) bool {
+
 	if !mapper.RestoreRuntimeState(state.mapper) {
 		return false
 	}
@@ -569,6 +648,7 @@ func restoreExecutionState(state executionSnapshot, cpu *cpu6502.CPU, bus *nesBu
 
 func restoreNextState(frontier *[]executionSnapshot, cpu *cpu6502.CPU, bus *nesBus, mapper Mapper,
 	instructionsSinceNMI *int, res *Result) bool {
+
 	if len(*frontier) == 0 {
 		return false
 	}
@@ -636,26 +716,36 @@ func canRelaxVisitLimitForLoop(res *Result, pc uint16) bool {
 			return false
 		}
 	}
-	if pc < 0x8000 {
-		return false
-	}
-	return true
+	return pc >= 0x8000
 }
 
 func isTightCounterLoopPC(mapper Mapper, pc uint16) bool {
 	op0 := mapper.ReadMemory(pc)
 
-	// Branch endpoint in a tight backward loop, e.g. BNE -4.
-	if isConditionalBranchOpcode(op0) {
-		target := pc + 2 + uint16(int16(int8(mapper.ReadMemory(pc+1))))
-		if target <= pc && pc-target <= 0x40 {
-			return true
-		}
+	if isTightBackwardBranchLoop(mapper, pc, op0) {
+		return true
 	}
+	if isNearbyCounterBranchPattern(mapper, pc) {
+		return true
+	}
+	if isStoreOpcode(op0) && isLongIndexedClearLoop(mapper, pc) {
+		return true
+	}
+	return isDelayLoopPattern(mapper, pc, op0)
+}
 
-	// Counter + backward-branch patterns starting near this PC.
-	// This catches common startup delays and RAM clear loops with small loop bodies.
-	for offset := uint16(0); offset <= 5; offset++ {
+// isTightBackwardBranchLoop checks if pc is the branch endpoint of a tight backward loop.
+func isTightBackwardBranchLoop(mapper Mapper, pc uint16, op0 byte) bool {
+	if !isConditionalBranchOpcode(op0) {
+		return false
+	}
+	target := pc + 2 + uint16(int16(int8(mapper.ReadMemory(pc+1))))
+	return target <= pc && pc-target <= 0x40
+}
+
+// isNearbyCounterBranchPattern checks for DEX/DEY/INX/INY + BNE patterns near pc.
+func isNearbyCounterBranchPattern(mapper Mapper, pc uint16) bool {
+	for offset := range uint16(6) {
 		counterPC := pc + offset
 		if !isIndexCounterOpcode(mapper.ReadMemory(counterPC)) {
 			continue
@@ -668,46 +758,47 @@ func isTightCounterLoopPC(mapper Mapper, pc uint16) bool {
 			return true
 		}
 	}
+	return false
+}
 
-	// Long indexed clear loops are common during startup, e.g.:
-	//   STA ...,X
-	//   ...
-	//   DEX
-	//   BNE <loop-start>
-	// Visit caps usually trigger at the loop start store instruction, not near DEX/BNE.
-	if isStoreOpcode(mapper.ReadMemory(pc)) {
-		for offset := uint16(0); offset <= 0x30; offset++ {
-			counterPC := pc + offset
-			if !isIndexCounterOpcode(mapper.ReadMemory(counterPC)) {
-				continue
-			}
-			if !isConditionalBranchOpcode(mapper.ReadMemory(counterPC + 1)) {
-				continue
-			}
-
-			target := counterPC + 3 + uint16(int16(int8(mapper.ReadMemory(counterPC+2))))
-			if target > counterPC {
-				continue
-			}
-			distance := int(counterPC) - int(target)
-			if distance <= 0 || distance > 0x40 {
-				continue
-			}
-			if target <= pc && pc <= counterPC {
-				return true
-			}
+// isLongIndexedClearLoop checks for a long indexed clear loop body containing pc.
+func isLongIndexedClearLoop(mapper Mapper, pc uint16) bool {
+	for offset := range uint16(0x31) {
+		counterPC := pc + offset
+		if !isIndexCounterOpcode(mapper.ReadMemory(counterPC)) {
+			continue
 		}
-	}
-
-	if isDelayLoopPrefaceOpcode(op0) &&
-		isIndexCounterOpcode(mapper.ReadMemory(pc+1)) &&
-		isConditionalBranchOpcode(mapper.ReadMemory(pc+2)) {
-		target := pc + 4 + uint16(int16(int8(mapper.ReadMemory(pc+3))))
-		if target == pc || target == pc+1 {
+		if !isConditionalBranchOpcode(mapper.ReadMemory(counterPC + 1)) {
+			continue
+		}
+		target := counterPC + 3 + uint16(int16(int8(mapper.ReadMemory(counterPC+2))))
+		if target > counterPC {
+			continue
+		}
+		distance := int(counterPC) - int(target)
+		if distance <= 0 || distance > 0x40 {
+			continue
+		}
+		if target <= pc && pc <= counterPC {
 			return true
 		}
 	}
 	return false
+}
+
+// isDelayLoopPattern checks for a 2-3 instruction delay loop starting at pc.
+func isDelayLoopPattern(mapper Mapper, pc uint16, op0 byte) bool {
+	if !isDelayLoopPrefaceOpcode(op0) {
+		return false
+	}
+	if !isIndexCounterOpcode(mapper.ReadMemory(pc + 1)) {
+		return false
+	}
+	if !isConditionalBranchOpcode(mapper.ReadMemory(pc + 2)) {
+		return false
+	}
+	target := pc + 4 + uint16(int16(int8(mapper.ReadMemory(pc+3))))
+	return target == pc || target == pc+1
 }
 
 func isNearbyLoopTarget(basePC, counterPC, target uint16) bool {
@@ -793,7 +884,7 @@ func isPPUDataStreamLoopPC(mapper Mapper, pc uint16) bool {
 	//   INY/DEX/...
 	//   CPY/CPX #imm
 	//   B?? <back>
-	for back := uint16(0); back <= 8; back++ {
+	for back := range uint16(9) {
 		if pc < back {
 			continue
 		}

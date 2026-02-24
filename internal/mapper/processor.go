@@ -61,6 +61,26 @@ func (m *Mapper) addMissingSymbolAliases(app *program.Program) {
 		return
 	}
 
+	defined := m.collectDefinedSymbols(app)
+	missing := m.collectMissingSymbols(app, defined)
+
+	if len(missing) == 0 {
+		return
+	}
+	if app.PRG[0].Constants == nil {
+		app.PRG[0].Constants = map[string]uint16{}
+	}
+	if app.Constants == nil {
+		app.Constants = map[string]uint16{}
+	}
+	for name, address := range missing {
+		app.PRG[0].Constants[name] = address
+		app.Constants[name] = address
+	}
+}
+
+// collectDefinedSymbols builds the set of all labels, constants and variables already defined.
+func (m *Mapper) collectDefinedSymbols(app *program.Program) map[string]struct{} {
 	defined := map[string]struct{}{}
 	for _, prgBank := range app.PRG {
 		for label := range emittedLabels(prgBank, m.dis.Options()) {
@@ -73,7 +93,11 @@ func (m *Mapper) addMissingSymbolAliases(app *program.Program) {
 			defined[name] = struct{}{}
 		}
 	}
+	return defined
+}
 
+// collectMissingSymbols scans all offsets for referenced symbols not present in defined.
+func (m *Mapper) collectMissingSymbols(app *program.Program, defined map[string]struct{}) map[string]uint16 {
 	missing := map[string]uint16{}
 	for _, prgBank := range app.PRG {
 		for i := range prgBank.Offsets {
@@ -89,28 +113,13 @@ func (m *Mapper) addMissingSymbolAliases(app *program.Program) {
 			if !ok {
 				continue
 			}
-			if isRelativeBranchCode(off.Code) {
-				if rewriteRelativeBranchAsBytes(off) {
-					continue
-				}
+			if isRelativeBranchCode(off.Code) && rewriteRelativeBranchAsBytes(off) {
+				continue
 			}
 			missing[symbol] = address
 		}
 	}
-
-	if len(missing) == 0 {
-		return
-	}
-	if app.PRG[0].Constants == nil {
-		app.PRG[0].Constants = map[string]uint16{}
-	}
-	if app.Constants == nil {
-		app.Constants = map[string]uint16{}
-	}
-	for name, address := range missing {
-		app.PRG[0].Constants[name] = address
-		app.Constants[name] = address
-	}
+	return missing
 }
 
 func emittedLabels(prgBank *program.PRGBank, opts options.Disassembler) map[string]struct{} {

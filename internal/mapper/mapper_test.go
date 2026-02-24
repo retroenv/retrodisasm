@@ -475,7 +475,7 @@ func TestApplyMapperWrite_MMC1(t *testing.T) {
 
 	// Write PRG bank register ($E000-$FFFF), value 1, LSB-first over 5 writes.
 	sequence := []byte{0x01, 0x00, 0x00, 0x00, 0x00}
-	for i := 0; i < len(sequence)-1; i++ {
+	for i := range len(sequence) - 1 {
 		changed := mapper.ApplyMapperWrite(0xE000, sequence[i])
 		assert.False(t, changed)
 	}

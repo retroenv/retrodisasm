@@ -9,11 +9,30 @@ import (
 )
 
 func TestParseFlags_DisasmOptions(t *testing.T) {
-	tests := []struct {
-		name string
-		args []string
-		want options.Disassembler
-	}{
+	tests := parseFlagsDisasmTestCases()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldArgs := os.Args
+			t.Cleanup(func() { os.Args = oldArgs })
+
+			os.Args = tt.args
+
+			_, got, err := ParseFlags()
+			assert.NoError(t, err)
+			assertParseFlagsDisasmOptions(t, tt.want, got)
+		})
+	}
+}
+
+type parseFlagsDisasmTestCase struct {
+	name string
+	args []string
+	want options.Disassembler
+}
+
+func parseFlagsDisasmTestCases() []parseFlagsDisasmTestCase {
+	return []parseFlagsDisasmTestCase{
 		{
 			name: "default flags",
 			args: []string{"prog", "test.nes"},
@@ -67,33 +86,25 @@ func TestParseFlags_DisasmOptions(t *testing.T) {
 			},
 		},
 	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			oldArgs := os.Args
-			t.Cleanup(func() { os.Args = oldArgs })
-
-			os.Args = tt.args
-
-			_, got, err := ParseFlags()
-			assert.NoError(t, err)
-			assert.Equal(t, tt.want.HexComments, got.HexComments)
-			assert.Equal(t, tt.want.OffsetComments, got.OffsetComments)
-			assert.Equal(t, tt.want.ZeroBytes, got.ZeroBytes)
-			expectedTraceMode := tt.want.TraceMode
-			if expectedTraceMode == "" {
-				expectedTraceMode = "static"
-			}
-			assert.Equal(t, expectedTraceMode, got.TraceMode)
-			assert.Equal(t, tt.want.TraceMaxInstructions, got.TraceMaxInstructions)
-			assert.Equal(t, tt.want.TraceMaxVisitsPerPC, got.TraceMaxVisitsPerPC)
-			assert.Equal(t, tt.want.TraceMaxBranchStates, got.TraceMaxBranchStates)
-			assert.Equal(t, tt.want.TraceJoypad1, got.TraceJoypad1)
-			assert.Equal(t, tt.want.TraceJoypad2, got.TraceJoypad2)
-			assert.Equal(t, tt.want.TraceJoypad1Sequence, got.TraceJoypad1Sequence)
-			assert.Equal(t, tt.want.TraceJoypad2Sequence, got.TraceJoypad2Sequence)
-		})
+func assertParseFlagsDisasmOptions(t *testing.T, want, got options.Disassembler) {
+	t.Helper()
+	assert.Equal(t, want.HexComments, got.HexComments)
+	assert.Equal(t, want.OffsetComments, got.OffsetComments)
+	assert.Equal(t, want.ZeroBytes, got.ZeroBytes)
+	expectedTraceMode := want.TraceMode
+	if expectedTraceMode == "" {
+		expectedTraceMode = "static"
 	}
+	assert.Equal(t, expectedTraceMode, got.TraceMode)
+	assert.Equal(t, want.TraceMaxInstructions, got.TraceMaxInstructions)
+	assert.Equal(t, want.TraceMaxVisitsPerPC, got.TraceMaxVisitsPerPC)
+	assert.Equal(t, want.TraceMaxBranchStates, got.TraceMaxBranchStates)
+	assert.Equal(t, want.TraceJoypad1, got.TraceJoypad1)
+	assert.Equal(t, want.TraceJoypad2, got.TraceJoypad2)
+	assert.Equal(t, want.TraceJoypad1Sequence, got.TraceJoypad1Sequence)
+	assert.Equal(t, want.TraceJoypad2Sequence, got.TraceJoypad2Sequence)
 }
 
 func TestParseFlags_InvalidTraceMode(t *testing.T) {

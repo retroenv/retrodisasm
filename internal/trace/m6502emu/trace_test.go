@@ -15,9 +15,9 @@ func TestNesBusRAMMirroring(t *testing.T) {
 	bus := newNesBus(&cartridge.Cartridge{}, mapper, Config{})
 
 	bus.Write(0x0003, 0xAB)
-	assert.Equal(t, byte(0xAB), byte(bus.Read(0x0003)))
-	assert.Equal(t, byte(0xAB), byte(bus.Read(0x0803))) // mirrored
-	assert.Equal(t, byte(0xAB), byte(bus.Read(0x1003))) // mirrored
+	assert.Equal(t, byte(0xAB), bus.Read(0x0003))
+	assert.Equal(t, byte(0xAB), bus.Read(0x0803)) // mirrored
+	assert.Equal(t, byte(0xAB), bus.Read(0x1003)) // mirrored
 }
 
 func TestNesBusPPUStatusStub(t *testing.T) {
@@ -25,9 +25,9 @@ func TestNesBusPPUStatusStub(t *testing.T) {
 		memory: map[uint16]byte{},
 	}
 	bus := newNesBus(&cartridge.Cartridge{}, mapper, Config{})
-	assert.Equal(t, byte(0x00), byte(bus.Read(0x2002)))
-	assert.Equal(t, byte(0x80), byte(bus.Read(0x3FFA))) // mirrored to $2002
-	assert.Equal(t, byte(0x00), byte(bus.Read(0x2002)))
+	assert.Equal(t, byte(0x00), bus.Read(0x2002))
+	assert.Equal(t, byte(0x80), bus.Read(0x3FFA)) // mirrored to $2002
+	assert.Equal(t, byte(0x00), bus.Read(0x2002))
 }
 
 func TestNesBusPPUStatusSnapshotRestore(t *testing.T) {
@@ -36,13 +36,13 @@ func TestNesBusPPUStatusSnapshotRestore(t *testing.T) {
 	}
 	bus := newNesBus(&cartridge.Cartridge{}, mapper, Config{})
 
-	assert.Equal(t, byte(0x00), byte(bus.Read(0x2002)))
-	assert.Equal(t, byte(0x80), byte(bus.Read(0x2002)))
+	assert.Equal(t, byte(0x00), bus.Read(0x2002))
+	assert.Equal(t, byte(0x80), bus.Read(0x2002))
 
 	snapshot := bus.snapshot()
-	expected := byte(bus.Read(0x2002))
+	expected := bus.Read(0x2002)
 	bus.restore(snapshot)
-	assert.Equal(t, expected, byte(bus.Read(0x2002)))
+	assert.Equal(t, expected, bus.Read(0x2002))
 }
 
 func TestNesBusPPUCtrlNMIEnabledAndSnapshotRestore(t *testing.T) {
@@ -72,14 +72,14 @@ func TestNesBusJoypadStrobeLatchShift(t *testing.T) {
 	bus.Write(joypad1Address, 0x01)
 	bus.Write(joypad1Address, 0x00)
 
-	for i := 0; i < joypadButtonCount; i++ {
-		value := byte(bus.Read(joypad1Address))
+	for range joypadButtonCount {
+		value := bus.Read(joypad1Address)
 		assert.Equal(t, byte(0), value&joypadButtonAMask)
 		assert.Equal(t, byte(joypadOpenBusBit6), value&joypadOpenBusBit6)
 	}
 
 	// After the 8 button reads, controller keeps returning 1.
-	assert.Equal(t, byte(1), byte(bus.Read(joypad1Address))&joypadButtonAMask)
+	assert.Equal(t, byte(1), bus.Read(joypad1Address)&joypadButtonAMask)
 }
 
 func TestNesBusJoypadConfiguredState(t *testing.T) {
@@ -94,10 +94,10 @@ func TestNesBusJoypadConfiguredState(t *testing.T) {
 	bus.Write(joypad1Address, 0x00)
 
 	// Read A,B,Select,Start bits.
-	assert.Equal(t, byte(0), byte(bus.Read(joypad1Address))&joypadButtonAMask)
-	assert.Equal(t, byte(0), byte(bus.Read(joypad1Address))&joypadButtonAMask)
-	assert.Equal(t, byte(0), byte(bus.Read(joypad1Address))&joypadButtonAMask)
-	assert.Equal(t, byte(1), byte(bus.Read(joypad1Address))&joypadButtonAMask)
+	assert.Equal(t, byte(0), bus.Read(joypad1Address)&joypadButtonAMask)
+	assert.Equal(t, byte(0), bus.Read(joypad1Address)&joypadButtonAMask)
+	assert.Equal(t, byte(0), bus.Read(joypad1Address)&joypadButtonAMask)
+	assert.Equal(t, byte(1), bus.Read(joypad1Address)&joypadButtonAMask)
 }
 
 func TestNesBusJoypadSequenceAdvancesPerLatchCycle(t *testing.T) {
@@ -111,18 +111,18 @@ func TestNesBusJoypadSequenceAdvancesPerLatchCycle(t *testing.T) {
 	// First strobe cycle -> sequence[0]
 	bus.Write(joypad1Address, 0x01)
 	bus.Write(joypad1Address, 0x00)
-	assert.Equal(t, byte(0), byte(bus.Read(joypad1Address))&joypadButtonAMask) // A
-	assert.Equal(t, byte(0), byte(bus.Read(joypad1Address))&joypadButtonAMask) // B
-	assert.Equal(t, byte(0), byte(bus.Read(joypad1Address))&joypadButtonAMask) // Select
-	assert.Equal(t, byte(0), byte(bus.Read(joypad1Address))&joypadButtonAMask) // Start
+	assert.Equal(t, byte(0), bus.Read(joypad1Address)&joypadButtonAMask) // A
+	assert.Equal(t, byte(0), bus.Read(joypad1Address)&joypadButtonAMask) // B
+	assert.Equal(t, byte(0), bus.Read(joypad1Address)&joypadButtonAMask) // Select
+	assert.Equal(t, byte(0), bus.Read(joypad1Address)&joypadButtonAMask) // Start
 
 	// Second strobe cycle -> sequence[1]
 	bus.Write(joypad1Address, 0x01)
 	bus.Write(joypad1Address, 0x00)
-	assert.Equal(t, byte(0), byte(bus.Read(joypad1Address))&joypadButtonAMask) // A
-	assert.Equal(t, byte(0), byte(bus.Read(joypad1Address))&joypadButtonAMask) // B
-	assert.Equal(t, byte(0), byte(bus.Read(joypad1Address))&joypadButtonAMask) // Select
-	assert.Equal(t, byte(1), byte(bus.Read(joypad1Address))&joypadButtonAMask) // Start
+	assert.Equal(t, byte(0), bus.Read(joypad1Address)&joypadButtonAMask) // A
+	assert.Equal(t, byte(0), bus.Read(joypad1Address)&joypadButtonAMask) // B
+	assert.Equal(t, byte(0), bus.Read(joypad1Address)&joypadButtonAMask) // Select
+	assert.Equal(t, byte(1), bus.Read(joypad1Address)&joypadButtonAMask) // Start
 }
 
 func TestNesBusJoypadSnapshotRestore(t *testing.T) {
@@ -140,9 +140,9 @@ func TestNesBusJoypadSnapshotRestore(t *testing.T) {
 	_ = bus.Read(joypad1Address)
 	snapshot := bus.snapshot()
 
-	expected := byte(bus.Read(joypad1Address))
+	expected := bus.Read(joypad1Address)
 	bus.restore(snapshot)
-	assert.Equal(t, expected, byte(bus.Read(joypad1Address)))
+	assert.Equal(t, expected, bus.Read(joypad1Address))
 }
 
 func TestNesBusJoypadSequenceSnapshotRestore(t *testing.T) {
@@ -161,12 +161,12 @@ func TestNesBusJoypadSequenceSnapshotRestore(t *testing.T) {
 	// Next strobe cycle should move to third sequence state (A pressed).
 	bus.Write(joypad1Address, 0x01)
 	bus.Write(joypad1Address, 0x00)
-	expectedA := byte(bus.Read(joypad1Address)) & joypadButtonAMask
+	expectedA := bus.Read(joypad1Address) & joypadButtonAMask
 
 	bus.restore(snapshot)
 	bus.Write(joypad1Address, 0x01)
 	bus.Write(joypad1Address, 0x00)
-	actualA := byte(bus.Read(joypad1Address)) & joypadButtonAMask
+	actualA := bus.Read(joypad1Address) & joypadButtonAMask
 	assert.Equal(t, expectedA, actualA)
 }
 

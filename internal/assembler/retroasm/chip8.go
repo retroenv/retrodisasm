@@ -98,10 +98,10 @@ func (w *FileWriter) writeCHIP8Code(offset program.Offset) error {
 // writeCHIP8Data writes raw data bytes.
 func (w *FileWriter) writeCHIP8Data(offset program.Offset, _ int) error {
 	var buf strings.Builder
-	buf.WriteString(fmt.Sprintf("    .byte $%02X", offset.Data[0]))
+	fmt.Fprintf(&buf, "    .byte $%02X", offset.Data[0])
 
 	for j := 1; j < len(offset.Data); j++ {
-		buf.WriteString(fmt.Sprintf(", $%02X", offset.Data[j]))
+		fmt.Fprintf(&buf, ", $%02X", offset.Data[j])
 	}
 
 	line := buf.String()

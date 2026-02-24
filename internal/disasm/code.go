@@ -17,6 +17,25 @@ const (
 // processJumpDestinations processes all jump destinations and updates the callers with
 // the generated jump destination label name.
 func (dis *Disasm) processJumpDestinations() {
+	branchDestinations := dis.sortedBranchDestinations()
+	labelOwners := map[string]*offset.DisasmOffset{}
+	defaultMappingSignature := dis.defaultMappingSignature()
+
+	for _, key := range branchDestinations {
+		destinationInfo := dis.branchDestinationInfo[key]
+		if destinationInfo == nil {
+			continue
+		}
+		canRewriteCallersToLabel := key.MappingID == defaultMappingSignature &&
+			dis.canRewriteCallersToBranchLabel(key, destinationInfo)
+
+		name := dis.resolveDestinationLabel(key.PC, destinationInfo, key, labelOwners)
+		dis.applyDestinationLabel(key.PC, name, canRewriteCallersToLabel, destinationInfo)
+	}
+}
+
+// sortedBranchDestinations returns branch destination keys sorted by PC then MappingID.
+func (dis *Disasm) sortedBranchDestinations() []ParseKey {
 	branchDestinations := make([]ParseKey, 0, len(dis.branchDestinations))
 	for key := range dis.branchDestinations {
 		branchDestinations = append(branchDestinations, key)
@@ -36,54 +55,55 @@ func (dis *Disasm) processJumpDestinations() {
 		}
 		return 0
 	})
+	return branchDestinations
+}
 
-	labelOwners := map[string]*offset.DisasmOffset{}
-	defaultMappingSignature := dis.defaultMappingSignature()
+// resolveDestinationLabel determines the unique label name for a branch destination.
+func (dis *Disasm) resolveDestinationLabel(
+	address uint16, destinationInfo *offset.DisasmOffset, key ParseKey,
+	labelOwners map[string]*offset.DisasmOffset,
+) string {
 
-	for _, key := range branchDestinations {
-		address := key.PC
-		destinationInfo := dis.branchDestinationInfo[key]
-		if destinationInfo == nil {
+	name := destinationInfo.Label
+	if name == "" {
+		switch {
+		case destinationInfo.IsType(program.JumpEngine):
+			name = fmt.Sprintf(jumpEngineNaming, address)
+		case destinationInfo.IsType(program.CallDestination):
+			name = fmt.Sprintf(funcNaming, address)
+		default:
+			name = fmt.Sprintf(labelNaming, address)
+		}
+	}
+	name = dis.uniqueLabelName(name, key, destinationInfo, labelOwners)
+	destinationInfo.Label = name
+	return name
+}
+
+// applyDestinationLabel applies the resolved label to the destination info and its callers.
+func (dis *Disasm) applyDestinationLabel(
+	address uint16, name string, canRewriteCallersToLabel bool, destinationInfo *offset.DisasmOffset,
+) {
+	// if the offset is marked as code but does not have opcode bytes, the jump destination
+	// is inside the second or third byte of an instruction.
+	if (destinationInfo.IsType(program.CodeOffset) || destinationInfo.IsType(program.CodeAsData)) &&
+		len(destinationInfo.Data) == 0 {
+
+		dis.handleJumpIntoInstruction(address)
+	}
+
+	for _, bankRef := range destinationInfo.BranchFrom {
+		callerInfo := bankRef.Mapped.OffsetInfo(bankRef.Index)
+		rewriteAbsoluteToStableLabel := len(callerInfo.Data) >= 3 &&
+			dis.isStableEmittedLabelAddress(address, destinationInfo)
+		if !canRewriteCallersToLabel && len(callerInfo.Data) >= 3 && !rewriteAbsoluteToStableLabel {
 			continue
 		}
-		canRewriteCallersToLabel := key.MappingID == defaultMappingSignature &&
-			dis.canRewriteCallersToBranchLabel(key, destinationInfo)
+		callerInfo.BranchingTo = name
 
-		name := destinationInfo.Label
-		if name == "" {
-			switch {
-			case destinationInfo.IsType(program.JumpEngine):
-				name = fmt.Sprintf(jumpEngineNaming, address)
-			case destinationInfo.IsType(program.CallDestination):
-				name = fmt.Sprintf(funcNaming, address)
-			default:
-				name = fmt.Sprintf(labelNaming, address)
-			}
-		}
-		name = dis.uniqueLabelName(name, key, destinationInfo, labelOwners)
-		destinationInfo.Label = name
-
-		// if the offset is marked as code but does not have opcode bytes, the jump destination
-		// is inside the second or third byte of an instruction.
-		if (destinationInfo.IsType(program.CodeOffset) || destinationInfo.IsType(program.CodeAsData)) &&
-			len(destinationInfo.Data) == 0 {
-
-			dis.handleJumpIntoInstruction(address)
-		}
-
-		for _, bankRef := range destinationInfo.BranchFrom {
-			callerInfo := bankRef.Mapped.OffsetInfo(bankRef.Index)
-			rewriteAbsoluteToStableLabel := len(callerInfo.Data) >= 3 &&
-				dis.isStableEmittedLabelAddress(address, destinationInfo)
-			if !canRewriteCallersToLabel && len(callerInfo.Data) >= 3 && !rewriteAbsoluteToStableLabel {
-				continue
-			}
-			callerInfo.BranchingTo = name
-
-			// reference can be a function address of a jump engine
-			if callerInfo.IsType(program.CodeOffset) {
-				callerInfo.Code = callerInfo.Opcode.Instruction().Name()
-			}
+		// reference can be a function address of a jump engine
+		if callerInfo.IsType(program.CodeOffset) {
+			callerInfo.Code = callerInfo.Opcode.Instruction().Name()
 		}
 	}
 }
@@ -124,6 +144,7 @@ func (dis *Disasm) canRewriteCallersToBranchLabel(key ParseKey, owner *offset.Di
 
 func (dis *Disasm) uniqueLabelName(base string, key ParseKey, owner *offset.DisasmOffset,
 	owners map[string]*offset.DisasmOffset) string {
+
 	if existingOwner, ok := owners[base]; !ok || existingOwner == owner {
 		owners[base] = owner
 		return base
