@@ -102,7 +102,7 @@ func (dis *Disasm) applyDestinationLabel(
 		callerInfo.BranchingTo = name
 
 		// reference can be a function address of a jump engine
-		if callerInfo.IsType(program.CodeOffset) {
+		if callerInfo.IsType(program.CodeOffset) && callerInfo.Opcode != nil {
 			callerInfo.Code = callerInfo.Opcode.Instruction().Name()
 		}
 	}
