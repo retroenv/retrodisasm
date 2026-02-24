@@ -30,9 +30,19 @@ func (m *Mapper) ClassifyRemainingAsData() {
 // SetProgramBanks creates program banks and coordinates with variable and constant managers.
 // It processes all mapper banks, creates corresponding program banks, and populates them
 // with offset information, variables, and constants.
+// For multi-bank NES ROMs with 32KB internal banks, each bank is split into two 16KB
+// output segments to match iNES PRG page boundaries.
 func (m *Mapper) SetProgramBanks(app *program.Program) error {
 	for bnkIndex, bnk := range m.banks {
+		if m.bankWindowSize != 0 && len(bnk.offsets) > 0x4000 {
+			if err := m.setProgramBanksSplit(app, bnkIndex, bnk); err != nil {
+				return err
+			}
+			continue
+		}
+
 		prgBank := program.NewPRGBank(len(bnk.offsets))
+		prgBank.BaseAddress = m.codeBaseAddress
 
 		for i := range len(bnk.offsets) {
 			offsetInfo := bnk.offsets[i]
@@ -54,6 +64,56 @@ func (m *Mapper) SetProgramBanks(app *program.Program) error {
 	}
 	m.addMissingSymbolAliases(app)
 	return nil
+}
+
+// setProgramBanksSplit splits a 32KB internal bank into two 16KB output segments.
+func (m *Mapper) setProgramBanksSplit(app *program.Program, bnkIndex int, bnk *bank) error {
+	halfSize := len(bnk.offsets) / 2
+	numOutputBanks := len(m.banks) * 2
+
+	// First half: $8000-$BFFF
+	prgBank0, err := m.create16KOutputBank(bnk, 0, halfSize,
+		m.codeBaseAddress, bnkIndex, bnkIndex*2, numOutputBanks)
+	if err != nil {
+		return err
+	}
+	app.PRG = append(app.PRG, prgBank0)
+
+	// Second half: $C000-$FFFF
+	prgBank1, err := m.create16KOutputBank(bnk, halfSize, halfSize*2,
+		m.codeBaseAddress+uint16(halfSize), bnkIndex, bnkIndex*2+1, numOutputBanks)
+	if err != nil {
+		return err
+	}
+	app.PRG = append(app.PRG, prgBank1)
+
+	return nil
+}
+
+// create16KOutputBank creates a 16KB output PRGBank from a slice of an internal bank.
+func (m *Mapper) create16KOutputBank(bnk *bank, startOffset, endOffset int,
+	baseAddress uint16, internalBankIndex, outputBankIndex, numOutputBanks int) (*program.PRGBank, error) {
+
+	size := endOffset - startOffset
+	prgBank := program.NewPRGBank(size)
+	prgBank.BaseAddress = baseAddress
+
+	for i := range size {
+		offsetInfo := bnk.offsets[startOffset+i]
+		programOffsetInfo, err := m.getProgramOffset(baseAddress+uint16(i), offsetInfo)
+		if err != nil {
+			return nil, err
+		}
+		prgBank.Offsets[i] = programOffsetInfo
+	}
+
+	m.consts.AssignBankConstants(internalBankIndex, prgBank)
+	m.vars.AssignBankVariables(internalBankIndex, prgBank)
+
+	setBankName(prgBank, outputBankIndex, numOutputBanks)
+	setBankVectorsFromSlice(bnk.prg[startOffset:endOffset], prgBank)
+
+	return prgBank, nil
 }
 
 func (m *Mapper) addMissingSymbolAliases(app *program.Program) {

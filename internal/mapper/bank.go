@@ -75,6 +75,22 @@ func setBankVectors(bnk *bank, prgBank *program.PRGBank) {
 	}
 }
 
+func setBankVectorsFromSlice(prgData []byte, prgBank *program.PRGBank) {
+	if len(prgData) < 6 {
+		return
+	}
+
+	idx := len(prgData) - 6
+	for i := range 3 {
+		b1 := prgData[idx]
+		idx++
+		b2 := prgData[idx]
+		idx++
+		addr := uint16(b2)<<8 | uint16(b1)
+		prgBank.Vectors[i] = addr
+	}
+}
+
 func setBankName(prgBank *program.PRGBank, bnkIndex, numBanks int) {
 	if bnkIndex == 0 && numBanks == 1 {
 		prgBank.Name = singleBankName

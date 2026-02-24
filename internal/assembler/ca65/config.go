@@ -46,7 +46,7 @@ func GenerateMapperConfig(conf Config) (string, error) {
 	buf.WriteString(memoryConfigPart1)
 
 	for _, bank := range conf.App.PRG {
-		if _, err := fmt.Fprintf(buf, memoryPrgBankTemplate, bank.Name+":", conf.App.CodeBaseAddress, len(bank.Offsets)); err != nil {
+		if _, err := fmt.Fprintf(buf, memoryPrgBankTemplate, bank.Name+":", bank.BaseAddress, len(bank.Offsets)); err != nil {
 			return "", fmt.Errorf("writing memory bank line: %w", err)
 		}
 	}
@@ -58,7 +58,7 @@ func GenerateMapperConfig(conf Config) (string, error) {
 	buf.WriteString(segmentsConfigPart1)
 
 	for _, bank := range conf.App.PRG {
-		if _, err := fmt.Fprintf(buf, segmentsPrgBankTemplate, bank.Name+":", bank.Name, conf.App.CodeBaseAddress); err != nil {
+		if _, err := fmt.Fprintf(buf, segmentsPrgBankTemplate, bank.Name+":", bank.Name, bank.BaseAddress); err != nil {
 			return "", fmt.Errorf("writing segment bank line: %w", err)
 		}
 	}
@@ -67,7 +67,7 @@ func GenerateMapperConfig(conf Config) (string, error) {
 	// For multi-bank ROMs, vectors are included in each bank segment
 	if len(conf.App.PRG) == 1 {
 		lastBank := conf.App.PRG[0]
-		vectorStart := conf.App.CodeBaseAddress + uint16(len(lastBank.Offsets)) - 6
+		vectorStart := lastBank.BaseAddress + uint16(len(lastBank.Offsets)) - 6
 		if _, err := fmt.Fprintf(buf, segmentsVectorsTemplate, lastBank.Name, vectorStart); err != nil {
 			return "", fmt.Errorf("writing vectors segment: %w", err)
 		}

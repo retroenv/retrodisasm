@@ -153,52 +153,66 @@ func (f FileWriter) processWrite(write any) error {
 
 // writePRGBank writes a single PRG bank including constants, variables, code, and vectors.
 func (f FileWriter) writePRGBank(t prgBankWrite) error {
-	if err := f.writeConstants(t.bank); err != nil {
-		return err
+	endIndex := t.bank.LastNonZeroByte(f.options)
+
+	// Skip empty banks that have no meaningful content.
+	// For multi-bank ROMs with headers/vectors, keep all banks for proper alignment.
+	if endIndex == 0 && (f.options.CodeOnly || !t.isMultiBank) {
+		return nil
 	}
-	if err := f.writeVariables(t.bank); err != nil {
-		return err
-	}
-	endIndex, err := f.writeCode(t.bank)
+
+	bankWriteCloser, err := f.newBankWriter(t.bank.Name)
 	if err != nil {
-		return err
+		return fmt.Errorf("creating bank writer: %w", err)
 	}
+	defer func() { _ = bankWriteCloser.Close() }()
+
+	bankW := writer.New(f.app, bankWriteCloser, writer.Options{
+		OffsetComments: f.options.OffsetComments,
+	})
+
+	if err := bankW.OutputAliasMap(t.bank.Constants); err != nil {
+		return fmt.Errorf("writing constants output alias map: %w", err)
+	}
+	if err := bankW.OutputAliasMap(t.bank.Variables); err != nil {
+		return fmt.Errorf("writing variables output alias map: %w", err)
+	}
+
+	if !f.options.CodeOnly {
+		if err := f.writeSegmentTo(bankWriteCloser, t.bank.Name); err != nil {
+			return err
+		}
+	}
+
+	if err := bankW.ProcessPRG(t.bank, endIndex); err != nil {
+		return fmt.Errorf("writing PRG: %w", err)
+	}
+
 	// For multi-bank ROMs, write vectors at end of each bank
 	if t.isMultiBank && !f.options.CodeOnly {
-		if err := f.writeBankVectors(t.bank, endIndex); err != nil {
+		if err := f.writeBankVectorsTo(bankWriteCloser, t.bank, endIndex); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// writeSegment writes a segment header to the output.
+// writeSegment writes a segment header to the main output.
 func (f FileWriter) writeSegment(name string) error {
+	return f.writeSegmentTo(f.mainWriter, name)
+}
+
+// writeSegmentTo writes a segment header to the specified writer.
+func (f FileWriter) writeSegmentTo(w io.Writer, name string) error {
 	if name != "HEADER" {
-		if _, err := fmt.Fprintln(f.mainWriter); err != nil {
+		if _, err := fmt.Fprintln(w); err != nil {
 			return fmt.Errorf("writing segment: %w", err)
 		}
 	}
 
-	_, err := fmt.Fprintf(f.mainWriter, ".segment \"%s\"\n\n", name)
+	_, err := fmt.Fprintf(w, ".segment \"%s\"\n\n", name)
 	if err != nil {
 		return fmt.Errorf("writing segment footer: %w", err)
-	}
-	return nil
-}
-
-// writeConstants writes constant aliases to the output.
-func (f FileWriter) writeConstants(bank *program.PRGBank) error {
-	if err := f.writer.OutputAliasMap(bank.Constants); err != nil {
-		return fmt.Errorf("writing constants output alias map: %w", err)
-	}
-	return nil
-}
-
-// writeVariables writes variable aliases to the output.
-func (f FileWriter) writeVariables(bank *program.PRGBank) error {
-	if err := f.writer.OutputAliasMap(bank.Variables); err != nil {
-		return fmt.Errorf("writing variables output alias map: %w", err)
 	}
 	return nil
 }
@@ -223,24 +237,9 @@ func (f FileWriter) writeCHR() error {
 	return nil
 }
 
-// writeCode writes the code to the output.
-func (f FileWriter) writeCode(bank *program.PRGBank) (int, error) {
-	if !f.options.CodeOnly {
-		if err := f.writeSegment(bank.Name); err != nil {
-			return 0, err
-		}
-	}
-
-	endIndex := bank.LastNonZeroByte(f.options)
-	if err := f.writer.ProcessPRG(bank, endIndex); err != nil {
-		return 0, fmt.Errorf("writing PRG: %w", err)
-	}
-	return endIndex, nil
-}
-
-// writeBankVectors writes vectors at the end of a bank for multi-bank ROMs.
+// writeBankVectorsTo writes vectors at the end of a bank for multi-bank ROMs.
 // Each bank has its own NMI, Reset, and IRQ vectors stored in the last 6 bytes.
-func (f FileWriter) writeBankVectors(bank *program.PRGBank, endIndex int) error {
+func (f FileWriter) writeBankVectorsTo(w io.Writer, bank *program.PRGBank, endIndex int) error {
 	// Multi-bank vectors must always sit in the last 6 bytes of the bank.
 	// Pad with explicit zeros so vectors are not emitted immediately after code.
 	vectorStartIndex := len(bank.Offsets) - 6
@@ -249,7 +248,7 @@ func (f FileWriter) writeBankVectors(bank *program.PRGBank, endIndex int) error 
 		return fmt.Errorf("bank data overlaps vectors: end_index=%d vector_start_index=%d", endIndex, vectorStartIndex)
 	}
 	if padding > 0 {
-		if _, err := fmt.Fprintf(f.mainWriter, "\n.res %d, $00\n", padding); err != nil {
+		if _, err := fmt.Fprintf(w, "\n.res %d, $00\n", padding); err != nil {
 			return fmt.Errorf("writing vector padding: %w", err)
 		}
 	}
@@ -260,7 +259,7 @@ func (f FileWriter) writeBankVectors(bank *program.PRGBank, endIndex int) error 
 	reset := fmt.Sprintf("$%04X", bank.Vectors[1])
 	irq := fmt.Sprintf("$%04X", bank.Vectors[2])
 
-	if _, err := fmt.Fprintf(f.mainWriter, "\n.addr %s, %s, %s\n", nmi, reset, irq); err != nil {
+	if _, err := fmt.Fprintf(w, "\n.addr %s, %s, %s\n", nmi, reset, irq); err != nil {
 		return fmt.Errorf("writing bank vectors: %w", err)
 	}
 	return nil

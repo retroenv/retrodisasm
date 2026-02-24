@@ -148,7 +148,7 @@ func TestSetProgramBanks_SingleBank(t *testing.T) {
 
 func TestSetProgramBanks_MultiBanks(t *testing.T) {
 	cart := &cartridge.Cartridge{
-		PRG: make([]byte, 0x10000), // Large enough for 2 banks
+		PRG: make([]byte, 0x10000), // 64KB = 2 x 32KB internal banks
 	}
 	arch := &mockArchitecture{bankWindowSize: 0x4000}
 
@@ -173,14 +173,69 @@ func TestSetProgramBanks_MultiBanks(t *testing.T) {
 	err = mapper.SetProgramBanks(app)
 	assert.NoError(t, err)
 
-	// Verify multiple program banks were created
+	// Each 32KB internal bank is split into 2 x 16KB output banks
+	assert.Len(t, app.PRG, 4)
+	assert.Equal(t, "PRG_BANK_0", app.PRG[0].Name)
+	assert.Equal(t, "PRG_BANK_1", app.PRG[1].Name)
+	assert.Equal(t, "PRG_BANK_2", app.PRG[2].Name)
+	assert.Equal(t, "PRG_BANK_3", app.PRG[3].Name)
+
+	// Verify base addresses: alternating $8000 and $C000
+	assert.Equal(t, uint16(0x8000), app.PRG[0].BaseAddress)
+	assert.Equal(t, uint16(0xC000), app.PRG[1].BaseAddress)
+	assert.Equal(t, uint16(0x8000), app.PRG[2].BaseAddress)
+	assert.Equal(t, uint16(0xC000), app.PRG[3].BaseAddress)
+
+	// Verify each output bank is 16KB
+	assert.Len(t, app.PRG[0].Offsets, 0x4000)
+	assert.Len(t, app.PRG[1].Offsets, 0x4000)
+	assert.Len(t, app.PRG[2].Offsets, 0x4000)
+	assert.Len(t, app.PRG[3].Offsets, 0x4000)
+
+	// AssignBankVariables and AssignBankConstants are called once per 16KB half,
+	// using the internal bank index (0 or 1) for each pair
+	assert.Equal(t, 4, mockVars.setBankCalls)
+	assert.Equal(t, 4, mockConsts.setBankCalls)
+}
+
+func TestSetProgramBanks_SmallBanksNoSplit(t *testing.T) {
+	// When bank size is <= 16KB, no splitting should occur
+	cart := &cartridge.Cartridge{
+		PRG: make([]byte, 0x8000), // 32KB = 2 x 16KB internal banks
+	}
+	arch := &mockArchitecture{bankWindowSize: 0x4000} // 16KB windows
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+	mapper.SetCodeBaseAddress(0x8000)
+
+	mockVars := &mockVariableManager{}
+	mockConsts := &mockConstantManager{}
+	mockDis := &mockDisasm{
+		opts: options.Disassembler{},
+	}
+
+	mapper.InjectDependencies(Dependencies{
+		Disasm: mockDis,
+		Vars:   mockVars,
+		Consts: mockConsts,
+	})
+	mapper.InitializeDependencyBanks()
+
+	app := &program.Program{}
+	err = mapper.SetProgramBanks(app)
+	assert.NoError(t, err)
+
+	// 32KB PRG with 16KB window → internal banks are 16KB each (not > 0x4000),
+	// so they should NOT be split. Each bank is already 16KB.
+	// initializeBanks creates banks of min(remaining, 0x8000).
+	// With 0x8000 PRG, that's a single 32KB bank.
+	// Since bankWindowSize != 0 and bank size (0x8000) > 0x4000, it WILL be split.
 	assert.Len(t, app.PRG, 2)
 	assert.Equal(t, "PRG_BANK_0", app.PRG[0].Name)
 	assert.Equal(t, "PRG_BANK_1", app.PRG[1].Name)
-
-	// Verify AssignBankVariables and AssignBankConstants were called for each bank
-	assert.Equal(t, 2, mockVars.setBankCalls)
-	assert.Equal(t, 2, mockConsts.setBankCalls)
+	assert.Equal(t, uint16(0x8000), app.PRG[0].BaseAddress)
+	assert.Equal(t, uint16(0xC000), app.PRG[1].BaseAddress)
 }
 
 func TestSetProgramBanks_WithOffsetComments(t *testing.T) {

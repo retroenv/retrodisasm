@@ -15,7 +15,8 @@ func NewPRGBank(size int) *PRGBank {
 
 // PRGBank defines a PRG bank.
 type PRGBank struct {
-	Name string
+	Name        string
+	BaseAddress uint16
 
 	Offsets []Offset
 	Vectors [3]uint16
@@ -59,5 +60,5 @@ func (bank PRGBank) LastNonZeroByte(options options.Disassembler) int {
 		return i + 1
 	}
 
-	return endIndex
+	return 0
 }

@@ -90,7 +90,7 @@ func (f FileWriter) Write() error {
 		lastBank := i == len(f.app.PRG)-1
 		writes = append(writes,
 			prgBankWrite{
-				address:  fmt.Sprintf("$%04x", f.app.CodeBaseAddress),
+				address:  fmt.Sprintf("$%04x", bank.BaseAddress),
 				bank:     bank,
 				lastBank: lastBank,
 			},
@@ -129,55 +129,45 @@ func (f FileWriter) Write() error {
 }
 
 func (f FileWriter) writeBank(w prgBankWrite) error {
-	if err := f.writeSegment(w.address); err != nil {
-		return err
+	bankWriteCloser, err := f.newBankWriter(w.bank.Name)
+	if err != nil {
+		return fmt.Errorf("creating bank writer: %w", err)
 	}
-	if err := f.writeConstants(w.bank); err != nil {
-		return err
-	}
-	if err := f.writeVariables(w.bank); err != nil {
-		return err
-	}
-	if err := f.writeCode(w.bank); err != nil {
-		return err
+	defer func() { _ = bankWriteCloser.Close() }()
+
+	bankW := writer.New(f.app, bankWriteCloser, writer.Options{
+		OffsetComments: f.options.OffsetComments,
+	})
+
+	if _, err := fmt.Fprintf(bankWriteCloser, "\n.base %s\n\n", w.address); err != nil {
+		return fmt.Errorf("writing segment: %w", err)
 	}
 
+	if err := bankW.OutputAliasMap(w.bank.Constants); err != nil {
+		return fmt.Errorf("writing constants output alias map: %w", err)
+	}
+	if err := bankW.OutputAliasMap(w.bank.Variables); err != nil {
+		return fmt.Errorf("writing variables output alias map: %w", err)
+	}
+
+	endIndex := w.bank.LastNonZeroByte(f.options)
+	if err := bankW.ProcessPRG(w.bank, endIndex); err != nil {
+		return fmt.Errorf("writing PRG: %w", err)
+	}
+
+	vectorsAddr := w.bank.BaseAddress + uint16(len(w.bank.Offsets)) - 6
+
 	if w.lastBank {
-		if err := f.writeVectors(f.app.Handlers.NMI, f.app.Handlers.Reset, f.app.Handlers.IRQ); err != nil {
+		if err := f.writeVectorsTo(bankWriteCloser, vectorsAddr, f.app.Handlers.NMI, f.app.Handlers.Reset, f.app.Handlers.IRQ); err != nil {
 			return err
 		}
 	} else {
 		nmi := fmt.Sprintf("$%04X", w.bank.Vectors[0])
 		reset := fmt.Sprintf("$%04X", w.bank.Vectors[1])
 		irq := fmt.Sprintf("$%04X", w.bank.Vectors[2])
-		if err := f.writeVectors(nmi, reset, irq); err != nil {
+		if err := f.writeVectorsTo(bankWriteCloser, vectorsAddr, nmi, reset, irq); err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-// writeSegment writes a segment header to the output.
-func (f FileWriter) writeSegment(address string) error {
-	_, err := fmt.Fprintf(f.mainWriter, "\n.base %s\n\n", address)
-	if err != nil {
-		return fmt.Errorf("writing segment: %w", err)
-	}
-	return nil
-}
-
-// writeConstants writes constant aliases to the output.
-func (f FileWriter) writeConstants(bank *program.PRGBank) error {
-	if err := f.writer.OutputAliasMap(bank.Constants); err != nil {
-		return fmt.Errorf("writing constants output alias map: %w", err)
-	}
-	return nil
-}
-
-// writeVariables writes variable aliases to the output.
-func (f FileWriter) writeVariables(bank *program.PRGBank) error {
-	if err := f.writer.OutputAliasMap(bank.Variables); err != nil {
-		return fmt.Errorf("writing variables output alias map: %w", err)
 	}
 	return nil
 }
@@ -206,33 +196,24 @@ func (f FileWriter) writeCHR() error {
 	return nil
 }
 
-// writeVectors writes the IRQ vectors.
-func (f FileWriter) writeVectors(nmi, reset, irq string) error {
+// writeVectorsTo writes the IRQ vectors to the specified writer.
+func (f FileWriter) writeVectorsTo(w io.Writer, vectorsAddr uint16, nmi, reset, irq string) error {
 	if f.options.CodeOnly {
 		return nil
 	}
 
-	addr := fmt.Sprintf("$%04X", f.app.VectorsStartAddress)
+	addr := fmt.Sprintf("$%04X", vectorsAddr)
 
-	_, err := fmt.Fprintf(f.mainWriter, "\n.pad %s\n", addr)
+	_, err := fmt.Fprintf(w, "\n.pad %s\n", addr)
 	if err != nil {
 		return fmt.Errorf("writing padding: %w", err)
 	}
 
-	if err := f.writeSegment(addr); err != nil {
-		return err
+	if _, err := fmt.Fprintf(w, "\n.base %s\n\n", addr); err != nil {
+		return fmt.Errorf("writing segment: %w", err)
 	}
-	if _, err := fmt.Fprintf(f.mainWriter, vectors, nmi, reset, irq); err != nil {
+	if _, err := fmt.Fprintf(w, vectors, nmi, reset, irq); err != nil {
 		return fmt.Errorf("writing vectors: %w", err)
-	}
-	return nil
-}
-
-// writeCode writes the code to the output.
-func (f FileWriter) writeCode(bank *program.PRGBank) error {
-	endIndex := bank.LastNonZeroByte(f.options)
-	if err := f.writer.ProcessPRG(bank, endIndex); err != nil {
-		return fmt.Errorf("writing PRG: %w", err)
 	}
 	return nil
 }

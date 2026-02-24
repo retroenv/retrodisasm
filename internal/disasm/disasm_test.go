@@ -554,7 +554,7 @@ func runDisasm(t *testing.T, setup func(options *options.Disassembler, cart *car
 	writer := bufio.NewWriter(&buffer)
 
 	newBankWriter := func(_ string) (io.WriteCloser, error) {
-		return nil, nil // nolint: nilnil
+		return nopWriteCloser{writer}, nil
 	}
 
 	app, err := disasm.Process(context.Background(), writer, newBankWriter)
@@ -567,3 +567,9 @@ func runDisasm(t *testing.T, setup func(options *options.Disassembler, cart *car
 	expected = trimStringList(expected)
 	assert.Equal(t, expected, buf)
 }
+
+type nopWriteCloser struct {
+	io.Writer
+}
+
+func (nopWriteCloser) Close() error { return nil }
