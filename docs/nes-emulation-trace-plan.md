@@ -1730,6 +1730,155 @@ Post-phase note:
 - Timeline scripting infrastructure is now in place for deterministic menu/runtime progression experiments without code edits.
 - For current Rom City Rampage profiles, scripted sequence variation is stable but does not yet increase discovered code, so the next leverage point remains PPU/frame progression realism.
 
+### Phase 24: JOYPAD Timeline Preset Sweep Automation (Rom City Rampage)
+
+Status: Completed (2026-02-24)
+
+1. Add a repeatable JOYPAD timeline preset sweep for Rom City Rampage using the new `-trace-joypad1-seq` controls.
+2. Record verification status and coverage deltas in a machine-readable CSV.
+3. Keep generated artifacts in `internal/testroms/special` for direct inspection/reuse.
+
+Acceptance:
+
+1. Script supports deterministic preset runs with configurable assembler/trace budgets.
+2. Output includes per-preset verify status and code-line heuristic deltas versus neutral baseline.
+3. Preset sweep runs cleanly for `asm6` and `ca65`.
+
+Implementation notes:
+
+- New automation script:
+  - `scripts/sweep_rom_city_rampage_joypad_timeline.sh`
+  - Supports:
+    - assembler mode: `asm6|ca65|all`
+    - trace budgets: `-i/-v/-b`
+    - preset selection: `-p`
+    - output dir and CSV path: `-d/-o`
+  - Built-in deterministic presets:
+    - `neutral`
+    - `start_tap`
+    - `start_hold`
+    - `right_then_start`
+    - `down_then_start`
+    - `a_then_start`
+    - `menu_probe`
+- Metrics captured per run:
+  - `status` (verify pass/fail)
+  - `duration_ms`
+  - `asm_lines`
+  - `asm_bytes`
+  - `code_lines`
+  - `code_delta_vs_neutral`
+- Coverage heuristic used by the script:
+  - counts mnemonic-like lines with regex `^[[:space:]]+[a-z]{3}\b`
+  - this matches existing Rom City Rampage reporting (`code=1075` at current high-coverage profile).
+
+Validation:
+
+- Script syntax:
+  - `bash -n scripts/sweep_rom_city_rampage_joypad_timeline.sh`
+  - Result: success.
+- `asm6` sweep run:
+  - `scripts/sweep_rom_city_rampage_joypad_timeline.sh -a asm6 -o /tmp/phase24_rc_joypad_sweep_asm6.csv`
+  - Result:
+    - all 7 presets verified successfully
+    - `code_lines=1075` for all presets (`delta=0`).
+- `asm6+ca65` sweep run:
+  - `scripts/sweep_rom_city_rampage_joypad_timeline.sh -a all -o /tmp/phase24_rc_joypad_sweep_all.csv`
+  - Result:
+    - all 14 runs (7 presets x 2 assemblers) verified successfully
+    - `code_lines=1075` for all presets on both assemblers (`delta=0`).
+
+Post-phase note:
+
+- Timeline preset sweeps are now one-command reproducible and directly comparable, which removes manual setup friction for input-path experiments.
+- Current Rom City Rampage traces remain flat across tested JOYPAD timelines, reinforcing that the next gains are more likely from PPU/frame progression fidelity than controller timelines alone.
+
+### Phase 25: Mapper-Triage JOYPAD Timeline Sweep (Mapper 2 + Telemetry)
+
+Status: Completed (2026-02-24)
+
+1. Extend JOYPAD timeline preset sweeps from Rom City Rampage to mapper-2 notworking triage ROMs.
+2. Capture advisory emu-trace telemetry per run (`unique_pc`, `mapper_writes`, `halt_reason`, etc.) alongside verify outcome.
+3. Add lightweight failure-class tagging to separate input-integrity failures from trace/mapper mismatch failures.
+
+Acceptance:
+
+1. Sweep script supports mapper/group/preset filters and emits machine-readable CSV.
+2. Output includes both verify status and telemetry fields required for preset-impact comparison.
+3. Mapper-2 notworking sweep runs successfully and produces actionable summary signals.
+
+Implementation notes:
+
+- New triage sweep script:
+  - `scripts/sweep_mapper_joypad_timeline.sh`
+  - Default target profile:
+    - `group=notworking`
+    - `mappers=2`
+    - `trace-mode=hybrid`
+    - `max_instr=200000`
+    - `max_visits=8`
+    - `max_branch=0`
+  - Presets:
+    - `neutral`
+    - `start_tap`
+    - `start_hold`
+    - `right_then_start`
+    - `down_then_start`
+    - `a_then_start`
+    - `menu_probe`
+- New CSV output fields include:
+  - run identity:
+    - `rom`, `set`, `mapper`, `preset`, `sequence`
+  - result:
+    - `status`, `failure_class`, `duration_ms`
+  - output size/coverage:
+    - `asm_lines`, `asm_bytes`, `code_lines`
+  - advisory telemetry:
+    - `unique_pc`, `unique_mapping`, `mapper_writes`, `mapping_changes`
+    - `conditional_branches`, `branch_alternates`, `branch_states_executed`
+    - `halt_reason`, `emu_only_pc`, `static_only_pc`
+  - optional artifact pointer:
+    - `artifact_path`
+- Failure classification tags:
+  - `input_corrupt`
+  - `assembler_range`
+  - `prg_mismatch`
+  - `verification_failed`
+  - `disasm_failed`
+  - `unknown`
+- Script now prints end-of-run summary:
+  - total/pass/fail counts
+  - failure-class counts
+  - per-ROM telemetry-variant counts (stability check across presets)
+
+Validation:
+
+- Script syntax:
+  - `bash -n scripts/sweep_mapper_joypad_timeline.sh`
+  - Result: success.
+- Mapper-2 notworking sweep:
+  - `scripts/sweep_mapper_joypad_timeline.sh -g notworking -m 2 -o /tmp/phase25_mapper2_joypad_timeline.csv`
+  - Summary:
+    - `total runs: 49` (`7 ROMs * 7 presets`)
+    - `pass runs: 35`
+    - `fail runs: 14`
+    - failure classes:
+      - `prg_mismatch: 7` (`Alfred Chicken`)
+      - `input_corrupt: 7` (`Archon`)
+- Telemetry correlation highlights:
+  - Per-ROM telemetry variants across presets were `1` for all 7 ROMs, i.e. no preset-dependent telemetry divergence under current budgets.
+  - `Alfred Chicken` remained fixed at:
+    - `unique_pc=111`
+    - `mapper_writes=4`
+    - `halt_reason="pc visit limit exceeded at $C93F"`
+    - `status=fail` (`prg_mismatch`) for all presets.
+  - `Archon` consistently classified as `input_corrupt` with no advisory telemetry emitted.
+
+Post-phase note:
+
+- Mapper-2 preset sweeps are now reproducible and telemetry-correlated, but current JOYPAD timelines do not move execution into new mapper/input states for this corpus slice.
+- Remaining progress is most likely tied to PPU/frame progression fidelity and/or altered trace budgets/policies, not additional preset variants alone.
+
 ## Testing Plan
 
 1. Unit tests
@@ -1781,4 +1930,4 @@ Post-phase note:
 1. Extend PPU progression realism beyond status/data loops (frame/vblank cadence tied to register interaction and timing proxies).
 2. Add a fast failure classifier in benchmark scripts for corrupt/truncated ROM inputs (`Archon` class) to separate input-integrity failures from trace/mapper regressions.
 3. Replace mapper-1 branch guard with a condition-based alternate-path policy (mapper-safe heuristics) so branch exploration can be re-enabled without reintroducing the regression.
-4. Add repeatable JOYPAD timeline presets/sweeps for menu-state traversal (e.g. title -> start -> in-game) and record resulting coverage deltas.
+4. Use mapper-2 sweep telemetry to drive targeted PPU/frame-model experiments (starting with `Alfred Chicken` at hotspot `$C93F`) and re-measure `unique_pc` lift under the same preset matrix.
