@@ -22,6 +22,9 @@ test-coverage-web: test-coverage ## run unit tests and show test coverage in bro
 install: ## install all binaries
 	go install -buildvcs=false .
 
+test-rom-city-rampage: ## verify Rom City Rampage with ca65 and asm6
+	bash scripts/verify_rom_city_rampage.sh
+
 install-linters: ## install all used linters
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_VERSION}
 
