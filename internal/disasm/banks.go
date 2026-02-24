@@ -559,6 +559,22 @@ func (dis *Disasm) extractSplitPointerTargets(lowTable, highTable, end uint16,
 
 		targetOp, err := dis.ReadMemory(target)
 		if err != nil || !isLikelyM6502RoutineStartOpcode(targetOp) {
+			if err != nil {
+				dis.stats.splitSeedRejectOpcode++
+				dis.stats.splitSeedRejectOpcodeRead++
+				if started {
+					trailingSkips++
+					if trailingSkips > maxTrailingSkips {
+						break
+					}
+					continue
+				}
+				leadingSkips++
+				if leadingSkips > maxLeadingSkips {
+					break
+				}
+				continue
+			}
 			if len(targets) == 0 && !started && dis.isWeakSplitEntryCandidate(target) {
 				targets = append(targets, target)
 				started = true
@@ -566,7 +582,17 @@ func (dis *Disasm) extractSplitPointerTargets(lowTable, highTable, end uint16,
 				dis.stats.splitSeedAcceptedWeak++
 				break
 			}
+			if len(targets) == 0 && !started && isWeakSplitEntryTerminatorOpcode(targetOp) &&
+				dis.hasAdjacentSplitEntryEvidence(target, end) {
+				targets = append(targets, target)
+				started = true
+				trailingSkips = 0
+				dis.stats.splitSeedAcceptedWeak++
+				dis.stats.splitSeedAcceptedWeakRT++
+				break
+			}
 			dis.stats.splitSeedRejectOpcode++
+			dis.recordSplitOpcodeGateReject(targetOp)
 			if started {
 				trailingSkips++
 				if trailingSkips > maxTrailingSkips {
@@ -619,6 +645,56 @@ func (dis *Disasm) isWeakSplitEntryCandidate(target uint16) bool {
 			program.FunctionReference |
 			program.JumpEngine,
 	)
+}
+
+func (dis *Disasm) hasAdjacentSplitEntryEvidence(target, end uint16) bool {
+	const radius = 8
+
+	start := int(target) - radius
+	if start < int(dis.codeBaseAddress) {
+		start = int(dis.codeBaseAddress)
+	}
+	stop := int(target) + radius
+	if stop > int(end) {
+		stop = int(end)
+	}
+	for addr := start; addr <= stop; addr++ {
+		if uint16(addr) == target {
+			continue
+		}
+		offsetInfo := dis.mapper.OffsetInfo(uint16(addr))
+		if offsetInfo.IsType(
+			program.CodeOffset |
+				program.CallDestination |
+				program.FunctionReference |
+				program.JumpEngine,
+		) {
+			return true
+		}
+	}
+	return false
+}
+
+func (dis *Disasm) recordSplitOpcodeGateReject(op byte) {
+	opcode := cpum6502.Opcodes[op]
+	if opcode.Instruction == nil {
+		dis.stats.splitSeedRejectOpcodeInv++
+		return
+	}
+	if opcode.Instruction.Unofficial {
+		dis.stats.splitSeedRejectOpcodeUno++
+		return
+	}
+	switch opcode.Instruction.Name {
+	case cpum6502.BrkName:
+		dis.stats.splitSeedRejectOpcodeBRK++
+	case cpum6502.RtsName:
+		dis.stats.splitSeedRejectOpcodeRTS++
+	case cpum6502.RtiName:
+		dis.stats.splitSeedRejectOpcodeRTI++
+	default:
+		dis.stats.splitSeedRejectOpcodeOth++
+	}
 }
 
 func (dis *Disasm) readWordAt(address uint16) (uint16, bool) {
@@ -754,5 +830,18 @@ func isLikelyM6502RoutineStartOpcode(op byte) bool {
 		return false
 	default:
 		return true
+	}
+}
+
+func isWeakSplitEntryTerminatorOpcode(op byte) bool {
+	opcode := cpum6502.Opcodes[op]
+	if opcode.Instruction == nil {
+		return false
+	}
+	switch opcode.Instruction.Name {
+	case cpum6502.RtsName, cpum6502.RtiName:
+		return true
+	default:
+		return false
 	}
 }

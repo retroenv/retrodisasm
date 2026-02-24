@@ -2844,6 +2844,92 @@ Post-phase note:
 - The weak singleton tier is now wired and measurable, but Rom City currently yields no qualifying weak candidates under strict evidence gating.
 - Next gain should come from characterizing `opcode_gate` rejects by opcode class and expanding weak evidence only where telemetry supports it.
 
+### Phase 41: Opcode-Class Reject Telemetry + RTS/RTI Adjacent-Evidence Weak Tier
+
+Status: Completed (2026-02-24)
+
+1. Split opcode-gate rejects into explicit classes to isolate low-risk expansion paths.
+2. Add a second-stage weak-entry acceptance for opcode-gated singleton `RTS/RTI` targets when nearby code evidence exists.
+3. Keep behavior bounded and measurable (no broad relaxation).
+
+Acceptance:
+
+1. Trace stats include opcode-class reject keys plus `split_seed_accepted_weak_rts_rti`.
+2. Full tests and Rom City verification remain green.
+3. Rom City output and code-density remain stable unless a qualified weak singleton is found.
+
+Implementation notes:
+
+- Opcode-class reject accounting:
+  - `internal/disasm/stats.go`
+  - Added/logged:
+    - `split_seed_reject_opcode_read_error`
+    - `split_seed_reject_opcode_invalid`
+    - `split_seed_reject_opcode_unofficial`
+    - `split_seed_reject_opcode_brk`
+    - `split_seed_reject_opcode_rts`
+    - `split_seed_reject_opcode_rti`
+    - `split_seed_reject_opcode_other`
+- Extraction flow updates:
+  - `internal/disasm/banks.go`
+  - `extractSplitPointerTargets(...)` now:
+    - classifies read errors separately under opcode-gate rejects
+    - classifies opcode-gate failures by opcode category
+    - supports bounded singleton weak acceptance for `RTS/RTI` when `hasAdjacentSplitEntryEvidence(...)` is true.
+- New helpers:
+  - `internal/disasm/banks.go`
+  - `hasAdjacentSplitEntryEvidence(target, end)` (radius=8, code-window bounded)
+  - `recordSplitOpcodeGateReject(op)`
+  - `isWeakSplitEntryTerminatorOpcode(op)` (`RTS`/`RTI`)
+- Weak acceptance telemetry:
+  - `internal/disasm/stats.go`
+  - Added/logged:
+    - `split_seed_accepted_weak_rts_rti`
+
+Validation:
+
+- Full tests:
+  - `GOCACHE=/tmp/gocache_retrodisasm go test ./... -count=1`
+  - Result: success.
+- Rom City Rampage verify/regeneration:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+  - Output unchanged:
+    - `internal/testroms/special/Rom City Rampage.asm6.asm` (`61042` lines)
+    - `internal/testroms/special/Rom City Rampage.ca65.asm` (`60967` lines)
+- Code-density result:
+  - `rg -n '^[[:space:]]+[a-z]{3}\b' ... | wc -l`
+  - After Phase 40: `7542`
+  - After Phase 41: `7542`
+  - Delta: `+0` code lines.
+- Telemetry delta (Rom City Rampage, asm6, hybrid profile):
+  - Before (Phase 40):
+    - `split_seed_reject_opcode_gate=30`
+    - `split_seed_accepted_weak=0`
+  - After (Phase 41):
+    - `split_seed_reject_opcode_gate=30`
+    - `split_seed_reject_opcode_read_error=0`
+    - `split_seed_reject_opcode_invalid=11`
+    - `split_seed_reject_opcode_unofficial=6`
+    - `split_seed_reject_opcode_brk=0`
+    - `split_seed_reject_opcode_rts=13`
+    - `split_seed_reject_opcode_rti=0`
+    - `split_seed_reject_opcode_other=0`
+    - `split_seed_accepted_weak=0`
+    - `split_seed_accepted_weak_rts_rti=0`
+    - `split_seed_accepted_targets=16`
+    - `split_seed_candidate_pairs=28`
+    - `split_seed_rejected_correlation=24`
+    - `split_seed_rejected_plausibility=19`
+    - `split_seed_rejected_extract=0`
+    - `split_seed_reject_invalid_target=17`
+    - `split_seed_reject_shape=1`
+
+Post-phase note:
+
+- The dominant opcode-gate class is now confirmed as `RTS` (13/30), followed by invalid opcodes (11/30).
+- The new `RTS/RTI + adjacent evidence` weak tier is active but produced no qualifying singleton in Rom City under current radius/evidence constraints.
+
 ## Testing Plan
 
 1. Unit tests
@@ -2892,8 +2978,9 @@ Post-phase note:
 
 ## Immediate Next Steps
 
-1. Split `split_seed_reject_opcode_gate` into opcode-class telemetry (e.g., `BRK`, `RTS`, `RTI`, unofficial/invalid, read-error) to isolate low-risk expansion paths.
-2. Add a second-stage weak-entry rule for opcode-gated singletons that only admits `RTS/RTI` targets with adjacent existing code evidence (e.g., nearby `CodeOffset`/`CallDestination`).
-3. Use mapper-2 sweep telemetry to drive targeted PPU/frame-model experiments (starting with `Alfred Chicken` at hotspot `$C93F`) and re-measure `unique_pc` lift under the same preset matrix.
-4. Add a compact automated experiment matrix around `Alfred Chicken` (`max_visits` and PPU-stub variants) and feed results through class-aware clustering to quantify which changes shift failure class or hotspot region.
-5. Tune mapper-1 clamp thresholds from real benchmark telemetry (coverage/runtime deltas) to reduce unnecessary budget drops while preserving stability.
+1. Add targeted `RTS` singleton rescue heuristics with an explicit safety cap (per-bank max accepts), driven by the now-dominant `split_seed_reject_opcode_rts` class.
+2. Add distance-aware adjacent evidence telemetry (minimum delta from target to nearest code evidence) to tune the current radius=8 guard with data.
+3. Add a limited invalid-opcode salvage experiment for singleton targets that have both local code evidence and upstream split correlation, and compare noise against `split_seed_reject_shape`.
+4. Use mapper-2 sweep telemetry to drive targeted PPU/frame-model experiments (starting with `Alfred Chicken` at hotspot `$C93F`) and re-measure `unique_pc` lift under the same preset matrix.
+5. Add a compact automated experiment matrix around `Alfred Chicken` (`max_visits` and PPU-stub variants) and feed results through class-aware clustering to quantify which changes shift failure class or hotspot region.
+6. Tune mapper-1 clamp thresholds from real benchmark telemetry (coverage/runtime deltas) to reduce unnecessary budget drops while preserving stability.

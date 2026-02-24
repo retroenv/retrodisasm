@@ -28,9 +28,17 @@ type traceStats struct {
 	splitSeedRejectedExtract  uint64
 	splitSeedRejectInvalid    uint64
 	splitSeedRejectOpcode     uint64
+	splitSeedRejectOpcodeRead uint64
+	splitSeedRejectOpcodeInv  uint64
+	splitSeedRejectOpcodeUno  uint64
+	splitSeedRejectOpcodeBRK  uint64
+	splitSeedRejectOpcodeRTS  uint64
+	splitSeedRejectOpcodeRTI  uint64
+	splitSeedRejectOpcodeOth  uint64
 	splitSeedRejectShape      uint64
 	splitSeedAcceptedTargets  uint64
 	splitSeedAcceptedWeak     uint64
+	splitSeedAcceptedWeakRT   uint64
 
 	parsedOffsets       uint64
 	alreadyParsedSkips  uint64
@@ -68,9 +76,17 @@ func (dis *Disasm) logTraceStats(start time.Time, completed bool) {
 		log.Uint64("split_seed_rejected_extract", dis.stats.splitSeedRejectedExtract),
 		log.Uint64("split_seed_reject_invalid_target", dis.stats.splitSeedRejectInvalid),
 		log.Uint64("split_seed_reject_opcode_gate", dis.stats.splitSeedRejectOpcode),
+		log.Uint64("split_seed_reject_opcode_read_error", dis.stats.splitSeedRejectOpcodeRead),
+		log.Uint64("split_seed_reject_opcode_invalid", dis.stats.splitSeedRejectOpcodeInv),
+		log.Uint64("split_seed_reject_opcode_unofficial", dis.stats.splitSeedRejectOpcodeUno),
+		log.Uint64("split_seed_reject_opcode_brk", dis.stats.splitSeedRejectOpcodeBRK),
+		log.Uint64("split_seed_reject_opcode_rts", dis.stats.splitSeedRejectOpcodeRTS),
+		log.Uint64("split_seed_reject_opcode_rti", dis.stats.splitSeedRejectOpcodeRTI),
+		log.Uint64("split_seed_reject_opcode_other", dis.stats.splitSeedRejectOpcodeOth),
 		log.Uint64("split_seed_reject_shape", dis.stats.splitSeedRejectShape),
 		log.Uint64("split_seed_accepted_targets", dis.stats.splitSeedAcceptedTargets),
 		log.Uint64("split_seed_accepted_weak", dis.stats.splitSeedAcceptedWeak),
+		log.Uint64("split_seed_accepted_weak_rts_rti", dis.stats.splitSeedAcceptedWeakRT),
 		log.Uint64("parsed_offsets", dis.stats.parsedOffsets),
 		log.Uint64("already_parsed_skips", dis.stats.alreadyParsedSkips),
 		log.Uint64("inspect_skipped", dis.stats.inspectSkipped),
