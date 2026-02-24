@@ -159,12 +159,13 @@ func (f FileWriter) writePRGBank(t prgBankWrite) error {
 	if err := f.writeVariables(t.bank); err != nil {
 		return err
 	}
-	if err := f.writeCode(t.bank); err != nil {
+	endIndex, err := f.writeCode(t.bank)
+	if err != nil {
 		return err
 	}
 	// For multi-bank ROMs, write vectors at end of each bank
 	if t.isMultiBank && !f.options.CodeOnly {
-		if err := f.writeBankVectors(t.bank); err != nil {
+		if err := f.writeBankVectors(t.bank, endIndex); err != nil {
 			return err
 		}
 	}
@@ -223,23 +224,36 @@ func (f FileWriter) writeCHR() error {
 }
 
 // writeCode writes the code to the output.
-func (f FileWriter) writeCode(bank *program.PRGBank) error {
+func (f FileWriter) writeCode(bank *program.PRGBank) (int, error) {
 	if !f.options.CodeOnly {
 		if err := f.writeSegment(bank.Name); err != nil {
-			return err
+			return 0, err
 		}
 	}
 
 	endIndex := bank.LastNonZeroByte(f.options)
 	if err := f.writer.ProcessPRG(bank, endIndex); err != nil {
-		return fmt.Errorf("writing PRG: %w", err)
+		return 0, fmt.Errorf("writing PRG: %w", err)
 	}
-	return nil
+	return endIndex, nil
 }
 
 // writeBankVectors writes vectors at the end of a bank for multi-bank ROMs.
 // Each bank has its own NMI, Reset, and IRQ vectors stored in the last 6 bytes.
-func (f FileWriter) writeBankVectors(bank *program.PRGBank) error {
+func (f FileWriter) writeBankVectors(bank *program.PRGBank, endIndex int) error {
+	// Multi-bank vectors must always sit in the last 6 bytes of the bank.
+	// Pad with explicit zeros so vectors are not emitted immediately after code.
+	vectorStartIndex := len(bank.Offsets) - 6
+	padding := vectorStartIndex - endIndex
+	if padding < 0 {
+		return fmt.Errorf("bank data overlaps vectors: end_index=%d vector_start_index=%d", endIndex, vectorStartIndex)
+	}
+	if padding > 0 {
+		if _, err := fmt.Fprintf(f.mainWriter, "\n.res %d, $00\n", padding); err != nil {
+			return fmt.Errorf("writing vector padding: %w", err)
+		}
+	}
+
 	// Vectors are: [0]=NMI, [1]=Reset, [2]=IRQ
 	// Output as .addr directives using the addresses stored in the bank
 	nmi := fmt.Sprintf("$%04X", bank.Vectors[0])

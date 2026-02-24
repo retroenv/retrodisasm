@@ -920,6 +920,137 @@ Post-phase note:
 - The cluster outputs now make repeated mismatch zones and repeated symbol regions explicit, enabling targeted mapper/I/O debugging without rerunning broad sweeps.
 - Some failure artifacts contain zero `Offset mismatch` lines (`first_mismatch_offset=none`), which indicates non-offset verification failure modes are also present and should be triaged separately.
 
+### Phase 11: Large-Matrix Sweep Re-Cluster and Stability Extraction
+
+Status: Completed (2026-02-24)
+
+1. Run a larger mapper `1/2` trace-budget matrix with per-failure artifact capture.
+2. Extend artifact clustering to emit stability-filtered clusters.
+3. Re-cluster matrix artifacts and identify high-hit mismatch zones that persist across configurations.
+
+Acceptance:
+
+1. Matrix sweep executes across multiple `max_visits` and `max_branch` combinations with artifact capture enabled.
+2. Clustering output can filter by minimum `artifact_hits` to isolate stable offsets/labels.
+3. Documentation includes stable hotspot findings and observed pass/fail behavior across the matrix.
+
+Implementation notes:
+
+- Stability extraction added to clustering tool:
+  - `scripts/cluster_failure_artifacts.sh`
+  - New option:
+    - `-k <min_hits>` (minimum `artifact_hits` threshold; default `2`)
+  - New generated outputs:
+    - `<details>_offset_stable.csv`
+    - `<details>_label_stable.csv`
+  - Markdown summary now includes:
+    - stability threshold banner
+    - per-mapper stable mismatch and stable label tables
+- Existing cluster behavior remains unchanged for raw aggregate outputs (`offset_clusters`, `label_clusters`).
+
+Validation:
+
+- Syntax sanity:
+  - `bash -n scripts/cluster_failure_artifacts.sh scripts/benchmark_trace_sweep.sh scripts/benchmark_mapper_corpus.sh`
+  - Result: success.
+- Large matrix sweep with artifacts:
+  - `scripts/benchmark_trace_sweep.sh -g notworking -m 1,2 -i 200000 -v 8,16,32 -b 0,64,128,256 -d /tmp/phase11_artifacts_sweep -o /tmp/phase11_trace_sweep_m12.csv`
+  - Matrix size:
+    - 12 configs (`3 visits * 4 branch`)
+    - 9 ROMs
+    - 108 runs total
+  - Pass/fail summary was invariant across all configs:
+    - mapper `1`: `1 pass / 1 fail`
+    - mapper `2`: `2 pass / 5 fail`
+- Re-cluster matrix artifacts with stability threshold:
+  - `scripts/cluster_failure_artifacts.sh -d /tmp/phase11_artifacts_sweep -o /tmp/phase11_failure_cluster_summary.md -c /tmp/phase11_failure_cluster_details.csv -n 12 -k 10`
+  - Result:
+    - `artifacts analyzed = 72` (6 failed ROMs/config * 12 configs)
+    - stable CSV outputs emitted (`offset_stable`, `label_stable`)
+- Stable hotspot highlights (`artifact_hits >= 10`):
+  - mapper `1` stable offsets:
+    - `0x7ff8`, `0x7ff9`, `0x7ffe`, `0x7fff`, `0xfff8`, `0xfff9`, `0xfffe`, `0xffff` (all `12`)
+  - mapper `2` stable offsets:
+    - `0x1`, `0x1fff0`-`0x1fff5`, `0x1fffa`-`0x1fffc`, `0x7f18`-`0x7f1d`, `0x7ffa`-`0x7ffc` (all `12`)
+  - mapper `2` stable labels:
+    - `NMI` (`48`), `Reset` (`48`)
+    - `IRQ`, `IRQ_Bank0`, `IRQ_Bank1`, `IRQ_Bank2`, `NMI_Bank0`, `Reset_Bank1` (each `36`)
+
+Post-phase note:
+
+- Larger branch/visit budgets did not change outcomes for current mapper `1/2` not-working ROMs, reinforcing that the blocker is mapper/I/O behavior fidelity rather than frontier-size tuning.
+- The stable mismatch clusters strongly concentrate in vector-adjacent regions, which narrows the next debugging target.
+
+### Phase 12: Multi-Bank Vector Placement Fix (ca65) and Re-Baseline
+
+Status: Completed (2026-02-24)
+
+1. Implement targeted fix for vector-region mismatch hotspots by forcing multi-bank vector emission to bank tail.
+2. Re-run not-working and working corpus benchmarks to confirm impact and guard regressions.
+3. Re-cluster remaining failures to verify prior vector-adjacent hotspot family is resolved.
+
+Acceptance:
+
+1. Multi-bank `ca65` output writes vectors at fixed last-6-byte bank positions instead of "append at current location".
+2. Mapper `1/2` pass rates improve on not-working corpus.
+3. Working corpus (`mapper 0/3/7`) remains unchanged.
+
+Implementation notes:
+
+- `ca65` multi-bank vector placement correction:
+  - `internal/assembler/ca65/file.go`
+  - `writeCode(...)` now returns emitted `endIndex`.
+  - `writeBankVectors(...)` now receives `endIndex` and inserts explicit zero padding:
+    - `padding = (len(bank.Offsets) - 6) - endIndex`
+    - emits `.res <padding>, $00` before `.addr nmi, reset, irq`
+  - This guarantees vectors are emitted at fixed bank tail addresses.
+- Safety check:
+  - if `endIndex` exceeds vector start, writer now returns an explicit overlap error.
+- Context:
+  - Prior implementation wrote `.addr` immediately after emitted code/data in multi-bank mode, which shifted vectors earlier in bank when tail bytes were mostly zero and directly caused vector-zone mismatch clusters.
+
+Validation:
+
+- Test suite:
+  - `GOCACHE=/tmp/retrodisasm_gocache_phase12 go test ./...`
+  - Result: success.
+- Focused verify checks that were previously failing with vector-zone mismatches now pass:
+  - `Bomberman II (USA).nes` (mapper 1) `EXIT:0`
+  - `Casino Kid II (USA).nes` (mapper 2) `EXIT:0`
+  - `The Black Bass (USA).nes` (mapper 2) `EXIT:0`
+- Not-working baseline after fix:
+  - `scripts/benchmark_mapper_corpus.sh -g notworking -a ca65 -o /tmp/phase12_mapper_corpus_notworking.csv`
+  - Summary:
+    - mapper `1`: `2 pass / 0 fail / 2 total` (was `1/2`)
+    - mapper `2`: `4 pass / 3 fail / 7 total` (was `2/7`)
+- Working corpus guard:
+  - `scripts/benchmark_mapper_corpus.sh -g working -a ca65 -o /tmp/phase12_mapper_corpus_working.csv`
+  - Summary unchanged:
+    - mapper `0`: `41/41`
+    - mapper `3`: `6/6`
+    - mapper `7`: `1/1`
+- Sweep comparison (same phase-11 matrix shape):
+  - `scripts/benchmark_trace_sweep.sh -g notworking -m 1,2 -i 200000 -v 8,16,32 -b 0,64,128,256 -o /tmp/phase12_trace_sweep_m12_matrix.csv`
+  - Highlights:
+    - branch `0` now yields improved baseline:
+      - mapper `1`: `2/2`
+      - mapper `2`: `4/7`
+    - mapper `1` still degrades to `1/2` when branch expansion is enabled (`64/128/256`) for this ROM set.
+- Post-fix artifact clustering:
+  - `scripts/benchmark_trace_sweep.sh -g notworking -m 1,2 -i 200000 -v 8 -b 0 -d /tmp/phase12_artifacts -o /tmp/phase12_trace_sweep_m12_artifacts.csv`
+  - `scripts/cluster_failure_artifacts.sh -d /tmp/phase12_artifacts -o /tmp/phase12_failure_cluster_summary.md -c /tmp/phase12_failure_cluster_details.csv -n 12 -k 2`
+  - Result:
+    - remaining failures reduced to 3 ROMs (all mapper 2).
+    - previous stable vector-offset clusters are absent (`offset_stable.csv` empty at `min_hits=2`).
+
+Post-phase note:
+
+- The stable vector-adjacent mismatch family identified in Phase 11 is resolved for the current corpus slice; gains came from output-placement correctness rather than additional branch/frontier tuning.
+- Remaining failures are now concentrated in:
+  - `Alfred Chicken` (large PRG mismatch)
+  - `Casino Kid` (assembler range errors)
+  - `Archon` (cartridge/PRG load error: unexpected EOF)
+
 ## Testing Plan
 
 1. Unit tests
@@ -968,6 +1099,8 @@ Post-phase note:
 
 ## Immediate Next Steps
 
-1. Run larger sweep matrices (`max_visits` and `max_branch`) for mapper 1/2, then re-cluster artifacts to identify stable high-hit mismatch zones across configurations.
-2. Prioritize mapper 2 fixes around the recurring vector-region mismatch clusters now visible in Phase 10 artifacts.
+1. Investigate remaining mapper `2` failures with targeted artifact triage:
+   - `Alfred Chicken`: large PRG mismatch (non-vector hotspot pattern).
+   - `Casino Kid`: `ca65` range errors in generated asm.
+2. Isolate branch-expansion regression for mapper `1` (`Bomberman II` passes at branch `0` but fails at `64+`) and tighten alternate-path enqueue policy.
 3. Improve I/O stub realism (PPU/APU/controller hotspots) to reduce mapper-state divergence in startup/control loops.

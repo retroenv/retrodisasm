@@ -17,25 +17,28 @@ ARTIFACT_DIR=""
 OUTPUT_MD=""
 DETAILS_CSV=""
 TOP_N=10
+MIN_HITS=2
 
 usage() {
     cat <<EOF
-Usage: $(basename "$0") -d artifact_dir [-o summary_md] [-c details_csv] [-n top_n]
+Usage: $(basename "$0") -d artifact_dir [-o summary_md] [-c details_csv] [-n top_n] [-k min_hits]
 
 Options:
   -d artifact_dir Root directory containing failure artifact bundles (required)
   -o summary_md   Markdown summary path (default: <artifact_dir>/failure_cluster_summary.md)
   -c details_csv  Per-artifact detail CSV path (default: <artifact_dir>/failure_cluster_details.csv)
   -n top_n        Top N offsets/labels per mapper in summary (default: 10)
+  -k min_hits     Minimum artifact hits for stable-cluster outputs (default: 2)
 EOF
 }
 
-while getopts ":d:o:c:n:h" opt; do
+while getopts ":d:o:c:n:k:h" opt; do
     case "$opt" in
         d) ARTIFACT_DIR="$OPTARG" ;;
         o) OUTPUT_MD="$OPTARG" ;;
         c) DETAILS_CSV="$OPTARG" ;;
         n) TOP_N="$OPTARG" ;;
+        k) MIN_HITS="$OPTARG" ;;
         h)
             usage
             exit 0
@@ -69,6 +72,11 @@ if ! [[ "$TOP_N" =~ ^[0-9]+$ ]] || [[ "$TOP_N" -le 0 ]]; then
     exit 1
 fi
 
+if ! [[ "$MIN_HITS" =~ ^[0-9]+$ ]] || [[ "$MIN_HITS" -le 0 ]]; then
+    echo "min_hits must be a positive integer: $MIN_HITS" >&2
+    exit 1
+fi
+
 if [[ -z "$OUTPUT_MD" ]]; then
     OUTPUT_MD="${ARTIFACT_DIR%/}/failure_cluster_summary.md"
 fi
@@ -79,6 +87,8 @@ fi
 
 OFFSET_CSV="${DETAILS_CSV%.csv}_offset_clusters.csv"
 LABEL_CSV="${DETAILS_CSV%.csv}_label_clusters.csv"
+OFFSET_STABLE_CSV="${DETAILS_CSV%.csv}_offset_stable.csv"
+LABEL_STABLE_CSV="${DETAILS_CSV%.csv}_label_stable.csv"
 
 mkdir -p "$(dirname "$OUTPUT_MD")"
 mkdir -p "$(dirname "$DETAILS_CSV")"
@@ -211,6 +221,11 @@ done
     fi
 } > "$OFFSET_CSV"
 
+{
+    echo 'mapper,offset,artifact_hits'
+    awk -F, -v min_hits="$MIN_HITS" 'NR > 1 && $3 >= min_hits { print $1 "," $2 "," $3 }' "$OFFSET_CSV"
+} > "$OFFSET_STABLE_CSV"
+
 label_rows_tmp="${tmp_dir}/label_rows.csv"
 : > "$label_rows_tmp"
 for key in "${!LABEL_COUNT[@]}"; do
@@ -227,6 +242,11 @@ done
     fi
 } > "$LABEL_CSV"
 
+{
+    echo 'mapper,label,artifact_hits'
+    awk -F, -v min_hits="$MIN_HITS" 'NR > 1 && $3 >= min_hits { print $1 "," $2 "," $3 }' "$LABEL_CSV"
+} > "$LABEL_STABLE_CSV"
+
 mapper_keys_tmp="${tmp_dir}/mapper_keys.txt"
 for mapper in "${!FAIL_BY_MAPPER[@]}"; do
     echo "$mapper" >> "$mapper_keys_tmp"
@@ -239,11 +259,14 @@ sort -V "$mapper_keys_tmp" -o "$mapper_keys_tmp"
     echo "Artifact root: \`$ARTIFACT_DIR\`"
     echo "Artifacts analyzed: $artifacts_processed"
     echo "Top-N per mapper: $TOP_N"
+    echo "Stable threshold (artifact hits): >= $MIN_HITS"
     echo
     echo "Generated files:"
     echo "- details: \`$DETAILS_CSV\`"
     echo "- offset clusters: \`$OFFSET_CSV\`"
     echo "- label clusters: \`$LABEL_CSV\`"
+    echo "- stable offsets: \`$OFFSET_STABLE_CSV\`"
+    echo "- stable labels: \`$LABEL_STABLE_CSV\`"
     echo
     echo "## Failures by Mapper"
     echo
@@ -298,6 +321,46 @@ sort -V "$mapper_keys_tmp" -o "$mapper_keys_tmp"
             echo "| (none) | 0 |"
         fi
         echo
+        echo "Stable mismatch offsets (hits >= $MIN_HITS):"
+        echo
+        echo "| offset | artifact hits |"
+        echo "|---|---:|"
+        while IFS=, read -r offset count; do
+            [[ -z "$offset" ]] && continue
+            echo "| $offset | $count |"
+        done < <(awk -F, -v mapper="$mapper" -v top_n="$TOP_N" '
+            NR > 1 && $1 == mapper {
+                print $2 "," $3
+                shown++
+                if (shown >= top_n) {
+                    exit
+                }
+            }
+        ' "$OFFSET_STABLE_CSV")
+        if ! awk -F, -v mapper="$mapper" 'NR > 1 && $1 == mapper { found=1 } END { exit found ? 0 : 1 }' "$OFFSET_STABLE_CSV"; then
+            echo "| (none) | 0 |"
+        fi
+        echo
+        echo "Stable emitted labels (hits >= $MIN_HITS):"
+        echo
+        echo "| label | artifact hits |"
+        echo "|---|---:|"
+        while IFS=, read -r label count; do
+            [[ -z "$label" ]] && continue
+            echo "| \`$label\` | $count |"
+        done < <(awk -F, -v mapper="$mapper" -v top_n="$TOP_N" '
+            NR > 1 && $1 == mapper {
+                print $2 "," $3
+                shown++
+                if (shown >= top_n) {
+                    exit
+                }
+            }
+        ' "$LABEL_STABLE_CSV")
+        if ! awk -F, -v mapper="$mapper" 'NR > 1 && $1 == mapper { found=1 } END { exit found ? 0 : 1 }' "$LABEL_STABLE_CSV"; then
+            echo "| (none) | 0 |"
+        fi
+        echo
     done < "$mapper_keys_tmp"
 } > "$OUTPUT_MD"
 
@@ -306,3 +369,5 @@ echo "Wrote summary:        $OUTPUT_MD"
 echo "Wrote details CSV:    $DETAILS_CSV"
 echo "Wrote offset CSV:     $OFFSET_CSV"
 echo "Wrote label CSV:      $LABEL_CSV"
+echo "Wrote stable offsets: $OFFSET_STABLE_CSV"
+echo "Wrote stable labels:  $LABEL_STABLE_CSV"

@@ -34,6 +34,11 @@ func (dis *Disasm) runAdvisoryEmuTrace(ctx context.Context) *m6502emu.Result {
 		MaxVisitsPerPC:  intSetting(dis.options.TraceMaxVisitsPerPC, envEmuTraceMaxVisits, 8),
 		MaxBranchStates: intSetting(dis.options.TraceMaxBranchStates, envEmuTraceMaxBranch, 0),
 	}
+	if dis.cart != nil && dis.cart.Mapper == 1 && cfg.MaxBranchStates > 0 {
+		dis.logger.Debug("Disabling branch alternate exploration for mapper 1 due known regression hotspot",
+			log.Int("requested_max_branch_states", cfg.MaxBranchStates))
+		cfg.MaxBranchStates = 0
+	}
 
 	startSignature := dis.mapper.MappingSignature()
 	defer func() {
@@ -92,25 +97,6 @@ func (dis *Disasm) seedFromAdvisoryEmuTrace(result *m6502emu.Result) {
 			continue
 		}
 		dis.AddAddressToParse(step.PC, step.PC, 0, nil, false)
-	}
-
-	for _, alt := range result.BranchAlternates {
-		key := ParseKey{
-			PC:        alt.Address,
-			MappingID: alt.MappingSignature,
-		}
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-
-		if !dis.mapper.RestoreMappingSignature(alt.MappingSignature) {
-			continue
-		}
-		// Alternate branch states are exploratory roots. They intentionally do not
-		// register as authoritative branch destinations to avoid rewriting the
-		// original branch operand target during jump-destination post-processing.
-		dis.AddAddressToParse(alt.Address, alt.FromPC, 0, nil, false)
 	}
 
 	dis.mapper.RestoreDefaultMapping()
