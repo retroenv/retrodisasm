@@ -559,6 +559,13 @@ func (dis *Disasm) extractSplitPointerTargets(lowTable, highTable, end uint16,
 
 		targetOp, err := dis.ReadMemory(target)
 		if err != nil || !isLikelyM6502RoutineStartOpcode(targetOp) {
+			if len(targets) == 0 && !started && dis.isWeakSplitEntryCandidate(target) {
+				targets = append(targets, target)
+				started = true
+				trailingSkips = 0
+				dis.stats.splitSeedAcceptedWeak++
+				break
+			}
 			dis.stats.splitSeedRejectOpcode++
 			if started {
 				trailingSkips++
@@ -602,6 +609,16 @@ func hasSplitTargetCodeEvidence(dis *Disasm, targets []uint16) bool {
 		}
 	}
 	return false
+}
+
+func (dis *Disasm) isWeakSplitEntryCandidate(target uint16) bool {
+	offsetInfo := dis.mapper.OffsetInfo(target)
+	return offsetInfo.IsType(
+		program.CodeOffset |
+			program.CallDestination |
+			program.FunctionReference |
+			program.JumpEngine,
+	)
 }
 
 func (dis *Disasm) readWordAt(address uint16) (uint16, bool) {
