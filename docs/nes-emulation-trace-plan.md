@@ -855,6 +855,71 @@ Validation:
   - `find /tmp/phase9_artifacts_base -maxdepth 3 -type f | head`
   - Result: expected `verify.log`, `disasm.asm`, `labels.txt`, `mismatch_offsets.txt`, `meta.txt` present.
 
+### Phase 10: Artifact Clustering and Mapper-Triage Summaries
+
+Status: Completed (2026-02-24)
+
+1. Add clustering tooling over captured failure artifacts.
+2. Produce mapper-grouped recurring mismatch-offset and emitted-label summaries.
+3. Emit triage-ready markdown + CSV outputs for rapid mapper debugging.
+
+Acceptance:
+
+1. Failure artifact roots from baseline/sweep scripts can be analyzed without rerunning disassembly.
+2. Output includes:
+   - per-artifact details
+   - offset cluster counts by mapper
+   - label cluster counts by mapper
+   - markdown summary with Top-N clusters per mapper
+3. Script runs cleanly (no parse/runtime warnings) and supports configurable Top-N.
+
+Implementation notes:
+
+- New clustering tool:
+  - `scripts/cluster_failure_artifacts.sh`
+  - Inputs:
+    - artifact root (`-d`) produced by benchmark scripts using `-d`
+  - Outputs:
+    - markdown summary (`-o`, default `<artifact_root>/failure_cluster_summary.md`)
+    - details CSV (`-c`, default `<artifact_root>/failure_cluster_details.csv`)
+    - derived cluster CSVs:
+      - `<details>_offset_clusters.csv`
+      - `<details>_label_clusters.csv`
+  - Key behavior:
+    - infers mapper ID from ROM header (`meta.txt -> rom=...`)
+    - parses mismatch offsets from `mismatch_offsets.txt`
+    - parses emitted labels from `labels.txt`
+    - aggregates `artifact_hits` by `(mapper, offset)` and `(mapper, label)`
+    - emits Top-N clusters per mapper in markdown (`-n`, default `10`)
+
+Validation:
+
+- Syntax sanity:
+  - `bash -n scripts/benchmark_trace_sweep.sh scripts/benchmark_mapper_corpus.sh scripts/cluster_failure_artifacts.sh`
+  - Result: success.
+- Baseline artifacts + clustering:
+  - `scripts/benchmark_mapper_corpus.sh -g notworking -a ca65 -d /tmp/phase10_artifacts -o /tmp/phase10_mapper_corpus_notworking.csv`
+  - `scripts/cluster_failure_artifacts.sh -d /tmp/phase10_artifacts -o /tmp/phase10_failure_cluster_summary.md -c /tmp/phase10_failure_cluster_details.csv -n 8`
+  - Summary highlights:
+    - `artifacts analyzed = 6`
+    - failures by mapper: `mapper 1 = 1`, `mapper 2 = 5`
+- Sweep artifacts + clustering:
+  - `scripts/benchmark_trace_sweep.sh -g notworking -m 2 -i 200000 -v 8 -b 0,256 -d /tmp/phase10_artifacts_sweep -o /tmp/phase10_trace_sweep_m2.csv`
+  - `scripts/cluster_failure_artifacts.sh -d /tmp/phase10_artifacts_sweep -o /tmp/phase10_failure_cluster_sweep_summary.md -c /tmp/phase10_failure_cluster_sweep_details.csv -n 10`
+  - Summary highlights:
+    - `artifacts analyzed = 10`
+    - recurring mapper-2 offset clusters with `artifact_hits = 2`:
+      - `0x1fff0`, `0x1fff1`, `0x1fffa`, `0x7f18`, `0x7ffa`, ...
+    - recurring mapper-2 label clusters:
+      - `NMI` (`8`)
+      - `Reset` (`8`)
+      - `IRQ`, `IRQ_Bank0`, `IRQ_Bank1`, `IRQ_Bank2`, `NMI_Bank0`, `Reset_Bank1` (each `6`)
+
+Post-phase note:
+
+- The cluster outputs now make repeated mismatch zones and repeated symbol regions explicit, enabling targeted mapper/I/O debugging without rerunning broad sweeps.
+- Some failure artifacts contain zero `Offset mismatch` lines (`first_mismatch_offset=none`), which indicates non-offset verification failure modes are also present and should be triaged separately.
+
 ## Testing Plan
 
 1. Unit tests
@@ -903,6 +968,6 @@ Validation:
 
 ## Immediate Next Steps
 
-1. Run larger sweep matrices (`max_visits` and `max_branch`) for mapper 1/2 and quantify discovery/runtime tradeoffs from the new Phase 8 baseline.
-2. Use captured failure artifacts to cluster recurring mismatch offsets/labels by mapper and prioritize high-yield debug targets.
+1. Run larger sweep matrices (`max_visits` and `max_branch`) for mapper 1/2, then re-cluster artifacts to identify stable high-hit mismatch zones across configurations.
+2. Prioritize mapper 2 fixes around the recurring vector-region mismatch clusters now visible in Phase 10 artifacts.
 3. Improve I/O stub realism (PPU/APU/controller hotspots) to reduce mapper-state divergence in startup/control loops.
