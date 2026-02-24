@@ -19,6 +19,7 @@ const (
 	mapperHotspotLimit     = 8
 	bootLoopVisitLimit     = 2048
 	ppuLoopVisitLimit      = 8192
+	syntheticNMIInterval   = 2048
 )
 
 // Mapper defines the mapper functions needed by the emulator trace.
@@ -132,6 +133,8 @@ type executionSnapshot struct {
 	cpu    cpuSnapshot
 	bus    busSnapshot
 	mapper any
+
+	instructionsSinceNMI int
 }
 
 type visitKey struct {
@@ -195,6 +198,7 @@ func Run(ctx context.Context, cart *cartridge.Cartridge, mapper Mapper, cfg Conf
 	queuedBranches := make(map[branchStateKey]struct{}, cfg.MaxBranchStates)
 	frontier := make([]executionSnapshot, 0, cfg.MaxBranchStates)
 	lastHaltReason := ""
+	instructionsSinceNMI := 0
 
 	for len(res.Steps) < cfg.MaxInstructions {
 		select {
@@ -204,6 +208,12 @@ func Run(ctx context.Context, cart *cartridge.Cartridge, mapper Mapper, cfg Conf
 			return res, nil
 		default:
 		}
+
+		if shouldTriggerSyntheticNMI(bus, instructionsSinceNMI) {
+			cpu.TriggerNMI()
+			instructionsSinceNMI = 0
+		}
+		cpu.CheckInterrupts()
 
 		signatureBefore := mapper.MappingSignature()
 		vk := visitKey{PC: cpu.PC, MappingID: signatureBefore}
@@ -223,20 +233,21 @@ func Run(ctx context.Context, cart *cartridge.Cartridge, mapper Mapper, cfg Conf
 		}
 		if visits[vk] > limit {
 			lastHaltReason = fmt.Sprintf("pc visit limit exceeded at $%04X", cpu.PC)
-			if !restoreNextState(&frontier, cpu, bus, mapper, res) {
+			if !restoreNextState(&frontier, cpu, bus, mapper, &instructionsSinceNMI, res) {
 				break
 			}
 			continue
 		}
 
-		pre := snapshotExecutionState(cpu, bus, mapper)
+		pre := snapshotExecutionState(cpu, bus, mapper, instructionsSinceNMI)
 		if err := cpu.Step(); err != nil {
 			lastHaltReason = err.Error()
-			if !restoreNextState(&frontier, cpu, bus, mapper, res) {
+			if !restoreNextState(&frontier, cpu, bus, mapper, &instructionsSinceNMI, res) {
 				break
 			}
 			continue
 		}
+		instructionsSinceNMI++
 
 		ts := cpu.TraceStep
 		signatureAfter := mapper.MappingSignature()
@@ -515,7 +526,7 @@ func alternateBranchTarget(step TraceStep, nextPC uint16) (alternate, target, fa
 	}
 }
 
-func snapshotExecutionState(cpu *cpu6502.CPU, bus *nesBus, mapper Mapper) executionSnapshot {
+func snapshotExecutionState(cpu *cpu6502.CPU, bus *nesBus, mapper Mapper, instructionsSinceNMI int) executionSnapshot {
 	return executionSnapshot{
 		cpu: cpuSnapshot{
 			A:  cpu.A,
@@ -534,12 +545,14 @@ func snapshotExecutionState(cpu *cpu6502.CPU, bus *nesBus, mapper Mapper) execut
 				N: cpu.Flags.N,
 			},
 		},
-		bus:    bus.snapshot(),
-		mapper: mapper.SnapshotRuntimeState(),
+		bus:                  bus.snapshot(),
+		mapper:               mapper.SnapshotRuntimeState(),
+		instructionsSinceNMI: instructionsSinceNMI,
 	}
 }
 
-func restoreExecutionState(state executionSnapshot, cpu *cpu6502.CPU, bus *nesBus, mapper Mapper) bool {
+func restoreExecutionState(state executionSnapshot, cpu *cpu6502.CPU, bus *nesBus, mapper Mapper,
+	instructionsSinceNMI *int) bool {
 	if !mapper.RestoreRuntimeState(state.mapper) {
 		return false
 	}
@@ -550,20 +563,29 @@ func restoreExecutionState(state executionSnapshot, cpu *cpu6502.CPU, bus *nesBu
 	cpu.PC = state.cpu.PC
 	cpu.SP = state.cpu.SP
 	cpu.Flags = state.cpu.Flags
+	*instructionsSinceNMI = state.instructionsSinceNMI
 	return true
 }
 
-func restoreNextState(frontier *[]executionSnapshot, cpu *cpu6502.CPU, bus *nesBus, mapper Mapper, res *Result) bool {
+func restoreNextState(frontier *[]executionSnapshot, cpu *cpu6502.CPU, bus *nesBus, mapper Mapper,
+	instructionsSinceNMI *int, res *Result) bool {
 	if len(*frontier) == 0 {
 		return false
 	}
 	next := (*frontier)[0]
 	*frontier = (*frontier)[1:]
-	if !restoreExecutionState(next, cpu, bus, mapper) {
+	if !restoreExecutionState(next, cpu, bus, mapper, instructionsSinceNMI) {
 		return false
 	}
 	res.BranchStatesExecuted++
 	return true
+}
+
+func shouldTriggerSyntheticNMI(bus *nesBus, instructionsSinceNMI int) bool {
+	if !bus.ppuNMIEnabled() {
+		return false
+	}
+	return instructionsSinceNMI >= syntheticNMIInterval
 }
 
 func flagsByte(flags cpu6502.Flags) uint8 {

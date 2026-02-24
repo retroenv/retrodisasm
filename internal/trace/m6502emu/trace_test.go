@@ -45,6 +45,23 @@ func TestNesBusPPUStatusSnapshotRestore(t *testing.T) {
 	assert.Equal(t, expected, byte(bus.Read(0x2002)))
 }
 
+func TestNesBusPPUCtrlNMIEnabledAndSnapshotRestore(t *testing.T) {
+	mapper := &mockMapper{
+		memory: map[uint16]byte{},
+	}
+	bus := newNesBus(&cartridge.Cartridge{}, mapper, Config{})
+	assert.False(t, bus.ppuNMIEnabled())
+
+	bus.Write(0x2000, 0x80) // PPUCTRL: enable NMI
+	assert.True(t, bus.ppuNMIEnabled())
+
+	snapshot := bus.snapshot()
+	bus.Write(0x2000, 0x00)
+	assert.False(t, bus.ppuNMIEnabled())
+	bus.restore(snapshot)
+	assert.True(t, bus.ppuNMIEnabled())
+}
+
 func TestNesBusJoypadStrobeLatchShift(t *testing.T) {
 	mapper := &mockMapper{
 		memory: map[uint16]byte{},
@@ -522,6 +539,47 @@ func TestRunExecutesQueuedBranchState(t *testing.T) {
 		}
 	}
 	assert.True(t, sawAlternatePC)
+}
+
+func TestRunTriggersSyntheticNMIWhenEnabled(t *testing.T) {
+	mapper := &mockMapper{
+		memory: map[uint16]byte{
+			0xFFFA: 0x00, // NMI vector low
+			0xFFFB: 0x90, // NMI vector high -> $9000
+			0xFFFC: 0x00, // reset vector low
+			0xFFFD: 0x80, // reset vector high -> $8000
+			0x8000: 0xA9, // lda #$80
+			0x8001: 0x80,
+			0x8002: 0x8D, // sta $2000 (enable NMI)
+			0x8003: 0x00,
+			0x8004: 0x20,
+			0x8005: 0xEA, // nop
+			0x8006: 0x4C, // jmp $8006
+			0x8007: 0x06,
+			0x8008: 0x80,
+			0x9000: 0xA9, // lda #$42
+			0x9001: 0x42,
+			0x9002: 0x85, // sta $02
+			0x9003: 0x02,
+			0x9004: 0x40, // rti
+		},
+		signature: 0xCD,
+	}
+
+	res, err := Run(context.Background(), &cartridge.Cartridge{}, mapper, Config{
+		MaxInstructions: 3000,
+		MaxVisitsPerPC:  6000,
+	})
+	assert.NoError(t, err)
+
+	var sawNMIHandler bool
+	for _, step := range res.Steps {
+		if step.PC == 0x9000 {
+			sawNMIHandler = true
+			break
+		}
+	}
+	assert.True(t, sawNMIHandler)
 }
 
 type mockMapper struct {

@@ -7,6 +7,7 @@ const (
 	prgRAMSize       = 0x2000
 	ppuRegisterStart = 0x2000
 	ppuRegisterMask  = 0x0007
+	ppuCtrlRegister  = 0x2000
 	ppuStatusVBlank  = 0x80
 
 	joypad1Address = 0x4016
@@ -26,6 +27,7 @@ type nesBus struct {
 	ram    [ramSize]byte
 	prgRAM [prgRAMSize]byte
 
+	ppuCtrl            byte
 	ppuStatusReadCount uint64
 
 	joypadStrobe   bool
@@ -41,6 +43,7 @@ type busSnapshot struct {
 	ram    [ramSize]byte
 	prgRAM [prgRAMSize]byte
 
+	ppuCtrl            byte
 	ppuStatusReadCount uint64
 	joypadStrobe       bool
 	joypadLatched      [2]byte
@@ -61,6 +64,7 @@ func (b *nesBus) snapshot() busSnapshot {
 	return busSnapshot{
 		ram:                b.ram,
 		prgRAM:             b.prgRAM,
+		ppuCtrl:            b.ppuCtrl,
 		ppuStatusReadCount: b.ppuStatusReadCount,
 		joypadStrobe:       b.joypadStrobe,
 		joypadLatched:      b.joypadLatched,
@@ -73,6 +77,7 @@ func (b *nesBus) snapshot() busSnapshot {
 func (b *nesBus) restore(state busSnapshot) {
 	b.ram = state.ram
 	b.prgRAM = state.prgRAM
+	b.ppuCtrl = state.ppuCtrl
 	b.ppuStatusReadCount = state.ppuStatusReadCount
 	b.joypadStrobe = state.joypadStrobe
 	b.joypadLatched = state.joypadLatched
@@ -131,7 +136,11 @@ func (b *nesBus) Write(address uint16, value uint8) {
 		b.ram[address&0x07FF] = value
 
 	case address <= 0x3FFF:
-		// PPU register writes are ignored in advisory mode.
+		register := ppuRegisterStart + (address & ppuRegisterMask)
+		if register == ppuCtrlRegister {
+			b.ppuCtrl = value
+		}
+		// Other PPU register writes are ignored in advisory mode.
 		return
 
 	case address <= 0x401F:
@@ -158,6 +167,10 @@ func (b *nesBus) Write(address uint16, value uint8) {
 			b.onMapperWrite(address, value)
 		}
 	}
+}
+
+func (b *nesBus) ppuNMIEnabled() bool {
+	return b.ppuCtrl&ppuStatusVBlank != 0
 }
 
 func (b *nesBus) writeJoypadStrobe(value byte) {

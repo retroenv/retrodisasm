@@ -2007,6 +2007,69 @@ Post-phase note:
 - Clustering now preserves failure semantics end-to-end, so corrupt-input artifacts are separated from mapper/trace mismatch artifacts in both CSV and markdown triage.
 - This closes the tooling loop needed to evaluate upcoming PPU/frame-model experiments with cleaner regression signals.
 
+### Phase 28: Core Code-Density Lift (Mapped-Bank Entry Seeding + NMI Hook)
+
+Status: Completed (2026-02-24)
+
+1. Increase emitted `.asm` code density through core disassembly/emulation changes (no new benchmark/sweep scripts).
+2. Improve coverage from additional mapped banks by seeding conservative bank-entry anchors before per-bank tracing.
+3. Add deterministic synthetic NMI support (gated by `PPUCTRL` NMI enable) so frame/NMI-driven code paths are reachable in advisory emu mode.
+
+Acceptance:
+
+1. Rom City Rampage output in `internal/testroms/special` verifies for both `asm6` and `ca65`.
+2. Code-line metric increases versus Phase 21-27 baseline (`code=1075`).
+3. Full Go test suite remains green.
+
+Implementation notes:
+
+- Additional bank tracing enhancement:
+  - `internal/disasm/banks.go`
+  - Added `seedLikelyMappedBankEntryPoints()` during `processAdditionalBanks()`:
+    - seeds conservative anchors: `$8000,$A000,$C000,$E000`
+    - only when first opcode matches likely entry/control-flow setup opcodes
+    - then existing `followExecutionFlow()` processes those contexts.
+  - Rationale: additional-bank vector tracing alone can miss bank-local routine islands with no unique vectors.
+- Deterministic synthetic NMI plumbing:
+  - `internal/trace/m6502emu/bus.go`
+    - tracks `PPUCTRL` writes (`$2000`) and snapshots/restores this state.
+    - added `ppuNMIEnabled()` gate.
+  - `internal/trace/m6502emu/trace.go`
+    - added deterministic synthetic NMI cadence (`syntheticNMIInterval=2048` instructions), gated by `ppuNMIEnabled()`.
+    - integrates `cpu.TriggerNMI()` + `cpu.CheckInterrupts()` into main trace loop.
+    - branch-state snapshot/restore now includes NMI cadence state (`instructionsSinceNMI`) for replay determinism.
+  - `internal/trace/m6502emu/trace_test.go`
+    - added/updated coverage:
+      - `TestNesBusPPUCtrlNMIEnabledAndSnapshotRestore`
+      - `TestRunTriggersSyntheticNMIWhenEnabled`
+
+Validation:
+
+- Focused and full tests:
+  - `GOCACHE=/tmp/gocache_retrodisasm go test ./internal/disasm ./internal/trace/m6502emu ./internal/mapper ./internal/arch/m6502 -count=1`
+  - `GOCACHE=/tmp/gocache_retrodisasm go test ./... -count=1`
+  - Result: success.
+- Rom City Rampage verify/regeneration:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+  - Output:
+    - `internal/testroms/special/Rom City Rampage.asm6.asm` (`50937` lines)
+    - `internal/testroms/special/Rom City Rampage.ca65.asm` (`50862` lines)
+- Code-density result (same metric used in prior phases):
+  - `rg -n '^[[:space:]]+[a-z]{3}\b' ... | wc -l`
+  - Before (Phase 21-27 baseline): `1075`
+  - After Phase 28: `1191`
+  - Delta: `+116` code lines.
+- Trace telemetry delta (Rom City Rampage, asm6, hybrid profile):
+  - `static_unique_pc`: `1112 -> 1194`
+  - `parsed_offsets`: `1381 -> 1502`
+  - `code_bytes_marked`: `2350 -> 2590`
+
+Post-phase note:
+
+- This phase directly improves `.asm` code density with core pipeline logic, not external tooling.
+- Rom City Rampage remains fully reassemblable while emitting materially more code.
+
 ## Testing Plan
 
 1. Unit tests
@@ -2055,7 +2118,7 @@ Post-phase note:
 
 ## Immediate Next Steps
 
-1. Extend PPU progression realism beyond status/data loops (frame/vblank cadence tied to register interaction and timing proxies).
+1. Extend mapped-bank code seeding beyond fixed anchors by adding conservative call-target/table-target candidate seeding with strict opcode/shape guards.
 2. Replace mapper-1 branch guard with a condition-based alternate-path policy (mapper-safe heuristics) so branch exploration can be re-enabled without reintroducing the regression.
 3. Use mapper-2 sweep telemetry to drive targeted PPU/frame-model experiments (starting with `Alfred Chicken` at hotspot `$C93F`) and re-measure `unique_pc` lift under the same preset matrix.
 4. Add a small automated experiment matrix around `Alfred Chicken` (`max_visits` and PPU-stub variants) and feed results through class-aware clustering to quantify which changes shift failure class or hotspot region.
