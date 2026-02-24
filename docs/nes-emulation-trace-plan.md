@@ -3002,6 +3002,54 @@ Post-phase note:
 - The annotation is purely observational — it marks only writes that the emulator actually observed changing PRG mapping, not all mapper register writes.
 - Output is still deterministic and reassemblable with both target assemblers.
 
+### Phase 43: Post-Bank-Switch Loop Relaxation + Mid-Run RTS/RTI Split Acceptance
+
+Status: Completed (2026-02-24)
+
+1. Remove bank-switch guard from `canRelaxVisitLimitForLoop()` — the tight-loop pattern detectors are sufficient safety gates regardless of which bank is mapped. Raise the step threshold from 20,000 to `cfg.MaxInstructions/2`.
+2. Accept RTS/RTI targets in established split-table runs — when a run has 2+ accepted entries, RTS/RTI stub functions are valid dispatch table entries.
+3. Add `splitSeedAcceptedMidRunRT` telemetry counter.
+
+Acceptance:
+
+1. Both `asm6` and `ca65` outputs verify successfully for Rom City Rampage.
+2. Full test suite and lint remain clean.
+3. Code density improved from 7542 to 7580 (+38 lines).
+
+Implementation notes:
+
+- `internal/trace/m6502emu/trace.go`:
+  - `canRelaxVisitLimitForLoop` now accepts `cfg Config` parameter and uses `cfg.MaxInstructions/2` threshold instead of hardcoded 20,000.
+  - Removed the `BankSwitchWrites` loop guard that blocked all loop relaxation after any bank switch.
+  - Threaded `cfg` through: `maybeRelaxVisitLimit` → `shouldRelaxVisitLimitForStartupLoop` / `shouldRelaxVisitLimitForPPUDataLoop` → `canRelaxVisitLimitForLoop`.
+- `internal/disasm/banks.go`:
+  - Added mid-run RTS/RTI acceptance in `classifySplitTarget`: when `started == true` and target opcode is RTS/RTI, accept as `splitEntryAccept`.
+  - This allows dispatch tables with RTS stub entries to be fully traversed instead of being terminated prematurely.
+- `internal/disasm/stats.go`:
+  - Added `splitSeedAcceptedMidRunRT` field with log key `split_seed_accepted_mid_run_rts_rti`.
+
+Validation:
+
+- Full tests:
+  - `go test ./...`
+  - Result: success.
+- Lint:
+  - `make lint`
+  - Result: `0 issues`.
+- Rom City Rampage verify/regeneration:
+  - `bash scripts/verify_rom_city_rampage.sh`
+  - Result: success for both `ca65` and `asm6`.
+  - Output:
+    - `internal/testroms/special/Rom City Rampage.asm6.asm` (`61102` lines)
+    - `internal/testroms/special/Rom City Rampage.ca65.asm` (`61027` lines)
+- Code-density result:
+  - After Phase 42: `7542`
+  - After Phase 43: `7580`
+  - Delta: `+38` code lines.
+- Telemetry:
+  - `split_seed_accepted_mid_run_rts_rti`: 30 (new RTS stub entries accepted in split tables).
+  - Emu trace still halts at `$E2E7` with `unique_pc=495` (unchanged — the bank-switch guard removal enables relaxation but the halt PC requires further PPU/frame progression work).
+
 ## Progress Summary (as of 2026-02-24)
 
 ### Completed Phases
@@ -3052,6 +3100,7 @@ Post-phase note:
 | 40 | Weak Singleton Acceptance | Code-evidence-gated weak entry tier |
 | 41 | Opcode-Class Reject Telemetry | RTS/RTI adjacent-evidence weak tier |
 | 42 | Bank-Switch Comments | `MapperRegisterDescription`, emu-trace-driven annotation |
+| 43 | Loop Relaxation + Mid-Run RTS | Remove bank-switch guard, mid-run RTS/RTI split acceptance, `code=7580` |
 
 ### Current Metrics
 
@@ -3062,9 +3111,9 @@ Post-phase note:
 | Mapper 7 pass rate | 1/1 |
 | Mapper 1 pass rate (notworking) | 2/2 |
 | Mapper 2 pass rate (notworking) | 5/7 |
-| Rom City Rampage code lines | 7542 |
-| Rom City Rampage asm6 lines | 61045 |
-| Rom City Rampage ca65 lines | 60970 |
+| Rom City Rampage code lines | 7580 |
+| Rom City Rampage asm6 lines | 61102 |
+| Rom City Rampage ca65 lines | 61027 |
 | Rom City Rampage bank-switch comments | 2 |
 | Go test suite | all pass |
 | Build status | clean |
@@ -3081,8 +3130,8 @@ Post-phase note:
 1. **Hybrid two-pass model** (Phase 20): Static pass first, then emulator-seeded additive pass prevents emu queue from suppressing static discovery.
 2. **Advisory trace** (Phase 1+): Emulator trace is informational; disassembly decisions remain independent, preventing cascade from emu-path errors.
 3. **Mapper-1 branch clamp** (Phase 31): Tiered budget caps (512/128/64) based on instruction/visit budgets; pragmatic guard until mapper-1-safe heuristics are available.
-4. **Split-table pipeline** (Phases 32-41): Multi-stage gated pipeline: plausibility → correlation → extraction → opcode gate → shape → weak-entry tiers.
-5. **Deterministic I/O stubs** (Phases 17-19): PPU status alternation, controller serial emulation, PPU data-loop relaxation; all snapshot-safe for branch replay.
+4. **Split-table pipeline** (Phases 32-41, 43): Multi-stage gated pipeline: plausibility → correlation → extraction → opcode gate → shape → weak-entry tiers → mid-run RTS/RTI acceptance.
+5. **Deterministic I/O stubs** (Phases 17-19, 43): PPU status alternation, controller serial emulation, PPU data-loop relaxation; all snapshot-safe for branch replay. Phase 43 removed the bank-switch guard that blocked loop relaxation for mapper-heavy ROMs.
 6. **Non-default mapping label safety** (Phase 20): Branch/call operands in non-default mapping contexts keep literal targets to prevent cross-mapping address drift.
 7. **Emu-trace-driven bank-switch comments** (Phase 42): Only annotates writes that actually changed PRG mapping during emulation, avoiding noise from CHR/misc register writes. Static-only mode gets no bank-switch comments.
 
@@ -3173,8 +3222,8 @@ Scripts:
 
 7. Split-table false-positive code promotion.
    - Aggressive pointer-table seeding can promote data as code, causing verification failures.
-   - Mitigation: multi-stage gated pipeline (plausibility → correlation → extraction → opcode → shape → weak tiers).
-   - Status: zero false-positive regressions through Phase 41.
+   - Mitigation: multi-stage gated pipeline (plausibility → correlation → extraction → opcode → shape → weak tiers → mid-run RTS/RTI).
+   - Status: zero false-positive regressions through Phase 43.
 
 ## Glossary
 

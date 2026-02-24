@@ -729,6 +729,11 @@ func (dis *Disasm) classifySplitTarget(target, end uint16, started, isEmpty bool
 		return splitEntryAccept
 	}
 
+	if started && isWeakSplitEntryTerminatorOpcode(targetOp) {
+		dis.stats.splitSeedAcceptedMidRunRT++
+		return splitEntryAccept
+	}
+
 	if isEmpty && !started && dis.isWeakSplitEntryCandidate(target) {
 		dis.stats.splitSeedAcceptedWeak++
 		return splitEntryAcceptBreak

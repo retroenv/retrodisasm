@@ -309,10 +309,10 @@ func maybeRelaxVisitLimit(
 	if limit != cfg.MaxVisitsPerPC {
 		return limit
 	}
-	if shouldRelaxVisitLimitForStartupLoop(mapper, res, cpu.PC) {
+	if shouldRelaxVisitLimitForStartupLoop(mapper, cfg, res, cpu.PC) {
 		limit = relaxedVisitLimit(cfg.MaxVisitsPerPC)
 		ts.visitCaps[vk] = limit
-	} else if shouldRelaxVisitLimitForPPUDataLoop(mapper, res, cpu.PC) {
+	} else if shouldRelaxVisitLimitForPPUDataLoop(mapper, cfg, res, cpu.PC) {
 		limit = relaxedPPULoopVisitLimit(cfg.MaxVisitsPerPC)
 		ts.visitCaps[vk] = limit
 	}
@@ -693,28 +693,23 @@ func relaxedPPULoopVisitLimit(base int) int {
 	return ppuLoopVisitLimit
 }
 
-func shouldRelaxVisitLimitForStartupLoop(mapper Mapper, res *Result, pc uint16) bool {
-	if !canRelaxVisitLimitForLoop(res, pc) {
+func shouldRelaxVisitLimitForStartupLoop(mapper Mapper, cfg Config, res *Result, pc uint16) bool {
+	if !canRelaxVisitLimitForLoop(cfg, res, pc) {
 		return false
 	}
 	return isTightCounterLoopPC(mapper, pc)
 }
 
-func shouldRelaxVisitLimitForPPUDataLoop(mapper Mapper, res *Result, pc uint16) bool {
-	if !canRelaxVisitLimitForLoop(res, pc) {
+func shouldRelaxVisitLimitForPPUDataLoop(mapper Mapper, cfg Config, res *Result, pc uint16) bool {
+	if !canRelaxVisitLimitForLoop(cfg, res, pc) {
 		return false
 	}
 	return isPPUDataStreamLoopPC(mapper, pc)
 }
 
-func canRelaxVisitLimitForLoop(res *Result, pc uint16) bool {
-	if len(res.Steps) > 20000 {
+func canRelaxVisitLimitForLoop(cfg Config, res *Result, pc uint16) bool {
+	if len(res.Steps) > cfg.MaxInstructions/2 {
 		return false
-	}
-	for _, event := range res.BankSwitchWrites {
-		if event.Changed {
-			return false
-		}
 	}
 	return pc >= 0x8000
 }
