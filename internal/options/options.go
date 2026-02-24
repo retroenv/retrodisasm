@@ -77,6 +77,7 @@ type Disassembler struct {
 	SplitBanks                  bool // write each PRG bank as a separate .asm file
 	StopAtUnofficial            bool // stop tracing at unofficial opcodes unless explicitly branched to
 	ZeroBytes                   bool
+	OutputFilename              string // output filename for assembly command comments
 
 	TraceMode            string // static, emu, hybrid
 	TraceMaxInstructions int

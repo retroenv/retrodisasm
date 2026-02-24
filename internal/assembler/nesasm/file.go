@@ -3,6 +3,7 @@ package nesasm
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/retroenv/retrodisasm/internal/assembler"
 	"github.com/retroenv/retrodisasm/internal/options"
@@ -26,6 +27,7 @@ type FileWriter struct {
 type prgBankWrite struct {
 	bank        *program.PRGBank
 	isMultiBank bool
+	firstBank   bool
 }
 
 type customWrite func() error
@@ -55,6 +57,7 @@ func (f FileWriter) Write() error {
 	if !f.options.CodeOnly {
 		writes = []any{
 			lineWrite("; NES ROM Disassembly"),
+			lineWrite(assembleComment(f.options.OutputFilename)),
 			customWrite(f.writer.WriteCommentHeader),
 			customWrite(f.writeROMHeader),
 		}
@@ -62,9 +65,9 @@ func (f FileWriter) Write() error {
 
 	nextBank := addPrgBankSelectors(int(f.app.CodeBaseAddress), f.app.PRG)
 	isMultiBank := len(f.app.PRG) > 1
-	for _, bank := range f.app.PRG {
+	for i, bank := range f.app.PRG {
 		writes = append(writes,
-			prgBankWrite{bank: bank, isMultiBank: isMultiBank},
+			prgBankWrite{bank: bank, isMultiBank: isMultiBank, firstBank: i == 0},
 		)
 	}
 
@@ -103,6 +106,18 @@ func (f FileWriter) writePRGBank(t prgBankWrite) error {
 		return fmt.Errorf("creating bank writer: %w", err)
 	}
 	defer func() { _ = bankWriteCloser.Close() }()
+
+	if f.options.SplitBanks {
+		if t.firstBank {
+			if _, err := fmt.Fprintln(f.mainWriter); err != nil {
+				return fmt.Errorf("writing newline: %w", err)
+			}
+		}
+		bankFile := bankFilename(f.options.OutputFilename, t.bank.Name)
+		if _, err := fmt.Fprintf(f.mainWriter, " .include \"%s\"\n", bankFile); err != nil {
+			return fmt.Errorf("writing include directive: %w", err)
+		}
+	}
 
 	bankW := writer.New(f.app, bankWriteCloser, writer.Options{
 		DirectivePrefix: " ",
@@ -205,4 +220,18 @@ func (f FileWriter) writeBankVectorsTo(w io.Writer, bank *program.PRGBank) error
 		return fmt.Errorf("writing bank vectors: %w", err)
 	}
 	return nil
+}
+
+// assembleComment returns the assembly command comment using the actual output filename.
+func assembleComment(outputFilename string) string {
+	nesFilename := strings.TrimSuffix(outputFilename, ".asm") + ".nes"
+	return fmt.Sprintf("; To assemble: nesasm -z -o %s %s", nesFilename, outputFilename)
+}
+
+// bankFilename derives the bank output filename from the main output filename
+// and the bank name. Matches the logic in pipeline.generateBankFilename.
+func bankFilename(outputFilename, bankName string) string {
+	base := strings.TrimSuffix(outputFilename, ".asm")
+	suffix := strings.TrimPrefix(strings.ToLower(bankName), "prg_")
+	return base + "_" + suffix + ".asm"
 }

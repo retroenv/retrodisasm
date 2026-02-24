@@ -3,6 +3,7 @@ package retroasm
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/retroenv/retrodisasm/internal/program"
 	"github.com/retroenv/retrodisasm/internal/writer"
@@ -24,7 +25,7 @@ func (w *FileWriter) writeNES() error {
 
 	for i, bank := range w.app.PRG {
 		lastBank := i == len(w.app.PRG)-1
-		if err := w.writeBank(bank, lastBank); err != nil {
+		if err := w.writeBank(bank, i == 0, lastBank); err != nil {
 			return fmt.Errorf("writing bank %d: %w", i, err)
 		}
 	}
@@ -87,12 +88,24 @@ func (w *FileWriter) writeHeader() error {
 }
 
 // writeBank writes a PRG bank.
-func (w *FileWriter) writeBank(bank *program.PRGBank, lastBank bool) error {
+func (w *FileWriter) writeBank(bank *program.PRGBank, firstBank, lastBank bool) error {
 	bankWriteCloser, err := w.newBankWriter(bank.Name)
 	if err != nil {
 		return fmt.Errorf("creating bank writer: %w", err)
 	}
 	defer func() { _ = bankWriteCloser.Close() }()
+
+	if w.options.SplitBanks {
+		if firstBank {
+			if _, err := fmt.Fprintln(w.mainWriter); err != nil {
+				return fmt.Errorf("writing newline: %w", err)
+			}
+		}
+		bankFile := bankFilename(w.options.OutputFilename, bank.Name)
+		if _, err := fmt.Fprintf(w.mainWriter, ".include \"%s\"\n", bankFile); err != nil {
+			return fmt.Errorf("writing include directive: %w", err)
+		}
+	}
 
 	bankW := writer.New(w.app, bankWriteCloser, writer.Options{
 		OffsetComments: w.options.OffsetComments,
@@ -147,6 +160,14 @@ func writeVectorsTo(w io.Writer, vectorsAddr uint16, nmi, reset, irq string) err
 	}
 
 	return nil
+}
+
+// bankFilename derives the bank output filename from the main output filename
+// and the bank name. Matches the logic in pipeline.generateBankFilename.
+func bankFilename(outputFilename, bankName string) string {
+	base := strings.TrimSuffix(outputFilename, ".asm")
+	suffix := strings.TrimPrefix(strings.ToLower(bankName), "prg_")
+	return base + "_" + suffix + ".asm"
 }
 
 // writeCHR writes the CHR content.

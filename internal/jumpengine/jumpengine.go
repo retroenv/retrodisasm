@@ -132,7 +132,7 @@ func (j *JumpEngine) GetContextDataReferences(offsets []*offset.DisasmOffset,
 
 		// look for an instructions that loads data from an address in the code or data
 		// address range. this should be the table containing the function addresses.
-		if opcode.Instruction().IsNil() || !opcode.ReadsMemory() {
+		if opcode == nil || opcode.Instruction().IsNil() || !opcode.ReadsMemory() {
 			continue
 		}
 

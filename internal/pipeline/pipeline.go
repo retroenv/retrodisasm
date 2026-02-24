@@ -76,6 +76,7 @@ func (p *Pipeline) ExecuteWithCartridge(ctx context.Context, cart *cartridge.Car
 	// Update disasm options with system
 	disasmOpts.System = system
 	disasmOpts.Binary = opts.Binary
+	disasmOpts.OutputFilename = filepath.Base(opts.Output)
 
 	// When using binary mode, only output code without NES-specific segments
 	if opts.Binary {

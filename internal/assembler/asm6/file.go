@@ -3,6 +3,7 @@ package asm6
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/retroenv/retrodisasm/internal/assembler"
 	"github.com/retroenv/retrodisasm/internal/options"
@@ -30,9 +31,10 @@ type headerByteWrite struct {
 }
 
 type prgBankWrite struct {
-	address  string
-	bank     *program.PRGBank
-	lastBank bool
+	address   string
+	bank      *program.PRGBank
+	lastBank  bool
+	firstBank bool
 }
 
 type customWrite func() error
@@ -74,6 +76,7 @@ func (f FileWriter) Write() error {
 	if !f.options.CodeOnly {
 		writes = []any{
 			lineWrite{line: "", comment: "NES ROM Disassembly"},
+			lineWrite{line: "", comment: assembleComment(f.options.OutputFilename)},
 			customWrite(f.writer.WriteCommentHeader),
 			lineWrite{line: ".db \"NES\", $1a", comment: "Magic string that always begins an iNES header"},
 			headerByteWrite{value: byte(f.app.PrgSize() / 16384), comment: "Number of 16KB PRG-ROM banks"},
@@ -90,9 +93,10 @@ func (f FileWriter) Write() error {
 		lastBank := i == len(f.app.PRG)-1
 		writes = append(writes,
 			prgBankWrite{
-				address:  fmt.Sprintf("$%04x", bank.BaseAddress),
-				bank:     bank,
-				lastBank: lastBank,
+				address:   fmt.Sprintf("$%04x", bank.BaseAddress),
+				bank:      bank,
+				lastBank:  lastBank,
+				firstBank: i == 0,
 			},
 		)
 	}
@@ -109,8 +113,14 @@ func (f FileWriter) Write() error {
 			}
 
 		case lineWrite:
-			if _, err := fmt.Fprintf(f.mainWriter, "%-30s ; %s\n", t.line, t.comment); err != nil {
-				return fmt.Errorf("writing line: %w", err)
+			if t.line == "" {
+				if _, err := fmt.Fprintf(f.mainWriter, "; %s\n", t.comment); err != nil {
+					return fmt.Errorf("writing line: %w", err)
+				}
+			} else {
+				if _, err := fmt.Fprintf(f.mainWriter, "%-30s ; %s\n", t.line, t.comment); err != nil {
+					return fmt.Errorf("writing line: %w", err)
+				}
 			}
 
 		case customWrite:
@@ -134,6 +144,18 @@ func (f FileWriter) writeBank(w prgBankWrite) error {
 		return fmt.Errorf("creating bank writer: %w", err)
 	}
 	defer func() { _ = bankWriteCloser.Close() }()
+
+	if f.options.SplitBanks {
+		if w.firstBank {
+			if _, err := fmt.Fprintln(f.mainWriter); err != nil {
+				return fmt.Errorf("writing newline: %w", err)
+			}
+		}
+		bankFile := bankFilename(f.options.OutputFilename, w.bank.Name)
+		if _, err := fmt.Fprintf(f.mainWriter, ".include \"%s\"\n", bankFile); err != nil {
+			return fmt.Errorf("writing include directive: %w", err)
+		}
+	}
 
 	bankW := writer.New(f.app, bankWriteCloser, writer.Options{
 		OffsetComments: f.options.OffsetComments,
@@ -216,4 +238,18 @@ func (f FileWriter) writeVectorsTo(w io.Writer, vectorsAddr uint16, nmi, reset, 
 		return fmt.Errorf("writing vectors: %w", err)
 	}
 	return nil
+}
+
+// assembleComment returns the assembly command comment using the actual output filename.
+func assembleComment(outputFilename string) string {
+	nesFilename := strings.TrimSuffix(outputFilename, ".asm") + ".nes"
+	return fmt.Sprintf("To assemble: asm6f %s %s", outputFilename, nesFilename)
+}
+
+// bankFilename derives the bank output filename from the main output filename
+// and the bank name. Matches the logic in pipeline.generateBankFilename.
+func bankFilename(outputFilename, bankName string) string {
+	base := strings.TrimSuffix(outputFilename, ".asm")
+	suffix := strings.TrimPrefix(strings.ToLower(bankName), "prg_")
+	return base + "_" + suffix + ".asm"
 }

@@ -48,9 +48,9 @@ func (dis *Disasm) processAdditionalBanks(ctx context.Context) error {
 }
 
 func (dis *Disasm) processAdditionalBanksPass(ctx context.Context, bankCount int, crossBankTargets []uint16) error {
-	dis.stats.additionalBanksConsidered += uint64(bankCount - 1)
+	dis.stats.additionalBanksConsidered += uint64(bankCount)
 
-	for bankIndex := range bankCount - 1 {
+	for bankIndex := range bankCount {
 		dis.mapper.MapBank(bankIndex)
 
 		dis.seedLikelyMappedBankEntryPoints()
