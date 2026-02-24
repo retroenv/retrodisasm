@@ -9,7 +9,8 @@ import (
 )
 
 // processAdditionalBanks traces unique vectors of non-last PRG banks by temporarily remapping
-// the full $8000-$FFFF range to each bank.
+// the full $8000-$FFFF range to each bank. Runs two passes: the first discovers code,
+// the second re-collects targets (including newly discovered ones) and seeds them.
 func (dis *Disasm) processAdditionalBanks(ctx context.Context) error {
 	if dis.options.Binary {
 		return nil
@@ -20,14 +21,41 @@ func (dis *Disasm) processAdditionalBanks(ctx context.Context) error {
 		return nil
 	}
 
-	dis.stats.additionalBanksConsidered += uint64(bankCount - 1)
 	defer dis.mapper.RestoreDefaultMapping()
+
+	// Pass 1: initial seeding with default mapping call targets.
+	crossBankTargets := dis.collectCallTargetAddresses()
+	if err := dis.processAdditionalBanksPass(ctx, bankCount, crossBankTargets); err != nil {
+		return err
+	}
+
+	// Additional passes: re-collect targets including those discovered in prior
+	// passes. Stop when no new call targets are found.
+	const maxPasses = 4
+	for pass := 2; pass <= maxPasses; pass++ {
+		dis.mapper.RestoreDefaultMapping()
+		prevCount := len(crossBankTargets)
+		crossBankTargets = dis.collectCallTargetAddresses()
+		if len(crossBankTargets) <= prevCount {
+			break
+		}
+		if err := dis.processAdditionalBanksPass(ctx, bankCount, crossBankTargets); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (dis *Disasm) processAdditionalBanksPass(ctx context.Context, bankCount int, crossBankTargets []uint16) error {
+	dis.stats.additionalBanksConsidered += uint64(bankCount - 1)
 
 	for bankIndex := range bankCount - 1 {
 		dis.mapper.MapBank(bankIndex)
 
 		dis.seedLikelyMappedBankEntryPoints()
 		dis.seedLikelyMappedBankCallTargets()
+		dis.seedCrossBankCallTargets(crossBankTargets)
 		dis.seedLikelyMappedBankPointerTableTargets()
 		dis.seedLikelyMappedBankSplitPointerTableTargets()
 
@@ -45,8 +73,42 @@ func (dis *Disasm) processAdditionalBanks(ctx context.Context) error {
 			dis.stats.additionalBankQueueGrowth += uint64(len(dis.offsetsToParse) - queuedBefore)
 		}
 	}
-
 	return nil
+}
+
+// collectCallTargetAddresses returns CPU addresses that have the CallDestination
+// flag set in the current (default) mapping. These are JSR/JMP targets from
+// traced code that can be checked against other bank mappings.
+func (dis *Disasm) collectCallTargetAddresses() []uint16 {
+	start := dis.codeBaseAddress
+	end := dis.arch.LastCodeAddress()
+	targets := make([]uint16, 0, 256)
+
+	for addr := start; addr <= end; addr++ {
+		offsetInfo := dis.mapper.OffsetInfo(addr)
+		if offsetInfo != nil && offsetInfo.IsType(program.CallDestination|program.FunctionReference) {
+			targets = append(targets, addr)
+		}
+	}
+	dis.stats.crossBankCallTargetsCollected = uint64(len(targets))
+	return targets
+}
+
+// seedCrossBankCallTargets checks previously collected call target addresses
+// against the currently mapped bank. If a target address contains a likely
+// routine start opcode in the new mapping, it is seeded for tracing.
+func (dis *Disasm) seedCrossBankCallTargets(targets []uint16) {
+	for _, addr := range targets {
+		if !dis.isValidCodeAddress(addr) || addr > dis.arch.LastCodeAddress() {
+			continue
+		}
+		op, err := dis.ReadMemory(addr)
+		if err != nil || !isLikelyM6502RoutineStartOpcode(op) {
+			continue
+		}
+		dis.AddAddressToParse(addr, addr, 0, nil, false)
+		dis.stats.crossBankCallTargetsSeeded++
+	}
 }
 
 // seedLikelyMappedBankEntryPoints queues a few fixed-window anchors that commonly
@@ -808,7 +870,7 @@ func (dis *Disasm) isWeakSplitEntryCandidate(target uint16) bool {
 }
 
 func (dis *Disasm) hasAdjacentSplitEntryEvidence(target, end uint16) bool {
-	const radius = 8
+	const radius = 16
 
 	start := int(target) - radius
 	if start < int(dis.codeBaseAddress) {
@@ -818,22 +880,41 @@ func (dis *Disasm) hasAdjacentSplitEntryEvidence(target, end uint16) bool {
 	if stop > int(end) {
 		stop = int(end)
 	}
+	minDelta := radius + 1
 	for addr := start; addr <= stop; addr++ {
 		if uint16(addr) == target {
 			continue
 		}
 		offsetInfo := dis.mapper.OffsetInfo(uint16(addr))
-		if offsetInfo.IsType(
+		if !offsetInfo.IsType(
 			program.CodeOffset |
 				program.CallDestination |
 				program.FunctionReference |
 				program.JumpEngine,
 		) {
 
-			return true
+			continue
+		}
+		delta := addr - int(target)
+		if delta < 0 {
+			delta = -delta
+		}
+		if delta < minDelta {
+			minDelta = delta
 		}
 	}
-	return false
+
+	if minDelta > radius {
+		dis.stats.splitSeedAdjacentEvidenceMiss++
+		return false
+	}
+
+	dis.stats.splitSeedAdjacentEvidenceFound++
+	d := uint64(minDelta)
+	if dis.stats.splitSeedAdjacentEvidenceMin == 0 || d < dis.stats.splitSeedAdjacentEvidenceMin {
+		dis.stats.splitSeedAdjacentEvidenceMin = d
+	}
+	return true
 }
 
 func (dis *Disasm) recordSplitOpcodeGateReject(op byte) {

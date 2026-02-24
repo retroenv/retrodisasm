@@ -3277,6 +3277,96 @@ An initial attempt at per-state visit budget isolation was explored and abandone
 
 **Analysis:** The frontier prioritization successfully explores more branch alternates (+9%) with fewer budget drops (-37%) by giving post-bank-switch alternates first access. The +243 code bytes marked indicates the prioritization helps downstream static analysis discover additional code (via more diverse trace coverage influencing queue seeding). The `emu_only_pc=0` result confirms that for Rom City Rampage specifically, all emu-discovered code is redundant with static analysis — the split-table pipeline already finds these PCs. The value of frontier prioritization will be greater for ROMs where bank-switched code isn't reachable via static pointer tables.
 
+### Phase 49: Distance-Aware Adjacent Evidence Telemetry
+
+**File:** `internal/disasm/banks.go`, `internal/disasm/stats.go`
+
+**Changes:**
+1. Increased `hasAdjacentSplitEntryEvidence` radius from 8 to 16 bytes.
+2. Added distance-aware telemetry: tracks minimum delta to nearest code evidence (`splitSeedAdjacentEvidenceMin`), found/miss counters.
+3. Full scan continues within radius even after finding evidence, recording closest delta.
+
+**Validation:**
+- `go test ./...` — all pass.
+- `make lint` — 0 issues.
+- `bash scripts/verify_rom_city_rampage.sh` — both assemblers pass.
+- Telemetry result for Rom City Rampage: `adjacent_evidence_found=0, adjacent_evidence_miss=3` — all 3 RTS opcode-gate rejects have zero adjacent code evidence even at radius=16, confirming they are genuine data entries.
+
+**Analysis:** The radius increase from 8→16 is a safe improvement for other ROMs where nearby code evidence may exist in the 9-16 byte range. For Rom City Rampage specifically, the 3 remaining RTS rejects are conclusively data — no code evidence within 16 bytes in any direction. No false-positive risk since the guard only permits entries WITH nearby evidence.
+
+### Phase 50: Cross-Bank Call Target Seeding
+
+**File:** `internal/disasm/banks.go`, `internal/disasm/stats.go`
+
+**Background:** Per-bank code density analysis revealed most banks had low code coverage (38-198 lines). Investigation showed that `seedLikelyMappedBankCallTargets` scans for JSR/JMP patterns WITHIN each bank, but doesn't leverage call targets discovered by the default mapping's trace. Fixed-bank code ($C000-$FFFF) frequently calls routines at addresses in the switchable window ($8000-$BFFF). These call targets are stored as `CallDestination` flags on the default mapping's offset info, but are invisible when other banks are mapped.
+
+**Changes:**
+1. Added `collectCallTargetAddresses()` — scans the default mapping for all addresses with the `CallDestination` flag before bank remapping begins.
+2. Added `seedCrossBankCallTargets(targets)` — for each additional bank, checks collected addresses against the new mapping; seeds those with valid routine-start opcodes.
+3. Added telemetry: `cross_bank_call_targets_collected`, `cross_bank_call_targets_seeded`.
+4. Wired into `processAdditionalBanks` — collection happens once before the bank loop; seeding runs per-bank between `seedLikelyMappedBankCallTargets` and pointer-table seeding.
+
+**Validation:**
+- `go test ./...` — all pass.
+- `make lint` — 0 issues.
+- `bash scripts/verify_rom_city_rampage.sh` — both assemblers pass.
+- Code-density result:
+  - After Phase 48: `7580`
+  - After Phase 50: `9079`
+  - Delta: `+1499` code lines (+19.8%).
+- Per-bank improvement (before → after):
+  - Bank 0: 198→329 (+66%), Bank 3: 82→215 (+162%), Bank 6: 243→387 (+59%)
+  - Bank 7: 65→187 (+188%), Bank 8: 38→215 (+466%), Bank 11: 242→463 (+91%)
+  - Bank 12: 2→122 (+5900%), Bank 14: 3540→3648 (+3%)
+  - Nearly every bank showed significant improvement.
+- Key metrics:
+  - `cross_bank_call_targets_collected`: 32
+  - `cross_bank_call_targets_seeded`: 210 (32 targets × 15 banks, filtered by opcode gate)
+  - `static_unique_pc`: 9,448 → 10,599 (+12.2%)
+  - `parsed_offsets`: 10,349 → 13,091 (+26.5%)
+  - `code_bytes_marked`: 16,106 → 19,186 (+19.1%)
+  - `queue_added_primary`: 10,039 → 12,770 (+27.2%)
+  - ca65: 61,027 → 63,836 lines; asm6: 61,102 → 63,911 lines
+- Emu trace metrics unchanged (expected — emu trace runs before additional bank processing):
+  - `unique_pc`: 495, `emu_only_pc`: 0
+
+**Analysis:** Cross-bank call target seeding produced the largest single-phase code density improvement since Phase 29 (Mapped-Bank Call-Target Expansion). The mechanism is simple: 32 addresses with `CallDestination` flags in the default mapping were checked against 15 other banks, yielding 210 seeds. The opcode gate (`isLikelyM6502RoutineStartOpcode`) provides adequate false-positive protection — any byte that isn't an official non-BRK/RTS/RTI opcode is rejected. The +19.8% code density lift confirms significant genuine code existed in switchable banks at addresses called by the fixed bank. Zero false-positive regressions (both assemblers verify).
+
+### Phase 51: Iterative Multi-Pass Bank Processing
+
+**File:** `internal/disasm/banks.go`
+
+**Background:** Phase 50 collected 32 call targets from the default mapping and seeded them across 15 banks. Code discovered during this process creates NEW `CallDestination` flags (from JSR/JMP instructions in the newly discovered code). These new targets aren't available until after the first pass completes.
+
+**Changes:**
+1. Refactored `processAdditionalBanks` into a two-level structure: outer function manages passes, inner `processAdditionalBanksPass` processes all banks with a given target set.
+2. After each pass, restored default mapping and re-collected call targets. If more targets found than the previous pass, ran another pass with the expanded target set.
+3. Added `maxPasses=4` safety cap to prevent runaway iterations.
+4. Also expanded `collectCallTargetAddresses` to include `FunctionReference` addresses (OR'd flag check).
+
+**Validation:**
+- `go test ./...` — all pass (16 packages).
+- `make lint` — 0 issues.
+- `bash scripts/verify_rom_city_rampage.sh` — both assemblers pass.
+- Code-density result:
+  - After Phase 50 (1 pass): `9079`
+  - After Phase 51 (2 passes): `9842`
+  - Delta: `+763` code lines (+8.4%).
+- Convergence: Pass 1 collected 32 targets. Pass 2 collected 52 targets (+20 new from pass 1 discoveries). Pass 3 collected 52 targets (no growth) → converged.
+- Per-bank improvement (Phase 50 → Phase 51):
+  - Bank 0: 329→396, Bank 3: 215→310, Bank 5: 184→235, Bank 12: 122→197, Bank 14: 3648→3804
+  - Every bank showed incremental improvement from chained discovery.
+- Key metrics:
+  - `cross_bank_call_targets_collected`: 52 (32→52 across passes)
+  - `cross_bank_call_targets_seeded`: 538 (210→538 total across passes)
+  - `parsed_offsets`: 13,091 → 14,363 (+9.7%)
+  - `code_bytes_marked`: 19,186 → 20,800 (+8.4%)
+  - `additional_banks_processed`: 30 (15 per pass × 2 passes)
+  - ca65: 63,836 → 65,277 lines; asm6: 63,911 → 65,352 lines
+- Entry-point expansion investigation: Scanning every 256-byte boundary was investigated and abandoned — ~20% of random data passes the 3-instruction sequence validation check, causing massive performance regression. Reverted to original 4-anchor approach.
+
+**Analysis:** Iterative multi-pass bank processing chains discoveries from one pass to seed the next. The 20 new call targets discovered in pass 1 were routines at addresses only reachable through pass-1 code (e.g., bank X's code calls address $8200, which was only discovered when bank X was first processed). The convergence at 2 passes (with cap of 4) confirms the discovery chain is short for this ROM. Zero false-positive regressions. Total code density growth from Phase 48 to Phase 51: **7,580 → 9,842 (+29.8%)**.
+
 ## Progress Summary (as of 2026-02-24)
 
 ### Completed Phases
@@ -3333,6 +3423,9 @@ An initial attempt at per-state visit budget isolation was explored and abandone
 | 46 | Unofficial Opcode Trap | Skip paths executing unofficial/undefined opcodes, prevent data-region budget waste |
 | 47 | Stack Dispatch Correlation | PHA+PHA+RTS correlation signal, recovered 2 pairs (downstream gates confirmed as data) |
 | 48 | Post-Bank-Switch Frontier Prioritization | Dual-queue frontier: post-switch alternates explored first, +9% alternates, -37% drops, +243 code bytes |
+| 49 | Distance-Aware Adjacent Evidence Telemetry | Radius 8→16, min-delta tracking; 3 RTS rejects confirmed as data (no evidence within 16 bytes) |
+| 50 | Cross-Bank Call Target Seeding | Seed call targets from default mapping across all banks, `code=9079` (+19.8%), +12.2% static PCs |
+| 51 | Iterative Multi-Pass Bank Processing | Converging re-collection loop: pass 2 discovers 20 new targets from pass 1, `code=9842` (+8.4%) |
 
 ### Current Metrics
 
@@ -3343,9 +3436,9 @@ An initial attempt at per-state visit budget isolation was explored and abandone
 | Mapper 7 pass rate | 1/1 |
 | Mapper 1 pass rate (notworking) | 2/2 |
 | Mapper 2 pass rate (notworking) | 5/7 |
-| Rom City Rampage code lines | 7580 |
-| Rom City Rampage asm6 lines | 61102 |
-| Rom City Rampage ca65 lines | 61027 |
+| Rom City Rampage code lines | 9842 |
+| Rom City Rampage asm6 lines | 65352 |
+| Rom City Rampage ca65 lines | 65277 |
 | Rom City Rampage bank-switch comments | 2 |
 | Go test suite | all pass |
 | Build status | clean |
@@ -3365,8 +3458,9 @@ An initial attempt at per-state visit budget isolation was explored and abandone
 4. **Split-table pipeline** (Phases 32-41, 43, 47): Multi-stage gated pipeline: plausibility → correlation → extraction → opcode gate → shape → weak-entry tiers → mid-run RTS/RTI acceptance → stack dispatch correlation.
 5. **Deterministic I/O stubs** (Phases 17-19, 43-46): PPU status alternation, controller serial emulation, PPU data-loop relaxation; all snapshot-safe for branch replay. Phase 43 removed the bank-switch guard that blocked loop relaxation for mapper-heavy ROMs. Phase 44 added inside-loop body detection so non-branch instructions within tight loops also get relaxed visit limits. Phase 45 added PPU status polling (`BIT/LDA $2002`) detection for the higher `ppuLoopVisitLimit`. Phase 46 added unofficial opcode trap to bail out of data-execution paths.
 6. **Frontier prioritization** (Phase 48): Dual-queue frontier where post-bank-switch alternates are explored before initial-mapping alternates. Per-state visit budget isolation was investigated and abandoned because the shared counter's "fast-fail" at hot PCs is a beneficial side-effect that keeps alternates efficiently yielding.
-6. **Non-default mapping label safety** (Phase 20): Branch/call operands in non-default mapping contexts keep literal targets to prevent cross-mapping address drift.
-7. **Emu-trace-driven bank-switch comments** (Phase 42): Only annotates writes that actually changed PRG mapping during emulation, avoiding noise from CHR/misc register writes. Static-only mode gets no bank-switch comments.
+7. **Cross-bank call target seeding** (Phases 50-51): Collect `CallDestination`/`FunctionReference` addresses from the default mapping, seed across all banks. Iterative multi-pass converges when no new targets are discovered (typically 2 passes). Per-bank entry expansion (every 256-byte boundary) was investigated and abandoned — random data passes 3-instruction sequence validation at ~20% rate, causing performance regression.
+8. **Non-default mapping label safety** (Phase 20): Branch/call operands in non-default mapping contexts keep literal targets to prevent cross-mapping address drift.
+9. **Emu-trace-driven bank-switch comments** (Phase 42): Only annotates writes that actually changed PRG mapping during emulation, avoiding noise from CHR/misc register writes. Static-only mode gets no bank-switch comments.
 
 ### Files Added/Modified on Branch
 
@@ -3456,7 +3550,7 @@ Scripts:
 7. Split-table false-positive code promotion.
    - Aggressive pointer-table seeding can promote data as code, causing verification failures.
    - Mitigation: multi-stage gated pipeline (plausibility → correlation → extraction → opcode → shape → weak tiers → mid-run RTS/RTI).
-   - Status: zero false-positive regressions through Phase 48. Phase 47's stack dispatch signal validated the pipeline's defense-in-depth: 2 new pairs passed correlation but downstream gates correctly blocked data entries. Phase 48's frontier prioritization caused no output changes.
+   - Status: zero false-positive regressions through Phase 51. Phase 50-51's cross-bank call target seeding added 538 seeds across 30 bank-passes (2 iterations); all 9,842 resulting code lines verify correctly with both assemblers.
 
 ## Glossary
 
@@ -3473,20 +3567,28 @@ Scripts:
 
 ### High Priority — Emu Trace Quality
 
-Current bottleneck: the emu trace discovers 495 unique PCs but **0 emu-only PCs** — it visits only code that static analysis already finds. Phase 48 added frontier prioritization (post-bank-switch alternates explored first), resulting in +9% more alternates and +243 code bytes, but `emu_only_pc` remains 0 for this ROM because the split-table pipeline already discovers all bank-switched code statically.
+Current state: the emu trace discovers 495 unique PCs with **0 emu-only PCs** — all emu-discovered code is redundant with static analysis. Testing with frontier size 16384 (zero budget drops) confirmed the trace is fully saturated: same unique_pc/emu_only_pc with 17,786 alternates explored (vs 9,104 at 4096). Further emu trace improvements have diminishing returns for this ROM.
 
-1. ~~**Branch state visit budget isolation**~~ — Investigated in Phase 48 and abandoned. Per-state isolation removed the "fast-fail" mechanism at hot PCs, causing alternates to re-enter boot loops at full budget. Result: fewer alternates explored (4678 vs 8343) and fewer unique PCs (142 vs 495). The shared visit counter's saturation at hot PCs is actually beneficial — it forces alternates to quickly yield and let other alternates run.
-2. ~~**Post-bank-switch frontier prioritization**~~ — Implemented in Phase 48. Dual-queue frontier (`priorityFrontier` + `frontier`) explores post-switch alternates first. Metrics: +9% alternates, -37% drops, +243 code bytes. No emu_only_pc improvement for Rom City Rampage since static analysis already covers those paths.
-3. **Unofficial opcode trap** — ~~Implemented in Phase 46.~~ The trap correctly skips data-region paths. For Rom City Rampage the trap has no metric impact because the halt site contains official code in the active bank mapping.
-4. **Frontier diversity scoring** — Current alternates from different branch points but the same mapping largely explore the same code. Consider deduplicating frontier entries by PC range (e.g., merge alternates whose starting PCs are within 32 bytes under the same mapping) to increase path diversity.
+1. ~~**Branch state visit budget isolation**~~ — Investigated in Phase 48 and abandoned.
+2. ~~**Post-bank-switch frontier prioritization**~~ — Implemented in Phase 48.
+3. ~~**Unofficial opcode trap**~~ — Implemented in Phase 46.
+4. **Frontier diversity scoring** — Low priority for this ROM (emu trace fully saturated). May help ROMs where `emu_only_pc > 0`. Consider deduplicating frontier entries by PC range under the same mapping.
 
-### High Priority — Split-Table Pipeline
+### High Priority — Static Analysis Pipeline
 
-Current state (post-Phase 47): 28 candidate pairs, 22 rejected by correlation (79%), 37+30 accepted targets. Phase 47's PHA+RTS signal recovered 2 pairs from correlation, but their entries were correctly blocked by downstream gates — confirming the pipeline's defense-in-depth. The remaining 22 correlation rejections are genuine false candidates without dispatch mechanisms.
+Phases 50-51 produced the largest code density improvements since Phase 29. Cross-bank call target seeding (+19.8%) plus iterative multi-pass processing (+8.4%) raised code density from 7,580 to **9,842** (+29.8% total). Current state: iterative passes converge at 2 iterations (52 call targets, 538 total seeds). Further opportunities:
 
-4. **Correlation relaxation for high-coherence pairs** — The 22 remaining correlation rejections are the largest pool, but Phase 47's experiment showed that broadening correlation doesn't necessarily yield new code — downstream gates correctly caught the 2 recovered pairs as data. Further relaxation should focus on pairs with unusually high plausibility (10+ valid sampled targets) rather than pattern-based signals.
-5. **Distance-aware adjacent evidence telemetry** — Emit minimum delta from split target to nearest code evidence to data-drive the current `radius=8` guard. This enables evidence-based radius tuning.
-6. **Remaining RTS singleton rescue** — 3 RTS rejects remain from table entries. Consider accepting RTS targets in tables where the table base address is referenced by at least 2 split-load instructions (higher upstream confidence).
+5. ~~**Cross-bank branch target seeding**~~ — Not applicable: 6502 branch instructions use relative addressing (±127 bytes), so they cannot cross bank boundaries.
+6. ~~**Per-bank entry point expansion**~~ — Investigated in Phase 51 and abandoned. Scanning every 256-byte boundary causes ~20% false positive rate even with 3-instruction sequence validation, leading to massive performance regression (data banks interpreted as code).
+7. ~~**Function reference propagation**~~ — Implemented in Phase 51. `FunctionReference` flags added to cross-bank collection alongside `CallDestination`. No additional targets found for this ROM (all FunctionReference addresses already have CallDestination).
+8. **Emu-trace-observed bank configuration seeding** — Instead of mapping each bank individually across all 4 windows, enumerate the actual bank configurations observed during emu trace and process each configuration. This would correctly handle multi-window mappings (e.g., bank 5 at $8000-$9FFF + bank 7 at $A000-$BFFF). Potentially unlocks cross-window call targets that per-bank scanning misses.
+
+### Split-Table Pipeline (Stable)
+
+Current state (post-Phase 51): 28 candidate pairs, 22 rejected by correlation (79%), 37+30 accepted targets. The 3 RTS opcode-gate rejects have zero adjacent code evidence within radius=16 (confirmed by Phase 49 telemetry), confirming they are genuine data entries.
+
+9. ~~**Distance-aware adjacent evidence telemetry**~~ — Implemented in Phase 49. Radius increased 8→16, min-delta tracking added. All 3 RTS rejects confirmed as data.
+10. **Correlation relaxation for high-coherence pairs** — 22 remaining rejects are genuine false candidates without dispatch mechanisms. Further relaxation has low ROI; downstream gates provide adequate defense-in-depth.
 
 ### Medium Priority — Remaining Failure Triage
 

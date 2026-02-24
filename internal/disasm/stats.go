@@ -19,28 +19,33 @@ type traceStats struct {
 	jumpEngineScanCalls  uint64
 	jumpEngineEntryFound uint64
 
-	additionalBanksConsidered  uint64
-	additionalBanksProcessed   uint64
-	additionalBankQueueGrowth  uint64
-	splitSeedCandidatePairs    uint64
-	splitSeedRejectedByCorr    uint64
-	splitSeedRejectedPlaus     uint64
-	splitSeedRejectedExtract   uint64
-	splitSeedRejectInvalid     uint64
-	splitSeedRejectOpcode      uint64
-	splitSeedRejectOpcodeRead  uint64
-	splitSeedRejectOpcodeInv   uint64
-	splitSeedRejectOpcodeUno   uint64
-	splitSeedRejectOpcodeBRK   uint64
-	splitSeedRejectOpcodeRTS   uint64
-	splitSeedRejectOpcodeRTI   uint64
-	splitSeedRejectOpcodeOth   uint64
-	splitSeedRejectShape       uint64
-	splitSeedAcceptedTargets   uint64
-	splitSeedAcceptedWeak      uint64
-	splitSeedAcceptedWeakRT    uint64
-	splitSeedAcceptedMidRunRT  uint64
-	splitSeedAcceptedStackDisp uint64
+	additionalBanksConsidered      uint64
+	additionalBanksProcessed       uint64
+	additionalBankQueueGrowth      uint64
+	crossBankCallTargetsCollected  uint64
+	crossBankCallTargetsSeeded     uint64
+	splitSeedCandidatePairs        uint64
+	splitSeedRejectedByCorr        uint64
+	splitSeedRejectedPlaus         uint64
+	splitSeedRejectedExtract       uint64
+	splitSeedRejectInvalid         uint64
+	splitSeedRejectOpcode          uint64
+	splitSeedRejectOpcodeRead      uint64
+	splitSeedRejectOpcodeInv       uint64
+	splitSeedRejectOpcodeUno       uint64
+	splitSeedRejectOpcodeBRK       uint64
+	splitSeedRejectOpcodeRTS       uint64
+	splitSeedRejectOpcodeRTI       uint64
+	splitSeedRejectOpcodeOth       uint64
+	splitSeedRejectShape           uint64
+	splitSeedAcceptedTargets       uint64
+	splitSeedAcceptedWeak          uint64
+	splitSeedAcceptedWeakRT        uint64
+	splitSeedAcceptedMidRunRT      uint64
+	splitSeedAcceptedStackDisp     uint64
+	splitSeedAdjacentEvidenceMin   uint64
+	splitSeedAdjacentEvidenceFound uint64
+	splitSeedAdjacentEvidenceMiss  uint64
 
 	parsedOffsets       uint64
 	alreadyParsedSkips  uint64
@@ -72,6 +77,8 @@ func (dis *Disasm) logTraceStats(start time.Time, completed bool) {
 		log.Uint64("additional_banks_considered", dis.stats.additionalBanksConsidered),
 		log.Uint64("additional_banks_processed", dis.stats.additionalBanksProcessed),
 		log.Uint64("additional_bank_queue_growth", dis.stats.additionalBankQueueGrowth),
+		log.Uint64("cross_bank_call_targets_collected", dis.stats.crossBankCallTargetsCollected),
+		log.Uint64("cross_bank_call_targets_seeded", dis.stats.crossBankCallTargetsSeeded),
 		log.Uint64("split_seed_candidate_pairs", dis.stats.splitSeedCandidatePairs),
 		log.Uint64("split_seed_rejected_correlation", dis.stats.splitSeedRejectedByCorr),
 		log.Uint64("split_seed_rejected_plausibility", dis.stats.splitSeedRejectedPlaus),
@@ -91,6 +98,9 @@ func (dis *Disasm) logTraceStats(start time.Time, completed bool) {
 		log.Uint64("split_seed_accepted_weak_rts_rti", dis.stats.splitSeedAcceptedWeakRT),
 		log.Uint64("split_seed_accepted_mid_run_rts_rti", dis.stats.splitSeedAcceptedMidRunRT),
 		log.Uint64("split_seed_accepted_stack_dispatch", dis.stats.splitSeedAcceptedStackDisp),
+		log.Uint64("split_seed_adjacent_evidence_min_delta", dis.stats.splitSeedAdjacentEvidenceMin),
+		log.Uint64("split_seed_adjacent_evidence_found", dis.stats.splitSeedAdjacentEvidenceFound),
+		log.Uint64("split_seed_adjacent_evidence_miss", dis.stats.splitSeedAdjacentEvidenceMiss),
 		log.Uint64("parsed_offsets", dis.stats.parsedOffsets),
 		log.Uint64("already_parsed_skips", dis.stats.alreadyParsedSkips),
 		log.Uint64("inspect_skipped", dis.stats.inspectSkipped),
