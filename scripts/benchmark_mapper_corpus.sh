@@ -3,7 +3,7 @@
 #
 # This script runs retrodisasm verification over the working/notworking
 # commercial sets and outputs:
-# 1) per-ROM CSV results (rom,set,mapper,status,duration_ms)
+# 1) per-ROM CSV results (rom,set,mapper,status,failure_class,duration_ms)
 # 2) aggregated pass/fail totals by (set, mapper)
 #
 # Usage:
@@ -94,6 +94,32 @@ verify_rom() {
     return 0
 }
 
+classify_failure() {
+    local log_file="$1"
+
+    if grep -Eiq "unexpected EOF|failed reading PRG data|could not read cartridge|invalid iNES|failed reading cartridge" "$log_file"; then
+        echo "input_corrupt"
+        return 0
+    fi
+    if grep -Eiq "Range error" "$log_file"; then
+        echo "assembler_range"
+        return 0
+    fi
+    if grep -Eiq "segment PRG mismatch|Offset mismatch" "$log_file"; then
+        echo "prg_mismatch"
+        return 0
+    fi
+    if grep -Eiq "verification failed" "$log_file"; then
+        echo "verification_failed"
+        return 0
+    fi
+    if grep -Eiq "Disassembling failed" "$log_file"; then
+        echo "disasm_failed"
+        return 0
+    fi
+    echo "unknown"
+}
+
 sanitize_name() {
     local name="$1"
     name="$(echo "$name" | tr ' ' '_' | tr -cd '[:alnum:]_.-')"
@@ -157,7 +183,8 @@ write_assembler_error_artifacts() {
 write_failure_artifacts() {
     local rom="$1"
     local rom_name="$2"
-    local log_file="$3"
+    local failure_class="$3"
+    local log_file="$4"
 
     if [[ -z "$ARTIFACT_DIR" ]]; then
         echo ""
@@ -184,6 +211,7 @@ rom=${rom}
 rom_name=${rom_name}
 group=${GROUP}
 assembler=${ASSEMBLER}
+failure_class=${failure_class}
 EOF
 
     echo "$artifact_path"
@@ -222,7 +250,7 @@ group_from_path() {
 }
 
 mkdir -p "$(dirname "$OUTPUT_CSV")"
-echo "rom,set,mapper,status,duration_ms,artifact_path" > "$OUTPUT_CSV"
+echo "rom,set,mapper,status,failure_class,duration_ms,artifact_path" > "$OUTPUT_CSV"
 
 if [[ -n "$ARTIFACT_DIR" ]]; then
     mkdir -p "$ARTIFACT_DIR"
@@ -235,7 +263,7 @@ mkdir -p "${tmp_dir}/gocache"
 # Keep go build cache inside writable temp space (important for sandboxed runs).
 export GOCACHE="${tmp_dir}/gocache"
 
-declare -A PASS FAIL TOTAL
+declare -A PASS FAIL TOTAL FAIL_CLASS
 
 declare -a ROMS
 while IFS= read -r -d '' rom; do
@@ -266,21 +294,24 @@ for rom in "${ROMS[@]}"; do
     log_file="${tmp_dir}/run.log"
     if verify_rom "$rom" "$log_file"; then
         status="pass"
+        failure_class=""
         artifact_path=""
         PASS["$key"]=$(( ${PASS["$key"]:-0} + 1 ))
     else
         status="fail"
-        artifact_path="$(write_failure_artifacts "$rom" "$rom_name" "$log_file")"
+        failure_class="$(classify_failure "$log_file")"
+        artifact_path="$(write_failure_artifacts "$rom" "$rom_name" "$failure_class" "$log_file")"
         FAIL["$key"]=$(( ${FAIL["$key"]:-0} + 1 ))
+        FAIL_CLASS["$failure_class"]=$(( ${FAIL_CLASS["$failure_class"]:-0} + 1 ))
     fi
     end_ms="$(date +%s%3N)"
     duration_ms=$(( end_ms - start_ms ))
 
     TOTAL["$key"]=$(( ${TOTAL["$key"]:-0} + 1 ))
 
-    printf '"%s",%s,%s,%s,%s,"%s"\n' \
-        "$rom_name" "$set_name" "$mapper" "$status" "$duration_ms" "$artifact_path" >> "$OUTPUT_CSV"
-    printf '%-55s mapper=%-3s set=%-10s status=%s\n' "$rom_name" "$mapper" "$set_name" "$status"
+    printf '"%s",%s,%s,%s,%s,%s,"%s"\n' \
+        "$rom_name" "$set_name" "$mapper" "$status" "$failure_class" "$duration_ms" "$artifact_path" >> "$OUTPUT_CSV"
+    printf '%-55s mapper=%-3s set=%-10s status=%s class=%s\n' "$rom_name" "$mapper" "$set_name" "$status" "${failure_class:-none}"
 done
 
 echo ""
@@ -303,6 +334,21 @@ for key in "${KEYS[@]}"; do
     total="${TOTAL["$key"]:-0}"
     printf '%-12s %-8s %-6s %-6s %-6s\n' "$set_name" "$mapper" "$pass" "$fail" "$total"
 done
+
+if [[ ${#FAIL_CLASS[@]} -gt 0 ]]; then
+    echo ""
+    echo "Failure Classes"
+    printf '%-20s %-6s\n' "class" "count"
+    declare -a FAIL_KEYS
+    for key in "${!FAIL_CLASS[@]}"; do
+        FAIL_KEYS+=("$key")
+    done
+    IFS=$'\n' FAIL_KEYS=($(printf '%s\n' "${FAIL_KEYS[@]}" | sort))
+    unset IFS
+    for key in "${FAIL_KEYS[@]}"; do
+        printf '%-20s %-6s\n' "$key" "${FAIL_CLASS["$key"]:-0}"
+    done
+fi
 
 echo ""
 echo "Wrote baseline CSV: $OUTPUT_CSV"

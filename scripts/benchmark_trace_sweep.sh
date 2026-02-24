@@ -125,6 +125,32 @@ verify_rom() {
     return 0
 }
 
+classify_failure() {
+    local log_file="$1"
+
+    if grep -Eiq "unexpected EOF|failed reading PRG data|could not read cartridge|invalid iNES|failed reading cartridge" "$log_file"; then
+        echo "input_corrupt"
+        return 0
+    fi
+    if grep -Eiq "Range error" "$log_file"; then
+        echo "assembler_range"
+        return 0
+    fi
+    if grep -Eiq "segment PRG mismatch|Offset mismatch" "$log_file"; then
+        echo "prg_mismatch"
+        return 0
+    fi
+    if grep -Eiq "verification failed" "$log_file"; then
+        echo "verification_failed"
+        return 0
+    fi
+    if grep -Eiq "Disassembling failed" "$log_file"; then
+        echo "disasm_failed"
+        return 0
+    fi
+    echo "unknown"
+}
+
 sanitize_name() {
     local name="$1"
     # Keep names filesystem-safe and deterministic.
@@ -192,7 +218,8 @@ write_failure_artifacts() {
     local max_instr="$3"
     local max_visits="$4"
     local max_branch="$5"
-    local log_file="$6"
+    local failure_class="$6"
+    local log_file="$7"
 
     if [[ -z "$ARTIFACT_DIR" ]]; then
         echo ""
@@ -224,6 +251,7 @@ max_instr=${max_instr}
 max_visits=${max_visits}
 max_branch=${max_branch}
 assembler=${ASSEMBLER}
+failure_class=${failure_class}
 EOF
 
     echo "$artifact_path"
@@ -301,7 +329,7 @@ validate_csv_ints "$MAX_VISITS_CSV" "max visits"
 validate_csv_ints "$MAX_BRANCH_CSV" "max branch states"
 
 mkdir -p "$(dirname "$OUTPUT_CSV")"
-echo "rom,set,mapper,trace_mode,max_instr,max_visits,max_branch,status,duration_ms,artifact_path" > "$OUTPUT_CSV"
+echo "rom,set,mapper,trace_mode,max_instr,max_visits,max_branch,status,failure_class,duration_ms,artifact_path" > "$OUTPUT_CSV"
 
 if [[ -n "$ARTIFACT_DIR" ]]; then
     mkdir -p "$ARTIFACT_DIR"
@@ -314,7 +342,7 @@ mkdir -p "${tmp_dir}/gocache"
 # Keep go build cache inside writable temp space (important for sandboxed runs).
 export GOCACHE="${tmp_dir}/gocache"
 
-declare -A PASS FAIL TOTAL DURATION
+declare -A PASS FAIL TOTAL DURATION FAIL_CLASS_BY_CFG
 
 declare -a ROMS
 while IFS= read -r -d '' rom; do
@@ -360,12 +388,15 @@ for max_instr in "${MAX_INSTR_LIST[@]}"; do
                 log_file="${tmp_dir}/run.log"
                 if verify_rom "$rom" "$log_file" "$TRACE_MODE" "$max_instr" "$max_visits" "$max_branch"; then
                     status="pass"
+                    failure_class=""
                     artifact_path=""
                     PASS["$key"]=$(( ${PASS["$key"]:-0} + 1 ))
                 else
                     status="fail"
-                    artifact_path="$(write_failure_artifacts "$rom" "$rom_name" "$max_instr" "$max_visits" "$max_branch" "$log_file")"
+                    failure_class="$(classify_failure "$log_file")"
+                    artifact_path="$(write_failure_artifacts "$rom" "$rom_name" "$max_instr" "$max_visits" "$max_branch" "$failure_class" "$log_file")"
                     FAIL["$key"]=$(( ${FAIL["$key"]:-0} + 1 ))
+                    FAIL_CLASS_BY_CFG["${key},${failure_class}"]=$(( ${FAIL_CLASS_BY_CFG["${key},${failure_class}"]:-0} + 1 ))
                 fi
                 end_ms="$(date +%s%3N)"
                 duration_ms=$(( end_ms - start_ms ))
@@ -373,10 +404,10 @@ for max_instr in "${MAX_INSTR_LIST[@]}"; do
                 TOTAL["$key"]=$(( ${TOTAL["$key"]:-0} + 1 ))
                 DURATION["$key"]=$(( ${DURATION["$key"]:-0} + duration_ms ))
 
-                printf '"%s",%s,%s,%s,%s,%s,%s,%s,%s,"%s"\n' \
-                    "$rom_name" "$set_name" "$mapper" "$TRACE_MODE" "$max_instr" "$max_visits" "$max_branch" "$status" "$duration_ms" "$artifact_path" >> "$OUTPUT_CSV"
-                printf '%-55s mapper=%-3s mode=%-6s instr=%-7s visits=%-4s branch=%-4s status=%s\n' \
-                    "$rom_name" "$mapper" "$TRACE_MODE" "$max_instr" "$max_visits" "$max_branch" "$status"
+                printf '"%s",%s,%s,%s,%s,%s,%s,%s,%s,%s,"%s"\n' \
+                    "$rom_name" "$set_name" "$mapper" "$TRACE_MODE" "$max_instr" "$max_visits" "$max_branch" "$status" "$failure_class" "$duration_ms" "$artifact_path" >> "$OUTPUT_CSV"
+                printf '%-55s mapper=%-3s mode=%-6s instr=%-7s visits=%-4s branch=%-4s status=%s class=%s\n' \
+                    "$rom_name" "$mapper" "$TRACE_MODE" "$max_instr" "$max_visits" "$max_branch" "$status" "${failure_class:-none}"
             done
         done
     done
@@ -417,6 +448,36 @@ for key in "${KEYS[@]}"; do
     printf '%-8s %-8s %-9s %-10s %-10s %-6s %-6s %-6s %-9s\n' \
         "$mapper" "$mode" "$max_instr" "$max_visits" "$max_branch" "$pass" "$fail" "$total" "$avg_ms"
 done
+
+if [[ ${#FAIL_CLASS_BY_CFG[@]} -gt 0 ]]; then
+    echo ""
+    echo "Failure Classes by mapper + trace config"
+    printf '%-8s %-8s %-9s %-10s %-10s %-20s %-6s\n' \
+        "mapper" "mode" "max_instr" "max_visits" "max_branch" "class" "count"
+
+    declare -a FAIL_CLASS_KEYS
+    for key in "${!FAIL_CLASS_BY_CFG[@]}"; do
+        FAIL_CLASS_KEYS+=("$key")
+    done
+
+    IFS=$'\n' FAIL_CLASS_KEYS=($(printf '%s\n' "${FAIL_CLASS_KEYS[@]}" | sort))
+    unset IFS
+
+    for key in "${FAIL_CLASS_KEYS[@]}"; do
+        mapper="${key%%,*}"
+        rest="${key#*,}"
+        mode="${rest%%,*}"
+        rest="${rest#*,}"
+        max_instr="${rest%%,*}"
+        rest="${rest#*,}"
+        max_visits="${rest%%,*}"
+        rest="${rest#*,}"
+        max_branch="${rest%%,*}"
+        class="${rest#*,}"
+        printf '%-8s %-8s %-9s %-10s %-10s %-20s %-6s\n' \
+            "$mapper" "$mode" "$max_instr" "$max_visits" "$max_branch" "$class" "${FAIL_CLASS_BY_CFG["$key"]:-0}"
+    done
+fi
 
 echo ""
 echo "Wrote sweep CSV: $OUTPUT_CSV"

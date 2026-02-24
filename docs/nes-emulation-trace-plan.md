@@ -1879,6 +1879,134 @@ Post-phase note:
 - Mapper-2 preset sweeps are now reproducible and telemetry-correlated, but current JOYPAD timelines do not move execution into new mapper/input states for this corpus slice.
 - Remaining progress is most likely tied to PPU/frame progression fidelity and/or altered trace budgets/policies, not additional preset variants alone.
 
+### Phase 26: Benchmark Failure-Class Classifier Hardening (Baseline + Sweep)
+
+Status: Completed (2026-02-24)
+
+1. Add explicit failure classification to the main benchmark harnesses so input-corrupt failures are separated from mapper/trace failures.
+2. Persist classification in CSV outputs for downstream clustering and triage automation.
+3. Add failure-class summary tables to benchmark console output.
+
+Acceptance:
+
+1. Baseline and sweep CSVs include a `failure_class` column.
+2. Existing pass/fail totals remain unchanged while failure causes are separated.
+3. `Archon`-class corrupt-input failures are clearly tagged as input-integrity failures.
+
+Implementation notes:
+
+- `scripts/benchmark_mapper_corpus.sh`
+  - Added `classify_failure()` with categories:
+    - `input_corrupt`
+    - `assembler_range`
+    - `prg_mismatch`
+    - `verification_failed`
+    - `disasm_failed`
+    - `unknown`
+  - CSV schema updated:
+    - from: `rom,set,mapper,status,duration_ms,artifact_path`
+    - to:   `rom,set,mapper,status,failure_class,duration_ms,artifact_path`
+  - Console output now includes per-ROM class (`class=<...>`) and aggregate failure-class counts.
+- `scripts/benchmark_trace_sweep.sh`
+  - Added matching `classify_failure()` logic.
+  - CSV schema updated:
+    - from: `rom,set,mapper,trace_mode,max_instr,max_visits,max_branch,status,duration_ms,artifact_path`
+    - to:   `rom,set,mapper,trace_mode,max_instr,max_visits,max_branch,status,failure_class,duration_ms,artifact_path`
+  - Console output now includes per-run class and aggregated class counts by `(mapper, mode, max_instr, max_visits, max_branch)`.
+
+Validation:
+
+- Syntax checks:
+  - `bash -n scripts/benchmark_mapper_corpus.sh scripts/benchmark_trace_sweep.sh`
+  - Result: success.
+- Baseline benchmark smoke run:
+  - `scripts/benchmark_mapper_corpus.sh -g notworking -a ca65 -o /tmp/phase26_mapper_corpus_notworking.csv`
+  - Summary:
+    - mapper `1`: `2 pass / 0 fail`
+    - mapper `2`: `5 pass / 2 fail`
+    - failure classes:
+      - `input_corrupt: 1` (`Archon`)
+      - `prg_mismatch: 1` (`Alfred Chicken`)
+- Sweep benchmark smoke run:
+  - `scripts/benchmark_trace_sweep.sh -g notworking -m 2 -i 200000 -v 8 -b 0 -a ca65 -o /tmp/phase26_trace_sweep_m2.csv`
+  - Summary:
+    - mapper `2` config (`hybrid, 200000, 8, 0`): `5 pass / 2 fail / 7 total`
+    - failure classes:
+      - `input_corrupt: 1`
+      - `prg_mismatch: 1`
+- CSV header checks:
+  - `/tmp/phase26_mapper_corpus_notworking.csv` and `/tmp/phase26_trace_sweep_m2.csv` both contain the new `failure_class` field.
+
+Post-phase note:
+
+- The benchmark layer now cleanly separates trace/mapper regressions from ROM-input integrity failures, reducing false debugging loops on corrupt/truncated inputs.
+- This de-risks upcoming PPU/frame-model experiments by making failure-type regressions immediately visible in automation output.
+
+### Phase 27: Classifier-Aware Artifact Clustering Outputs
+
+Status: Completed (2026-02-24)
+
+1. Extend artifact clustering to consume/derive failure classes and emit class-grouped triage outputs.
+2. Propagate `failure_class` into failure artifact metadata so clustering does not depend on fragile log parsing.
+3. Add markdown sections that correlate mapper hotspots with failure class.
+
+Acceptance:
+
+1. Cluster details CSV includes `failure_class` per artifact.
+2. New class-grouped cluster CSV outputs are generated (mapper+class counts, class-scoped offsets/labels).
+3. Existing cluster outputs remain intact and benchmark harnesses stay compatible.
+
+Implementation notes:
+
+- Failure metadata propagation:
+  - `scripts/benchmark_mapper_corpus.sh`
+    - `write_failure_artifacts(...)` now receives `failure_class`.
+    - `meta.txt` now includes `failure_class=<...>`.
+  - `scripts/benchmark_trace_sweep.sh`
+    - same `failure_class` propagation into `meta.txt`.
+- Clustering enhancements:
+  - `scripts/cluster_failure_artifacts.sh`
+    - Added failure-class resolution:
+      - read from `meta.txt` when available
+      - fallback classification from `verify.log` when missing (backward-compatible with older artifacts)
+    - Details CSV schema updated:
+      - from: `rom_name,mapper,config,first_mismatch_offset,mismatch_count,labels_count,artifact_path`
+      - to:   `rom_name,mapper,failure_class,config,first_mismatch_offset,mismatch_count,labels_count,artifact_path`
+    - Added generated outputs:
+      - `*_failure_class_clusters.csv` (`mapper,failure_class,artifact_hits`)
+      - `*_offset_by_failure_class.csv`
+      - `*_label_by_failure_class.csv`
+      - stable variants for both class-scoped offset/label clusters (`*_stable.csv`)
+    - Markdown summary additions:
+      - `Failures by Class`
+      - `Failures by Mapper + Class`
+      - per-mapper class-scoped Top-N mismatch-offset and label tables.
+
+Validation:
+
+- Syntax checks:
+  - `bash -n scripts/benchmark_mapper_corpus.sh scripts/benchmark_trace_sweep.sh scripts/cluster_failure_artifacts.sh`
+  - Result: success.
+- Baseline artifacts + clustering:
+  - `scripts/benchmark_mapper_corpus.sh -g notworking -a ca65 -d /tmp/phase27_artifacts_base -o /tmp/phase27_mapper_corpus_notworking.csv`
+  - `scripts/cluster_failure_artifacts.sh -d /tmp/phase27_artifacts_base -o /tmp/phase27_failure_cluster_summary.md -c /tmp/phase27_failure_cluster_details.csv -n 8 -k 2`
+  - Result highlights:
+    - artifacts analyzed: `2`
+    - class clusters: `input_corrupt=1`, `prg_mismatch=1`
+    - details CSV includes `failure_class`.
+- Sweep artifacts + clustering:
+  - `scripts/benchmark_trace_sweep.sh -g notworking -m 2 -i 200000 -v 8 -b 0 -a ca65 -d /tmp/phase27_artifacts_sweep -o /tmp/phase27_trace_sweep_m2.csv`
+  - `scripts/cluster_failure_artifacts.sh -d /tmp/phase27_artifacts_sweep -o /tmp/phase27_sweep_failure_cluster_summary.md -c /tmp/phase27_sweep_failure_cluster_details.csv -n 8 -k 2`
+  - Result highlights:
+    - artifacts analyzed: `2`
+    - class-aware markdown sections generated and populated
+    - class-scoped offset/label CSV outputs generated successfully.
+
+Post-phase note:
+
+- Clustering now preserves failure semantics end-to-end, so corrupt-input artifacts are separated from mapper/trace mismatch artifacts in both CSV and markdown triage.
+- This closes the tooling loop needed to evaluate upcoming PPU/frame-model experiments with cleaner regression signals.
+
 ## Testing Plan
 
 1. Unit tests
@@ -1928,6 +2056,6 @@ Post-phase note:
 ## Immediate Next Steps
 
 1. Extend PPU progression realism beyond status/data loops (frame/vblank cadence tied to register interaction and timing proxies).
-2. Add a fast failure classifier in benchmark scripts for corrupt/truncated ROM inputs (`Archon` class) to separate input-integrity failures from trace/mapper regressions.
-3. Replace mapper-1 branch guard with a condition-based alternate-path policy (mapper-safe heuristics) so branch exploration can be re-enabled without reintroducing the regression.
-4. Use mapper-2 sweep telemetry to drive targeted PPU/frame-model experiments (starting with `Alfred Chicken` at hotspot `$C93F`) and re-measure `unique_pc` lift under the same preset matrix.
+2. Replace mapper-1 branch guard with a condition-based alternate-path policy (mapper-safe heuristics) so branch exploration can be re-enabled without reintroducing the regression.
+3. Use mapper-2 sweep telemetry to drive targeted PPU/frame-model experiments (starting with `Alfred Chicken` at hotspot `$C93F`) and re-measure `unique_pc` lift under the same preset matrix.
+4. Add a small automated experiment matrix around `Alfred Chicken` (`max_visits` and PPU-stub variants) and feed results through class-aware clustering to quantify which changes shift failure class or hotspot region.
