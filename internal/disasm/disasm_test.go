@@ -389,13 +389,13 @@ func TestDisasmDisambiguousInstructions(t *testing.T) {
 
 	expected := `Reset:
         jmp _label_8005
-        
+
         _label_8003:
         .byte $04                        ; branch into instruction detected: disambiguous instruction: nop z:$A9
-        
+
         _label_8004:
         .byte $a9
-        
+
         _label_8005:
         nop
         bmi _label_8003

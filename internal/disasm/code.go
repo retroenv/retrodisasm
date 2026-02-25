@@ -6,6 +6,7 @@ import (
 
 	"github.com/retroenv/retrodisasm/internal/offset"
 	"github.com/retroenv/retrodisasm/internal/program"
+	cpum6502 "github.com/retroenv/retrogolib/arch/cpu/m6502"
 )
 
 const (
@@ -69,7 +70,7 @@ func (dis *Disasm) resolveDestinationLabel(
 		switch {
 		case destinationInfo.IsType(program.JumpEngine):
 			name = fmt.Sprintf(jumpEngineNaming, address)
-		case destinationInfo.IsType(program.CallDestination):
+		case destinationInfo.IsType(program.CallDestination) && !isSuspectCallDestination(destinationInfo):
 			name = fmt.Sprintf(funcNaming, address)
 		default:
 			name = fmt.Sprintf(labelNaming, address)
@@ -78,6 +79,25 @@ func (dis *Disasm) resolveDestinationLabel(
 	name = dis.uniqueLabelName(name, key, destinationInfo, labelOwners)
 	destinationInfo.Label = name
 	return name
+}
+
+// isSuspectCallDestination returns true if a CallDestination offset's first byte
+// is BRK or an unofficial opcode, indicating the label is likely a false positive
+// created when a JSR/JMP target in the fixed bank pointed to data in another
+// bank mapping. These are downgraded from _func_ to _label_ naming.
+func isSuspectCallDestination(info *offset.DisasmOffset) bool {
+	if len(info.Data) == 0 {
+		return false
+	}
+	op := info.Data[0]
+	opcode := cpum6502.Opcodes[op]
+	if opcode.Instruction == nil || opcode.Instruction.Unofficial {
+		return true
+	}
+	if opcode.Instruction.Name == cpum6502.BrkName {
+		return true
+	}
+	return false
 }
 
 // applyDestinationLabel applies the resolved label to the destination info and its callers.
