@@ -22,6 +22,11 @@ func (dis *Disasm) AddAddressToParse(address, context, from uint16,
 
 	offsetInfo := dis.mapper.OffsetInfo(address)
 	key := dis.currentParseKey(address)
+
+	if dis.shouldRejectBranchTarget(isABranchDestination, offsetInfo, address) {
+		return
+	}
+
 	if isABranchDestination && currentInstruction != nil && currentInstruction.IsCall() {
 		offsetInfo.SetType(program.CallDestination)
 		if offsetInfo.Context == 0 {
@@ -63,6 +68,24 @@ func (dis *Disasm) AddAddressToParse(address, context, from uint16,
 		dis.offsetsToParse = append(dis.offsetsToParse, key)
 		dis.stats.queueAddedPrimary++
 	}
+}
+
+// shouldRejectBranchTarget validates branch/call targets during multi-bank
+// processing to prevent the tracer from cascading into data regions.
+func (dis *Disasm) shouldRejectBranchTarget(isABranchDestination bool,
+	offsetInfo *offset.DisasmOffset, address uint16) bool {
+
+	if !isABranchDestination || !dis.processingAdditionalBanks {
+		return false
+	}
+	if offsetInfo.IsType(program.CodeOffset) {
+		return false
+	}
+	if dis.validateCodeSequence(address) {
+		return false
+	}
+	dis.stats.queueRejectedValidation++
+	return true
 }
 
 // DeleteFunctionReturnToParse deletes a function return address from the list of addresses to parse.

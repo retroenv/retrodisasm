@@ -10,6 +10,7 @@ type traceStats struct {
 	queueRequests           uint64
 	queueRejectedInvalid    uint64
 	queueRejectedDuplicate  uint64
+	queueRejectedValidation uint64
 	queueAddedPrimary       uint64
 	queueAddedFunctionRet   uint64
 	branchDestinationsAdded uint64
@@ -67,6 +68,7 @@ func (dis *Disasm) logTraceStats(start time.Time, completed bool) {
 		log.Uint64("queue_requests", dis.stats.queueRequests),
 		log.Uint64("queue_rejected_invalid", dis.stats.queueRejectedInvalid),
 		log.Uint64("queue_rejected_duplicate", dis.stats.queueRejectedDuplicate),
+		log.Uint64("queue_rejected_validation", dis.stats.queueRejectedValidation),
 		log.Uint64("queue_added_primary", dis.stats.queueAddedPrimary),
 		log.Uint64("queue_added_function_return", dis.stats.queueAddedFunctionRet),
 		log.Uint64("branch_destinations_added", dis.stats.branchDestinationsAdded),

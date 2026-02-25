@@ -91,6 +91,8 @@ type Disasm struct {
 
 	mapper *mapper.Mapper
 	stats  traceStats
+
+	processingAdditionalBanks bool // true during multi-bank processing
 }
 
 // New creates a new disassembler that uses the passed architecture to implement system

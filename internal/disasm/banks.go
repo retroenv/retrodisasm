@@ -21,7 +21,11 @@ func (dis *Disasm) processAdditionalBanks(ctx context.Context) error {
 		return nil
 	}
 
-	defer dis.mapper.RestoreDefaultMapping()
+	defer func() {
+		dis.processingAdditionalBanks = false
+		dis.mapper.RestoreDefaultMapping()
+	}()
+	dis.processingAdditionalBanks = true
 
 	// Pass 1: initial seeding with default mapping call targets.
 	crossBankTargets := dis.collectCallTargetAddresses()
@@ -106,7 +110,10 @@ func (dis *Disasm) seedCrossBankCallTargets(targets []uint16) {
 		if err != nil || !isLikelyM6502RoutineStartOpcode(op) {
 			continue
 		}
-		if !dis.validateCodeSequence(addr) {
+		// Use strict validation for cross-bank targets because the risk of
+		// data-as-code false positives is much higher when testing addresses
+		// from other bank mappings against the current bank's data.
+		if !dis.validateCodeSequenceStrict(addr) {
 			continue
 		}
 		dis.AddAddressToParse(addr, addr, 0, nil, false)
@@ -1113,9 +1120,20 @@ func isLikelyM6502RoutineStartOpcode(op byte) bool {
 // code sequence by decoding the first several instructions. Returns false if any
 // decoded instruction is unofficial, invalid, or the sequence is too short.
 // This catches data regions where byte values quickly decode to unofficial opcodes.
+// BRK (0x00) is explicitly rejected because it is the most common byte in data
+// regions and is virtually never used intentionally in NES game code.
 func (dis *Disasm) validateCodeSequence(addr uint16) bool {
-	const minInstructions = 3
+	return dis.validateCodeSequenceN(addr, 3)
+}
 
+// validateCodeSequenceStrict performs a stricter validation requiring more
+// consecutive valid instructions. Used for cross-bank call targets where
+// the risk of data-as-code false positives is higher.
+func (dis *Disasm) validateCodeSequenceStrict(addr uint16) bool {
+	return dis.validateCodeSequenceN(addr, 6)
+}
+
+func (dis *Disasm) validateCodeSequenceN(addr uint16, minInstructions int) bool {
 	end := dis.arch.LastCodeAddress()
 	validCount := 0
 
@@ -1131,6 +1149,13 @@ func (dis *Disasm) validateCodeSequence(addr uint16) bool {
 
 		opcode := cpum6502.Opcodes[op]
 		if opcode.Instruction == nil || opcode.Instruction.Unofficial {
+			return false
+		}
+
+		// BRK (0x00) is extremely common in data regions (null bytes) and
+		// virtually never used intentionally in NES game code. Reject any
+		// sequence containing BRK to avoid false code classification.
+		if opcode.Instruction.Name == cpum6502.BrkName {
 			return false
 		}
 
