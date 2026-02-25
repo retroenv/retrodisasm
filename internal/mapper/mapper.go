@@ -173,6 +173,19 @@ func (m *Mapper) RestoreDefaultMapping() {
 	m.rememberCurrentMapping()
 }
 
+// RestoreFixedUpperMapping restores the $C000-$FFFF mapping to the last
+// (fixed) 16KB PRG bank. Used during additional bank processing to ensure
+// the fixed bank region contains the correct code when tracing non-default
+// banks, preventing the tracer from processing incorrect data at $C000+.
+func (m *Mapper) RestoreFixedUpperMapping() {
+	count16 := m.prg16KBankCount()
+	if count16 == 0 || m.bankWindowSize != 0x2000 {
+		return
+	}
+	m.map16KWindow(0xC000, count16-1)
+	m.rememberCurrentMapping()
+}
+
 func (m *Mapper) mappedEntriesForBank(bankIndex int) []mappedBank {
 	entries := make([]mappedBank, 0, 4)
 	for _, entry := range m.banksMapped {

@@ -56,6 +56,7 @@ func (dis *Disasm) processAdditionalBanksPass(ctx context.Context, bankCount int
 
 	for bankIndex := range bankCount {
 		dis.mapper.MapBank(bankIndex)
+		dis.mapper.RestoreFixedUpperMapping()
 
 		dis.seedLikelyMappedBankEntryPoints()
 		dis.seedLikelyMappedBankCallTargets()
@@ -125,7 +126,9 @@ func (dis *Disasm) seedCrossBankCallTargets(targets []uint16) {
 // host routines in bank-switched NES code. This is intentionally conservative to
 // avoid exploding parse noise from pure data banks.
 func (dis *Disasm) seedLikelyMappedBankEntryPoints() {
-	anchors := []uint16{0x8000, 0xA000, 0xC000, 0xE000}
+	// Only seed swappable region anchors. The fixed bank at $C000-$FFFF
+	// was already fully traced during the default pass.
+	anchors := []uint16{0x8000, 0xA000}
 	for _, addr := range anchors {
 		if !dis.isValidCodeAddress(addr) || addr > dis.arch.LastCodeAddress() {
 			continue

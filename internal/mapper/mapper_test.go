@@ -346,6 +346,37 @@ func TestMapBankAndRestoreDefaultMapping(t *testing.T) {
 	assert.Equal(t, 1, mapper.MappedBank(0xE000).ID())
 }
 
+func TestRestoreFixedUpperMapping(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		PRG: make([]byte, 0x10000), // 2 x 32KB banks = 8 x 8KB sub-banks
+	}
+	// Put marker bytes at start of each 8KB sub-bank
+	for i := range 8 {
+		cart.PRG[i*0x2000] = byte(i)
+	}
+	arch := &mockArchitecture{bankWindowSize: 0x2000}
+
+	mapper, err := New(arch, cart)
+	assert.NoError(t, err)
+
+	// Default: bank 0 at $8000/$A000, last bank at $C000/$E000
+	assert.Equal(t, byte(0), mapper.ReadMemory(0x8000)) // sub-bank 0
+	assert.Equal(t, byte(6), mapper.ReadMemory(0xC000)) // sub-bank 6 (last bank $C000)
+	assert.Equal(t, byte(7), mapper.ReadMemory(0xE000)) // sub-bank 7 (last bank $E000)
+
+	// Map bank 0 to full range: 4 sub-banks cover all 4 windows
+	mapper.MapBank(0)
+	assert.Equal(t, byte(0), mapper.ReadMemory(0x8000)) // sub-bank 0
+	assert.Equal(t, byte(2), mapper.ReadMemory(0xC000)) // sub-bank 2 (bank 0's upper half, WRONG for fixed-bank mappers)
+
+	// Restore fixed upper mapping
+	mapper.RestoreFixedUpperMapping()
+	assert.Equal(t, byte(0), mapper.ReadMemory(0x8000)) // sub-bank 0 (unchanged)
+	assert.Equal(t, byte(1), mapper.ReadMemory(0xA000)) // sub-bank 1 (unchanged)
+	assert.Equal(t, byte(6), mapper.ReadMemory(0xC000)) // sub-bank 6 (restored to last bank)
+	assert.Equal(t, byte(7), mapper.ReadMemory(0xE000)) // sub-bank 7 (restored to last bank)
+}
+
 func TestRestoreMappingSignature(t *testing.T) {
 	cart := &cartridge.Cartridge{
 		PRG: make([]byte, 0x10000), // 2 x 32KB banks
