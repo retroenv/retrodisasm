@@ -128,7 +128,30 @@ func (ar *Arch6502) replaceParamByAlias(address uint16, opcode instruction.Opcod
 	}
 
 	ar.vars.AddReference(addressReference, address, opcode, forceVariableUsage)
+
+	// Mark PRG ROM addresses referenced by indexed loads as data tables.
+	// This prevents the execution flow tracer from misinterpreting table
+	// contents as code when it falls through from preceding code.
+	if ar.IsAddressingIndexed(opcode) && addressReference >= ar.codeBaseAddress {
+		ar.markIndexedReferenceAsData(addressReference)
+	}
+
 	return paramAsString
+}
+
+// markIndexedReferenceAsData marks the byte at the given PRG ROM address as
+// a data offset, preventing the execution flow tracer from decoding it as code.
+// Only marks bytes that have not already been classified as code.
+func (ar *Arch6502) markIndexedReferenceAsData(address uint16) {
+	offsetInfo := ar.mapper.OffsetInfo(address)
+	if offsetInfo == nil || offsetInfo.IsType(program.CodeOffset) {
+		return
+	}
+	offsetInfo.SetType(program.DataOffset)
+	if len(offsetInfo.Data) == 0 {
+		b := ar.mapper.ReadMemory(address)
+		offsetInfo.Data = []byte{b}
+	}
 }
 
 // checkBranchingParam checks whether the branching instruction should do a variable check for the parameter
