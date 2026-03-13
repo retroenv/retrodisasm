@@ -15,7 +15,8 @@ func NewPRGBank(size int) *PRGBank {
 
 // PRGBank defines a PRG bank.
 type PRGBank struct {
-	Name string
+	Name        string
+	BaseAddress uint16
 
 	Offsets []Offset
 	Vectors [3]uint16

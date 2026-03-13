@@ -2,8 +2,11 @@ package retroasm
 
 import (
 	"fmt"
+	"io"
+	"strings"
 
 	"github.com/retroenv/retrodisasm/internal/program"
+	"github.com/retroenv/retrodisasm/internal/writer"
 	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
 )
 
@@ -22,7 +25,7 @@ func (w *FileWriter) writeNES() error {
 
 	for i, bank := range w.app.PRG {
 		lastBank := i == len(w.app.PRG)-1
-		if err := w.writeBank(bank, lastBank); err != nil {
+		if err := w.writeBank(bank, i == 0, lastBank); err != nil {
 			return fmt.Errorf("writing bank %d: %w", i, err)
 		}
 	}
@@ -85,34 +88,57 @@ func (w *FileWriter) writeHeader() error {
 }
 
 // writeBank writes a PRG bank.
-func (w *FileWriter) writeBank(bank *program.PRGBank, lastBank bool) error {
-	if _, err := fmt.Fprintf(w.mainWriter, "\n.org $%04x\n\n", w.app.CodeBaseAddress); err != nil {
+func (w *FileWriter) writeBank(bank *program.PRGBank, firstBank, lastBank bool) error {
+	bankWriteCloser, err := w.newBankWriter(bank.Name)
+	if err != nil {
+		return fmt.Errorf("creating bank writer: %w", err)
+	}
+	defer func() { _ = bankWriteCloser.Close() }()
+
+	if w.options.SplitBanks {
+		if firstBank {
+			if _, err := fmt.Fprintln(w.mainWriter); err != nil {
+				return fmt.Errorf("writing newline: %w", err)
+			}
+		}
+		bankFile := bankFilename(w.options.OutputFilename, bank.Name)
+		if _, err := fmt.Fprintf(w.mainWriter, ".include \"%s\"\n", bankFile); err != nil {
+			return fmt.Errorf("writing include directive: %w", err)
+		}
+	}
+
+	bankW := writer.New(w.app, bankWriteCloser, writer.Options{
+		OffsetComments: w.options.OffsetComments,
+	})
+
+	if _, err := fmt.Fprintf(bankWriteCloser, "\n.org $%04x\n\n", bank.BaseAddress); err != nil {
 		return fmt.Errorf("writing org directive: %w", err)
 	}
 
-	if err := w.writer.OutputAliasMap(bank.Constants); err != nil {
+	if err := bankW.OutputAliasMap(bank.Constants); err != nil {
 		return fmt.Errorf("writing constants: %w", err)
 	}
 
-	if err := w.writer.OutputAliasMap(bank.Variables); err != nil {
+	if err := bankW.OutputAliasMap(bank.Variables); err != nil {
 		return fmt.Errorf("writing variables: %w", err)
 	}
 
 	endIndex := bank.LastNonZeroByte(w.options)
-	if err := w.writer.ProcessPRG(bank, endIndex); err != nil {
+	if err := bankW.ProcessPRG(bank, endIndex); err != nil {
 		return fmt.Errorf("writing PRG: %w", err)
 	}
 
 	if !w.options.CodeOnly {
+		vectorsAddr := bank.BaseAddress + uint16(len(bank.Offsets)) - 6
 		if lastBank {
-			if err := w.writeVectors(w.app.Handlers.NMI, w.app.Handlers.Reset, w.app.Handlers.IRQ); err != nil {
+			if err := writeVectorsTo(bankWriteCloser, vectorsAddr, w.app.Handlers.NMI, w.app.Handlers.Reset, w.app.Handlers.IRQ); err != nil {
 				return fmt.Errorf("writing vectors: %w", err)
 			}
 		} else {
 			nmi := fmt.Sprintf("$%04X", bank.Vectors[0])
 			reset := fmt.Sprintf("$%04X", bank.Vectors[1])
 			irq := fmt.Sprintf("$%04X", bank.Vectors[2])
-			if err := w.writeVectors(nmi, reset, irq); err != nil {
+			if err := writeVectorsTo(bankWriteCloser, vectorsAddr, nmi, reset, irq); err != nil {
 				return fmt.Errorf("writing vectors: %w", err)
 			}
 		}
@@ -121,19 +147,27 @@ func (w *FileWriter) writeBank(bank *program.PRGBank, lastBank bool) error {
 	return nil
 }
 
-// writeVectors writes the IRQ vectors.
-func (w *FileWriter) writeVectors(nmi, reset, irq string) error {
-	addr := fmt.Sprintf("$%04X", w.app.VectorsStartAddress)
+// writeVectorsTo writes the IRQ vectors to the specified writer.
+func writeVectorsTo(w io.Writer, vectorsAddr uint16, nmi, reset, irq string) error {
+	addr := fmt.Sprintf("$%04X", vectorsAddr)
 
-	if _, err := fmt.Fprintf(w.mainWriter, "\n.org %s\n\n", addr); err != nil {
+	if _, err := fmt.Fprintf(w, "\n.org %s\n\n", addr); err != nil {
 		return fmt.Errorf("writing vector org: %w", err)
 	}
 
-	if _, err := fmt.Fprintf(w.mainWriter, vectors, nmi, reset, irq); err != nil {
+	if _, err := fmt.Fprintf(w, vectors, nmi, reset, irq); err != nil {
 		return fmt.Errorf("writing vectors: %w", err)
 	}
 
 	return nil
+}
+
+// bankFilename derives the bank output filename from the main output filename
+// and the bank name. Matches the logic in pipeline.generateBankFilename.
+func bankFilename(outputFilename, bankName string) string {
+	base := strings.TrimSuffix(outputFilename, ".asm")
+	suffix := strings.TrimPrefix(strings.ToLower(bankName), "prg_")
+	return base + "_" + suffix + ".asm"
 }
 
 // writeCHR writes the CHR content.

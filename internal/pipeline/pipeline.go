@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/retroenv/retrodisasm/internal/arch/chip8"
@@ -74,6 +76,7 @@ func (p *Pipeline) ExecuteWithCartridge(ctx context.Context, cart *cartridge.Car
 	// Update disasm options with system
 	disasmOpts.System = system
 	disasmOpts.Binary = opts.Binary
+	disasmOpts.OutputFilename = filepath.Base(opts.Output)
 
 	// When using binary mode, only output code without NES-specific segments
 	if opts.Binary {
@@ -95,7 +98,7 @@ func (p *Pipeline) ExecuteWithCartridge(ctx context.Context, cart *cartridge.Car
 	p.printInfo(opts, cart, system)
 
 	// Run disassembly
-	result, err := p.runDisassembly(ctx, dis, writer)
+	result, err := p.runDisassembly(ctx, dis, writer, disasmOpts, opts.Output)
 	if err != nil {
 		return nil, fmt.Errorf("disassembling: %w", err)
 	}
@@ -182,9 +185,15 @@ func (p *Pipeline) createDisassemblerForSystem(system arch.System, paramConverte
 }
 
 // runDisassembly executes the disassembly process.
-func (p *Pipeline) runDisassembly(ctx context.Context, dis *disasm.Disasm, writer io.Writer) (*program.Program, error) {
+func (p *Pipeline) runDisassembly(ctx context.Context, dis *disasm.Disasm, writer io.Writer,
+	opts options.Disassembler, outputPath string) (*program.Program, error) {
+
 	newBankWriter := func(bankName string) (io.WriteCloser, error) {
-		return &nopCloser{writer}, nil
+		if !opts.SplitBanks {
+			return &nopCloser{writer}, nil
+		}
+		bankFile := generateBankFilename(outputPath, bankName)
+		return os.Create(bankFile)
 	}
 
 	result, err := dis.Process(ctx, writer, newBankWriter)
@@ -192,6 +201,18 @@ func (p *Pipeline) runDisassembly(ctx context.Context, dis *disasm.Disasm, write
 		return nil, fmt.Errorf("processing disassembly: %w", err)
 	}
 	return result, nil
+}
+
+// generateBankFilename creates a per-bank output filename from the main output path
+// and the bank name. For example, ("output.asm", "PRG_BANK_3") -> "output_bank_3.asm".
+func generateBankFilename(outputPath, bankName string) string {
+	ext := filepath.Ext(outputPath)
+	base := outputPath[:len(outputPath)-len(ext)]
+
+	// Convert bank name to lowercase filename suffix: "PRG_BANK_3" -> "bank_3"
+	suffix := strings.TrimPrefix(strings.ToLower(bankName), "prg_")
+
+	return base + "_" + suffix + ext
 }
 
 // printInfo prints information about the ROM being processed.
