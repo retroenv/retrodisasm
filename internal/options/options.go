@@ -41,6 +41,7 @@ type OutputFlags struct {
 	NoHexComments    bool `flag:"nohexcomments" usage:"omit hex opcode bytes in comments"`
 	NoOffsets        bool `flag:"nooffsets" usage:"omit file offsets in comments"`
 	OutputUnofficial bool `flag:"output-unofficial" usage:"use mnemonics for unofficial opcodes (incompatible with -verify)"`
+	SplitBanks       bool `flag:"split-banks" usage:"write each PRG bank as a separate .asm file"`
 	StopAtUnofficial bool `flag:"stop-at-unofficial" usage:"stop tracing at unofficial opcodes unless branched to"`
 	ZeroBytes        bool `flag:"z" usage:"include trailing zero bytes in banks"`
 }
@@ -65,8 +66,10 @@ type Disassembler struct {
 	HexComments                 bool
 	OffsetComments              bool
 	OutputUnofficialAsMnemonics bool // output unofficial opcodes as mnemonics instead of .byte
+	SplitBanks                  bool // write each PRG bank as a separate .asm file
 	StopAtUnofficial            bool // stop tracing at unofficial opcodes unless explicitly branched to
 	ZeroBytes                   bool
+	OutputFilename              string // output filename for bank file generation
 }
 
 // NewDisassembler returns a new options instance with default options.

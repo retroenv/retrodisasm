@@ -122,6 +122,7 @@ func createDisasmOptions(opts options.Program) options.Disassembler {
 	disasmOptions.HexComments = !opts.NoHexComments
 	disasmOptions.OffsetComments = !opts.NoOffsets
 	disasmOptions.OutputUnofficialAsMnemonics = opts.OutputUnofficial
+	disasmOptions.SplitBanks = opts.SplitBanks
 	disasmOptions.StopAtUnofficial = opts.StopAtUnofficial
 	disasmOptions.ZeroBytes = opts.ZeroBytes
 

@@ -3,6 +3,7 @@ package ca65
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/retroenv/retrodisasm/internal/assembler"
 	"github.com/retroenv/retrodisasm/internal/options"
@@ -40,6 +41,7 @@ type segmentWrite struct {
 type prgBankWrite struct {
 	bank        *program.PRGBank
 	isMultiBank bool
+	firstBank   bool
 }
 
 type customWrite func() error
@@ -91,9 +93,9 @@ func (f FileWriter) Write() error {
 	}
 
 	isMultiBank := len(f.app.PRG) > 1
-	for _, bank := range f.app.PRG {
+	for i, bank := range f.app.PRG {
 		writes = append(writes,
-			prgBankWrite{bank: bank, isMultiBank: isMultiBank},
+			prgBankWrite{bank: bank, isMultiBank: isMultiBank, firstBank: i == 0},
 		)
 	}
 
@@ -153,51 +155,87 @@ func (f FileWriter) processWrite(write any) error {
 
 // writePRGBank writes a single PRG bank including constants, variables, code, and vectors.
 func (f FileWriter) writePRGBank(t prgBankWrite) error {
-	if err := f.writeConstants(t.bank); err != nil {
+	endIndex := t.bank.LastNonZeroByte(f.options)
+
+	// Skip empty banks that have no meaningful content.
+	// For multi-bank ROMs with headers/vectors, keep all banks for proper alignment.
+	if endIndex == 0 && (f.options.CodeOnly || !t.isMultiBank) {
+		return nil
+	}
+
+	bankWriteCloser, err := f.newBankWriter(t.bank.Name)
+	if err != nil {
+		return fmt.Errorf("creating bank writer: %w", err)
+	}
+	defer func() { _ = bankWriteCloser.Close() }()
+
+	if err := f.writeIncludeDirective(t); err != nil {
 		return err
 	}
-	if err := f.writeVariables(t.bank); err != nil {
-		return err
+
+	bankW := writer.New(f.app, bankWriteCloser, writer.Options{
+		OffsetComments: f.options.OffsetComments,
+	})
+
+	if err := bankW.OutputAliasMap(t.bank.Constants); err != nil {
+		return fmt.Errorf("writing constants output alias map: %w", err)
 	}
-	if err := f.writeCode(t.bank); err != nil {
-		return err
+	if err := bankW.OutputAliasMap(t.bank.Variables); err != nil {
+		return fmt.Errorf("writing variables output alias map: %w", err)
 	}
+
+	if !f.options.CodeOnly {
+		if err := f.writeSegmentTo(bankWriteCloser, t.bank.Name); err != nil {
+			return err
+		}
+	}
+
+	if err := bankW.ProcessPRG(t.bank, endIndex); err != nil {
+		return fmt.Errorf("writing PRG: %w", err)
+	}
+
 	// For multi-bank ROMs, write vectors at end of each bank
 	if t.isMultiBank && !f.options.CodeOnly {
-		if err := f.writeBankVectors(t.bank); err != nil {
+		if err := f.writeBankVectorsTo(bankWriteCloser, t.bank, endIndex); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// writeSegment writes a segment header to the output.
-func (f FileWriter) writeSegment(name string) error {
-	if name != "HEADER" {
+// writeIncludeDirective writes a .include directive for the bank file when split-banks mode is enabled.
+func (f FileWriter) writeIncludeDirective(t prgBankWrite) error {
+	if !f.options.SplitBanks {
+		return nil
+	}
+	if t.firstBank {
 		if _, err := fmt.Fprintln(f.mainWriter); err != nil {
+			return fmt.Errorf("writing newline: %w", err)
+		}
+	}
+	bankFile := bankFilename(f.options.OutputFilename, t.bank.Name)
+	if _, err := fmt.Fprintf(f.mainWriter, ".include \"%s\"\n", bankFile); err != nil {
+		return fmt.Errorf("writing include directive: %w", err)
+	}
+	return nil
+}
+
+// writeSegment writes a segment header to the main output.
+func (f FileWriter) writeSegment(name string) error {
+	return f.writeSegmentTo(f.mainWriter, name)
+}
+
+// writeSegmentTo writes a segment header to the specified writer.
+func (f FileWriter) writeSegmentTo(w io.Writer, name string) error {
+	if name != "HEADER" {
+		if _, err := fmt.Fprintln(w); err != nil {
 			return fmt.Errorf("writing segment: %w", err)
 		}
 	}
 
-	_, err := fmt.Fprintf(f.mainWriter, ".segment \"%s\"\n\n", name)
+	_, err := fmt.Fprintf(w, ".segment \"%s\"\n\n", name)
 	if err != nil {
 		return fmt.Errorf("writing segment footer: %w", err)
-	}
-	return nil
-}
-
-// writeConstants writes constant aliases to the output.
-func (f FileWriter) writeConstants(bank *program.PRGBank) error {
-	if err := f.writer.OutputAliasMap(bank.Constants); err != nil {
-		return fmt.Errorf("writing constants output alias map: %w", err)
-	}
-	return nil
-}
-
-// writeVariables writes variable aliases to the output.
-func (f FileWriter) writeVariables(bank *program.PRGBank) error {
-	if err := f.writer.OutputAliasMap(bank.Variables); err != nil {
-		return fmt.Errorf("writing variables output alias map: %w", err)
 	}
 	return nil
 }
@@ -222,32 +260,38 @@ func (f FileWriter) writeCHR() error {
 	return nil
 }
 
-// writeCode writes the code to the output.
-func (f FileWriter) writeCode(bank *program.PRGBank) error {
-	if !f.options.CodeOnly {
-		if err := f.writeSegment(bank.Name); err != nil {
-			return err
+// writeBankVectorsTo writes vectors at the end of a bank for multi-bank ROMs.
+// Each bank has its own NMI, Reset, and IRQ vectors stored in the last 6 bytes.
+func (f FileWriter) writeBankVectorsTo(w io.Writer, bank *program.PRGBank, endIndex int) error {
+	// Multi-bank vectors must always sit in the last 6 bytes of the bank.
+	// Pad with explicit zeros so vectors are not emitted immediately after code.
+	vectorStartIndex := len(bank.Offsets) - 6
+	padding := vectorStartIndex - endIndex
+	if padding < 0 {
+		return fmt.Errorf("bank data overlaps vectors: end_index=%d vector_start_index=%d", endIndex, vectorStartIndex)
+	}
+	if padding > 0 {
+		if _, err := fmt.Fprintf(w, "\n.res %d, $00\n", padding); err != nil {
+			return fmt.Errorf("writing vector padding: %w", err)
 		}
 	}
 
-	endIndex := bank.LastNonZeroByte(f.options)
-	if err := f.writer.ProcessPRG(bank, endIndex); err != nil {
-		return fmt.Errorf("writing PRG: %w", err)
-	}
-	return nil
-}
-
-// writeBankVectors writes vectors at the end of a bank for multi-bank ROMs.
-// Each bank has its own NMI, Reset, and IRQ vectors stored in the last 6 bytes.
-func (f FileWriter) writeBankVectors(bank *program.PRGBank) error {
 	// Vectors are: [0]=NMI, [1]=Reset, [2]=IRQ
 	// Output as .addr directives using the addresses stored in the bank
 	nmi := fmt.Sprintf("$%04X", bank.Vectors[0])
 	reset := fmt.Sprintf("$%04X", bank.Vectors[1])
 	irq := fmt.Sprintf("$%04X", bank.Vectors[2])
 
-	if _, err := fmt.Fprintf(f.mainWriter, "\n.addr %s, %s, %s\n", nmi, reset, irq); err != nil {
+	if _, err := fmt.Fprintf(w, "\n.addr %s, %s, %s\n", nmi, reset, irq); err != nil {
 		return fmt.Errorf("writing bank vectors: %w", err)
 	}
 	return nil
+}
+
+// bankFilename derives the bank output filename from the main output filename
+// and the bank name. Matches the logic in pipeline.generateBankFilename.
+func bankFilename(outputFilename, bankName string) string {
+	base := strings.TrimSuffix(outputFilename, ".asm")
+	suffix := strings.TrimPrefix(strings.ToLower(bankName), "prg_")
+	return base + "_" + suffix + ".asm"
 }
