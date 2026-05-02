@@ -115,7 +115,7 @@ func New(logger *log.Logger, ar architecture, cart *cartridge.Cartridge,
 		return nil, fmt.Errorf("creating constants: %w", err)
 	}
 
-	if err := dis.initializeComponents(ar, logger, cart); err != nil {
+	if err := dis.initializeComponents(logger, ar, cart); err != nil {
 		return nil, err
 	}
 
@@ -229,7 +229,7 @@ func (dis *Disasm) MarkAddressAsUnreachable(address uint16) {
 }
 
 // initializeComponents creates and wires up all the disassembler components.
-func (dis *Disasm) initializeComponents(ar architecture, logger *log.Logger, cart *cartridge.Cartridge) error {
+func (dis *Disasm) initializeComponents(logger *log.Logger, ar architecture, cart *cartridge.Cartridge) error {
 	// Create all components with simple constructors
 	je := jumpengine.New(logger, ar)
 	m, err := mapper.New(ar, cart)

@@ -34,6 +34,16 @@ type BankReference struct {
 	Index   uint16     // index in the bank
 }
 
+// Mapper provides a mapper manager interface for architecture code.
+type Mapper interface {
+	MappedBank(address uint16) MappedBank
+	MappedBankIndex(address uint16) uint16
+	// OffsetInfo returns the offset information for the given address.
+	OffsetInfo(address uint16) *DisasmOffset
+	// ReadMemory reads a byte from memory at the given address.
+	ReadMemory(address uint16) byte
+}
+
 // FormatBranchReference formats an instruction with a branch destination label.
 func FormatBranchReference(offsetInfo *DisasmOffset, label string) string {
 	if offsetInfo.Opcode == nil {
@@ -46,14 +56,4 @@ func FormatBranchReference(offsetInfo *DisasmOffset, label string) string {
 	}
 
 	return fmt.Sprintf("%s %s", instr.Name(), label)
-}
-
-// Mapper provides a mapper manager interface for architecture code.
-type Mapper interface {
-	MappedBank(address uint16) MappedBank
-	MappedBankIndex(address uint16) uint16
-	// OffsetInfo returns the offset information for the given address.
-	OffsetInfo(address uint16) *DisasmOffset
-	// ReadMemory reads a byte from memory at the given address.
-	ReadMemory(address uint16) byte
 }

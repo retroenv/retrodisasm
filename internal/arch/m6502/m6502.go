@@ -56,15 +56,6 @@ type disasm interface {
 	SetVectorsStartAddress(address uint16)
 }
 
-// New returns a new 6502 architecture configuration.
-func New(logger *log.Logger, converter parameter.Converter) *Arch6502 {
-	return &Arch6502{
-		converter:                      converter,
-		logger:                         logger,
-		complementaryBranchSecondAddrs: set.New[uint16](),
-	}
-}
-
 type Arch6502 struct {
 	converter                      parameter.Converter
 	dis                            disasm
@@ -77,6 +68,15 @@ type Arch6502 struct {
 	complementaryBranchPairs       []ComplementaryBranchPair
 	complementaryBranchSecondAddrs set.Set[uint16]      // addresses of second branches in complementary pairs
 	options                        options.Disassembler // Stored options for early access (before dependency injection)
+}
+
+// New returns a new 6502 architecture configuration.
+func New(logger *log.Logger, converter parameter.Converter) *Arch6502 {
+	return &Arch6502{
+		converter:                      converter,
+		logger:                         logger,
+		complementaryBranchSecondAddrs: set.New[uint16](),
+	}
 }
 
 // InjectDependencies sets the required dependencies for this architecture.

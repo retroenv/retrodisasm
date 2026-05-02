@@ -35,6 +35,30 @@ func (ar *Arch6502) ReadOpParam(addressing int, address uint16) (any, []byte, er
 	return fun(ar.dis, address)
 }
 
+// ReadMemory reads a byte from memory using NES-specific memory mapping.
+// In binary mode, all reads go through the mapper directly.
+func (ar *Arch6502) ReadMemory(address uint16) (byte, error) {
+	var value byte
+
+	// In binary mode, always use mapper (no NES-specific memory mapping)
+	if ar.options.Binary {
+		value = ar.mapper.ReadMemory(address)
+		return value, nil
+	}
+
+	switch {
+	case address < 0x2000:
+		value = ar.dis.Cart().CHR[address]
+
+	case address >= nes.CodeBaseAddress:
+		value = ar.mapper.ReadMemory(address)
+
+	default:
+		return 0, fmt.Errorf("invalid read from address #%04x", address)
+	}
+	return value, nil
+}
+
 func paramReaderImplied(disasm, uint16) (any, []byte, error) {
 	return nil, nil, nil
 }
@@ -160,28 +184,4 @@ func paramReadWord(dis disasm, address uint16) (uint16, []byte, error) {
 	w := uint16(b2)<<uint16(8) | uint16(b1)
 	opcodes := []byte{b1, b2}
 	return w, opcodes, nil
-}
-
-// ReadMemory reads a byte from memory using NES-specific memory mapping.
-// In binary mode, all reads go through the mapper directly.
-func (ar *Arch6502) ReadMemory(address uint16) (byte, error) {
-	var value byte
-
-	// In binary mode, always use mapper (no NES-specific memory mapping)
-	if ar.options.Binary {
-		value = ar.mapper.ReadMemory(address)
-		return value, nil
-	}
-
-	switch {
-	case address < 0x2000:
-		value = ar.dis.Cart().CHR[address]
-
-	case address >= nes.CodeBaseAddress:
-		value = ar.mapper.ReadMemory(address)
-
-	default:
-		return 0, fmt.Errorf("invalid read from address #%04x", address)
-	}
-	return value, nil
 }

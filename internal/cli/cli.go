@@ -16,6 +16,12 @@ import (
 
 var validAssemblers = []string{"asm6", "ca65", "nesasm", "retroasm"}
 
+// UsageError represents an error that should show usage information.
+type UsageError struct {
+	flagSet *cli.FlagSet
+	msg     string
+}
+
 // ParseFlags parses command line flags and returns program and disassembler options.
 func ParseFlags() (options.Program, options.Disassembler, error) {
 	var opts options.Program
@@ -54,20 +60,6 @@ func ParseFlags() (options.Program, options.Disassembler, error) {
 	return opts, disasmOptions, nil
 }
 
-// validateOptionCombinations checks for incompatible option combinations.
-func validateOptionCombinations(opts options.Program, disasmOptions options.Disassembler) error {
-	if opts.AssembleTest && disasmOptions.OutputUnofficialAsMnemonics {
-		return errors.New("-output-unofficial and -verify cannot be used together: unofficial mnemonics may assemble to different bytes")
-	}
-	return nil
-}
-
-// UsageError represents an error that should show usage information.
-type UsageError struct {
-	flagSet *cli.FlagSet
-	msg     string
-}
-
 func (e *UsageError) Error() string {
 	return e.msg
 }
@@ -75,6 +67,14 @@ func (e *UsageError) Error() string {
 // ShowUsage prints the usage message.
 func (e *UsageError) ShowUsage() {
 	e.flagSet.ShowUsage()
+}
+
+// validateOptionCombinations checks for incompatible option combinations.
+func validateOptionCombinations(opts options.Program, disasmOptions options.Disassembler) error {
+	if opts.AssembleTest && disasmOptions.OutputUnofficialAsMnemonics {
+		return errors.New("-output-unofficial and -verify cannot be used together: unofficial mnemonics may assemble to different bytes")
+	}
+	return nil
 }
 
 // normalizeOptions normalizes and validates option values.

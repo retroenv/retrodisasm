@@ -35,6 +35,11 @@ type Pipeline struct {
 	loader   *loader.Loader
 }
 
+// nopCloser wraps an io.Writer to add a no-op Close method.
+type nopCloser struct {
+	io.Writer
+}
+
 // New creates a new disassembly pipeline.
 func New(logger *log.Logger) *Pipeline {
 	return &Pipeline{
@@ -238,11 +243,6 @@ func (p *Pipeline) printInfo(opts options.Program, cart *cartridge.Cartridge, sy
 			log.String("assembler", opts.Assembler),
 		)
 	}
-}
-
-// nopCloser wraps an io.Writer to add a no-op Close method.
-type nopCloser struct {
-	io.Writer
 }
 
 func (nc *nopCloser) Close() error {

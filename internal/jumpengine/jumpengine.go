@@ -203,6 +203,55 @@ func (j *JumpEngine) HandleJumpEngineCallers(context, codeBaseAddress uint16) er
 	return nil
 }
 
+// ScanForNewJumpEngineEntry scans all jump engine calls for an unprocessed entry in the function address table that
+// follows the call. It returns whether a new address to parse was added.
+func (j *JumpEngine) ScanForNewJumpEngineEntry(codeBaseAddress uint16) (bool, error) {
+	for len(j.jumpEngineCallers) != 0 {
+		// Remove all terminated entries
+		j.jumpEngineCallers = slices.DeleteFunc(j.jumpEngineCallers, func(ec *jumpEngineCaller) bool {
+			return ec.terminated
+		})
+
+		// Find the jump engine table with the smallest number of processed entries.
+		// This conservative approach avoids interpreting code in the table area as function references.
+		minEntries := -1
+		for _, engineCaller := range j.jumpEngineCallers {
+			if i := engineCaller.entries; i < minEntries || minEntries == -1 {
+				minEntries = i
+			}
+		}
+		if minEntries == -1 {
+			return false, nil
+		}
+
+		for i := 0; i < len(j.jumpEngineCallers); i++ {
+			engineCaller := j.jumpEngineCallers[i]
+			if engineCaller.entries != minEntries {
+				continue
+			}
+
+			// calculate next address in table to process
+			address := engineCaller.tableStartAddress + uint16(2*engineCaller.entries)
+			isEntry, err := j.processJumpEngineEntry(address, engineCaller, codeBaseAddress)
+			if err != nil {
+				return false, err
+			}
+			if isEntry {
+				return true, nil
+			}
+			j.logger.Debug("Jump engine table",
+				log.Hex("address", engineCaller.tableStartAddress),
+				log.Int("entries", engineCaller.entries),
+			)
+
+			// jump engine table is processed, remove it from list to process
+			j.jumpEngineCallers = slices.Delete(j.jumpEngineCallers, i, i+1)
+			i--
+		}
+	}
+	return false, nil
+}
+
 // handleJumpEngineCaller processes a newly detected jump engine caller, the return address of the call is
 // marked as function reference instead of code. The first entry of the function table is processed.
 func (j *JumpEngine) handleJumpEngineCaller(caller, codeBaseAddress uint16) error {
@@ -274,53 +323,4 @@ func (j *JumpEngine) processJumpEngineEntry(address uint16, jumpEngine *jumpEngi
 
 	j.dis.AddAddressToParse(destination, destination, address, nil, true)
 	return true, nil
-}
-
-// ScanForNewJumpEngineEntry scans all jump engine calls for an unprocessed entry in the function address table that
-// follows the call. It returns whether a new address to parse was added.
-func (j *JumpEngine) ScanForNewJumpEngineEntry(codeBaseAddress uint16) (bool, error) {
-	for len(j.jumpEngineCallers) != 0 {
-		// Remove all terminated entries
-		j.jumpEngineCallers = slices.DeleteFunc(j.jumpEngineCallers, func(ec *jumpEngineCaller) bool {
-			return ec.terminated
-		})
-
-		// Find the jump engine table with the smallest number of processed entries.
-		// This conservative approach avoids interpreting code in the table area as function references.
-		minEntries := -1
-		for _, engineCaller := range j.jumpEngineCallers {
-			if i := engineCaller.entries; i < minEntries || minEntries == -1 {
-				minEntries = i
-			}
-		}
-		if minEntries == -1 {
-			return false, nil
-		}
-
-		for i := 0; i < len(j.jumpEngineCallers); i++ {
-			engineCaller := j.jumpEngineCallers[i]
-			if engineCaller.entries != minEntries {
-				continue
-			}
-
-			// calculate next address in table to process
-			address := engineCaller.tableStartAddress + uint16(2*engineCaller.entries)
-			isEntry, err := j.processJumpEngineEntry(address, engineCaller, codeBaseAddress)
-			if err != nil {
-				return false, err
-			}
-			if isEntry {
-				return true, nil
-			}
-			j.logger.Debug("Jump engine table",
-				log.Hex("address", engineCaller.tableStartAddress),
-				log.Int("entries", engineCaller.entries),
-			)
-
-			// jump engine table is processed, remove it from list to process
-			j.jumpEngineCallers = slices.Delete(j.jumpEngineCallers, i, i+1)
-			i--
-		}
-	}
-	return false, nil
 }

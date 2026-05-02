@@ -4,15 +4,6 @@ import (
 	"github.com/retroenv/retrodisasm/internal/options"
 )
 
-// NewPRGBank creates a new PRG bank.
-func NewPRGBank(size int) *PRGBank {
-	return &PRGBank{
-		Offsets:   make([]Offset, size),
-		Constants: map[string]uint16{},
-		Variables: map[string]uint16{},
-	}
-}
-
 // PRGBank defines a PRG bank.
 type PRGBank struct {
 	Name        string
@@ -23,6 +14,15 @@ type PRGBank struct {
 
 	Constants map[string]uint16
 	Variables map[string]uint16
+}
+
+// NewPRGBank creates a new PRG bank.
+func NewPRGBank(size int) *PRGBank {
+	return &PRGBank{
+		Offsets:   make([]Offset, size),
+		Constants: map[string]uint16{},
+		Variables: map[string]uint16{},
+	}
 }
 
 // LastNonZeroByte searches for the last byte in PRG that is not zero.

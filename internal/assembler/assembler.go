@@ -22,6 +22,10 @@ var SystemAssemblers = map[arch.System][]string{
 	arch.CHIP8System: {Retroasm},
 }
 
+// NewBankWriter is a callback that creates a new file for a bank of ROMs
+// that have multiple PRG banks.
+type NewBankWriter func(baseName string) (io.WriteCloser, error)
+
 // ValidateSystemAssembler checks if the assembler is supported for the given system.
 func ValidateSystemAssembler(system arch.System, assembler string) error {
 	supported, ok := SystemAssemblers[system]
@@ -36,7 +40,3 @@ func ValidateSystemAssembler(system arch.System, assembler string) error {
 
 	return nil
 }
-
-// NewBankWriter is a callback that creates a new file for a bank of ROMs
-// that have multiple PRG banks.
-type NewBankWriter func(baseName string) (io.WriteCloser, error)

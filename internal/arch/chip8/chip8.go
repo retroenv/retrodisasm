@@ -55,17 +55,17 @@ type disasm interface {
 	SetCodeBaseAddress(address uint16)
 }
 
-// New returns a new CHIP-8 architecture configuration.
-func New() *Chip8 {
-	return &Chip8{}
-}
-
 // Chip8 implements the arch.Architecture interface for CHIP-8 processors.
 // CHIP-8 is an interpreted programming language with 4KB of memory,
 // 16 general-purpose 8-bit registers, and a simple instruction set.
 type Chip8 struct {
 	dis    disasm
 	mapper offset.Mapper
+}
+
+// New returns a new CHIP-8 architecture configuration.
+func New() *Chip8 {
+	return &Chip8{}
 }
 
 // InjectDependencies sets the required dependencies for this architecture.
@@ -158,20 +158,6 @@ func (c *Chip8) ProcessOffset(address uint16, offsetInfo *offset.DisasmOffset) (
 	return true, nil
 }
 
-// formatOffsetCode formats the instruction code string for display
-func (c *Chip8) formatOffsetCode(offsetInfo *offset.DisasmOffset, instruction instruction.Instruction) {
-	name := instruction.Name()
-	opcodeBytes := offsetInfo.Data
-	if len(opcodeBytes) >= 2 {
-		opcode := uint16(opcodeBytes[0])<<8 | uint16(opcodeBytes[1])
-		if params := c.formatInstruction(name, opcode); params != "" {
-			offsetInfo.Code = fmt.Sprintf("%s %s", name, params)
-			return
-		}
-	}
-	offsetInfo.Code = name
-}
-
 // FormatBranchReference formats an instruction with a branch or data destination label.
 func (c *Chip8) FormatBranchReference(offsetInfo *offset.DisasmOffset, label string) string {
 	opcode, ok := decodeOpcode(offsetInfo.Data)
@@ -191,6 +177,45 @@ func (c *Chip8) FormatBranchReference(offsetInfo *offset.DisasmOffset, label str
 	default:
 		return offset.FormatBranchReference(offsetInfo, label)
 	}
+}
+
+// ProcessVariableUsage processes variable usage patterns in CHIP-8 instructions.
+// CHIP-8 uses simple direct addressing and register operations without complex variable patterns.
+func (c *Chip8) ProcessVariableUsage(_ *offset.DisasmOffset, _ string) error {
+	return nil
+}
+
+// ReadOpParam reads additional operation parameters for CHIP-8 instructions.
+// CHIP-8 opcodes are 2 bytes with all parameters embedded, so no additional reads needed.
+func (c *Chip8) ReadOpParam(_ int, _ uint16) (any, []byte, error) {
+	return nil, nil, nil
+}
+
+// BankWindowSize returns the bank window size.
+// CHIP-8 doesn't use banking, return 0 for single bank mapping.
+func (c *Chip8) BankWindowSize(_ *cartridge.Cartridge) int {
+	return 0
+}
+
+// ReadMemory reads a byte from memory using CHIP-8-specific memory mapping.
+// CHIP-8 programs use a 4KB address space starting at 0x000.
+func (c *Chip8) ReadMemory(address uint16) (byte, error) {
+	value := c.mapper.ReadMemory(address)
+	return value, nil
+}
+
+// formatOffsetCode formats the instruction code string for display
+func (c *Chip8) formatOffsetCode(offsetInfo *offset.DisasmOffset, instruction instruction.Instruction) {
+	name := instruction.Name()
+	opcodeBytes := offsetInfo.Data
+	if len(opcodeBytes) >= 2 {
+		opcode := uint16(opcodeBytes[0])<<8 | uint16(opcodeBytes[1])
+		if params := c.formatInstruction(name, opcode); params != "" {
+			offsetInfo.Code = fmt.Sprintf("%s %s", name, params)
+			return
+		}
+	}
+	offsetInfo.Code = name
 }
 
 // handleControlFlow processes control flow based on instruction type
@@ -235,24 +260,6 @@ func (c *Chip8) handleDataReference(address uint16, offsetInfo *offset.DisasmOff
 
 	nextAddr := pc + uint16(len(offsetInfo.Data))
 	c.dis.AddAddressToParse(nextAddr, offsetInfo.Context, address, instruction, false)
-}
-
-// ProcessVariableUsage processes variable usage patterns in CHIP-8 instructions.
-// CHIP-8 uses simple direct addressing and register operations without complex variable patterns.
-func (c *Chip8) ProcessVariableUsage(_ *offset.DisasmOffset, _ string) error {
-	return nil
-}
-
-// ReadOpParam reads additional operation parameters for CHIP-8 instructions.
-// CHIP-8 opcodes are 2 bytes with all parameters embedded, so no additional reads needed.
-func (c *Chip8) ReadOpParam(_ int, _ uint16) (any, []byte, error) {
-	return nil, nil, nil
-}
-
-// BankWindowSize returns the bank window size.
-// CHIP-8 doesn't use banking, return 0 for single bank mapping.
-func (c *Chip8) BankWindowSize(_ *cartridge.Cartridge) int {
-	return 0
 }
 
 // formatInstruction formats a CHIP-8 instruction with its parameters.
@@ -413,11 +420,4 @@ func (c *Chip8) extractTargetAddressInROM(data []byte) (uint16, bool) {
 	}
 
 	return target, true
-}
-
-// ReadMemory reads a byte from memory using CHIP-8-specific memory mapping.
-// CHIP-8 programs use a 4KB address space starting at 0x000.
-func (c *Chip8) ReadMemory(address uint16) (byte, error) {
-	value := c.mapper.ReadMemory(address)
-	return value, nil
 }
