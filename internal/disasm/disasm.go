@@ -36,6 +36,8 @@ type architecture interface {
 	BankWindowSize(cart *cartridge.Cartridge) int
 	// Constants returns the constants translation map.
 	Constants() (map[uint16]consts.Constant, error)
+	// FormatBranchReference formats an instruction that references a branch or data label.
+	FormatBranchReference(offsetInfo *offset.DisasmOffset, label string) string
 	// HandleDisambiguousInstructions translates disambiguous instructions into data bytes.
 	HandleDisambiguousInstructions(address uint16, offsetInfo *offset.DisasmOffset) bool
 	// Initialize the architecture.

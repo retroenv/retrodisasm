@@ -8,9 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	chip8arch "github.com/retroenv/retrodisasm/internal/arch/chip8"
 	"github.com/retroenv/retrodisasm/internal/arch/m6502"
 	"github.com/retroenv/retrodisasm/internal/assembler"
 	"github.com/retroenv/retrodisasm/internal/assembler/ca65"
+	"github.com/retroenv/retrodisasm/internal/assembler/retroasm"
 	"github.com/retroenv/retrodisasm/internal/options"
 	"github.com/retroenv/retrogolib/arch"
 	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
@@ -18,6 +20,24 @@ import (
 	"github.com/retroenv/retrogolib/assert"
 	"github.com/retroenv/retrogolib/log"
 )
+
+func TestDisasmChip8BranchReferenceOperands(t *testing.T) {
+	input := []byte{
+		0xa2, 0x08, // ld I, $208
+		0xb2, 0x0a, // jp V0, $20a
+		0x00, 0x00,
+		0x00, 0x00,
+		0x12, 0x34, // labeled data referenced by ld I
+		0x00, 0xee, // labeled ret target referenced by jp V0
+	}
+
+	output := runChip8Disasm(t, input)
+
+	assert.True(t, strings.Contains(output, "ld I, _label_0208"))
+	assert.True(t, strings.Contains(output, "jp V0, _label_020a"))
+	assert.False(t, strings.Contains(output, "ld _label_0208"))
+	assert.False(t, strings.Contains(output, "jp _label_020a"))
+}
 
 func TestDisasmZeroDataReference(t *testing.T) {
 	input := []byte{
@@ -522,6 +542,36 @@ func testProgram(t *testing.T, opts options.Disassembler, cart *cartridge.Cartri
 	assert.NoError(t, err)
 
 	return disasm
+}
+
+func runChip8Disasm(t *testing.T, input []byte) string {
+	t.Helper()
+
+	opts := options.NewDisassembler(assembler.Retroasm, string(arch.CHIP8System))
+	opts.OffsetComments = false
+	opts.HexComments = false
+
+	cart := cartridge.New()
+	cart.PRG = make([]byte, len(input))
+	copy(cart.PRG, input)
+
+	logger := log.NewTestLogger(t)
+	disasm, err := New(logger, chip8arch.New(), cart, opts, retroasm.New)
+	assert.NoError(t, err)
+
+	var buffer bytes.Buffer
+	writer := bufio.NewWriter(&buffer)
+
+	newBankWriter := func(_ string) (io.WriteCloser, error) {
+		return nopWriteCloser{writer}, nil
+	}
+
+	app, err := disasm.Process(context.Background(), writer, newBankWriter)
+	assert.NoError(t, err)
+	assert.True(t, app != nil, "app should not be nil")
+	assert.NoError(t, writer.Flush())
+
+	return trimStringList(buffer.String())
 }
 
 func trimStringList(s string) string {

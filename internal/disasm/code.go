@@ -52,7 +52,8 @@ func (dis *Disasm) processJumpDestinations() {
 
 			// reference can be a function address of a jump engine
 			if offsetInfo.IsType(program.CodeOffset) {
-				offsetInfo.Code = offsetInfo.Opcode.Instruction().Name()
+				offsetInfo.Code = dis.arch.FormatBranchReference(offsetInfo, name)
+				offsetInfo.BranchingTo = ""
 			}
 		}
 	}

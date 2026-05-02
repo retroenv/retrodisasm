@@ -2,6 +2,8 @@
 package offset
 
 import (
+	"fmt"
+
 	"github.com/retroenv/retrodisasm/internal/instruction"
 	"github.com/retroenv/retrodisasm/internal/program"
 )
@@ -30,6 +32,20 @@ type BankReference struct {
 	Address uint16     // address in the bank
 	ID      int        // bank ID
 	Index   uint16     // index in the bank
+}
+
+// FormatBranchReference formats an instruction with a branch destination label.
+func FormatBranchReference(offsetInfo *DisasmOffset, label string) string {
+	if offsetInfo.Opcode == nil {
+		return fmt.Sprintf("%s %s", offsetInfo.Code, label)
+	}
+
+	instr := offsetInfo.Opcode.Instruction()
+	if instr == nil || instr.IsNil() {
+		return fmt.Sprintf("%s %s", offsetInfo.Code, label)
+	}
+
+	return fmt.Sprintf("%s %s", instr.Name(), label)
 }
 
 // Mapper provides a mapper manager interface for architecture code.

@@ -172,6 +172,27 @@ func (c *Chip8) formatOffsetCode(offsetInfo *offset.DisasmOffset, instruction in
 	offsetInfo.Code = name
 }
 
+// FormatBranchReference formats an instruction with a branch or data destination label.
+func (c *Chip8) FormatBranchReference(offsetInfo *offset.DisasmOffset, label string) string {
+	opcode, ok := decodeOpcode(offsetInfo.Data)
+	if !ok {
+		return offset.FormatBranchReference(offsetInfo, label)
+	}
+
+	switch opcode & 0xF000 {
+	case 0x1000:
+		return fmt.Sprintf("%s %s", chip8.Jp.Name, label)
+	case 0x2000:
+		return fmt.Sprintf("%s %s", chip8.Call.Name, label)
+	case 0xA000:
+		return fmt.Sprintf("%s I, %s", chip8.Ld.Name, label)
+	case 0xB000:
+		return fmt.Sprintf("%s V0, %s", chip8.Jp.Name, label)
+	default:
+		return offset.FormatBranchReference(offsetInfo, label)
+	}
+}
+
 // handleControlFlow processes control flow based on instruction type
 func (c *Chip8) handleControlFlow(address uint16, offsetInfo *offset.DisasmOffset, instruction instruction.Instruction, instr Instruction) {
 	pc := c.dis.ProgramCounter()
