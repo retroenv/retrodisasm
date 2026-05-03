@@ -22,6 +22,15 @@ type UsageError struct {
 	msg     string
 }
 
+func (e *UsageError) Error() string {
+	return e.msg
+}
+
+// ShowUsage prints the usage message.
+func (e *UsageError) ShowUsage() {
+	e.flagSet.ShowUsage()
+}
+
 // ParseFlags parses command line flags and returns program and disassembler options.
 func ParseFlags() (options.Program, options.Disassembler, error) {
 	var opts options.Program
@@ -58,15 +67,6 @@ func ParseFlags() (options.Program, options.Disassembler, error) {
 	}
 
 	return opts, disasmOptions, nil
-}
-
-func (e *UsageError) Error() string {
-	return e.msg
-}
-
-// ShowUsage prints the usage message.
-func (e *UsageError) ShowUsage() {
-	e.flagSet.ShowUsage()
 }
 
 // validateOptionCombinations checks for incompatible option combinations.

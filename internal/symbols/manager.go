@@ -22,6 +22,14 @@ type Bank[T any] struct {
 	used  set.Set[uint16]
 }
 
+// New creates a new symbol manager.
+func New[T any]() *Manager[T] {
+	return &Manager[T]{
+		items: make(map[uint16]T),
+		used:  set.New[uint16](),
+	}
+}
+
 // Get returns the item at the given address in this bank.
 func (b *Bank[T]) Get(address uint16) (T, bool) {
 	item, ok := b.items[address]
@@ -48,14 +56,6 @@ func (b *Bank[T]) Items() map[uint16]T {
 // Used returns the set of used item addresses for this bank.
 func (b *Bank[T]) Used() set.Set[uint16] {
 	return b.used
-}
-
-// New creates a new symbol manager.
-func New[T any]() *Manager[T] {
-	return &Manager[T]{
-		items: make(map[uint16]T),
-		used:  set.New[uint16](),
-	}
 }
 
 // AddBank adds a new bank to the manager.

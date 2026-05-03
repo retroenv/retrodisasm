@@ -28,34 +28,6 @@ type Dependencies struct {
 	Consts     *consts.Consts
 }
 
-// disasm defines the minimal interface needed from the disassembler.
-type disasm interface {
-	// AddAddressToParse adds an address to the list to be processed.
-	AddAddressToParse(address, context, from uint16, currentInstruction instruction.Instruction, isABranchDestination bool)
-	// Cart returns the loaded cartridge.
-	Cart() *cartridge.Cartridge
-	// ChangeAddressRangeToCodeAsData sets a range of code address to code as data types.
-	ChangeAddressRangeToCodeAsData(address uint16, data []byte)
-	// IsBranchDestination checks if an address is a branch destination.
-	IsBranchDestination(address uint16) bool
-	// MarkAddressAsUnreachable marks an address as unreachable code.
-	MarkAddressAsUnreachable(address uint16)
-	// Options returns the disassembler options.
-	Options() options.Disassembler
-	// ProgramCounter returns the current program counter of the execution tracer.
-	ProgramCounter() uint16
-	// ReadMemory reads a byte from the memory at the given address.
-	ReadMemory(address uint16) (byte, error)
-	// ReadMemoryWord reads a word from the memory at the given address.
-	ReadMemoryWord(address uint16) (uint16, error)
-	// SetCodeBaseAddress sets the code base address.
-	SetCodeBaseAddress(address uint16)
-	// SetHandlers sets the program vector handlers.
-	SetHandlers(handlers program.Handlers)
-	// SetVectorsStartAddress sets the start address of the vectors.
-	SetVectorsStartAddress(address uint16)
-}
-
 type Arch6502 struct {
 	converter                      parameter.Converter
 	dis                            disasm
@@ -186,4 +158,32 @@ func (ar *Arch6502) BankWindowSize(_ *cartridge.Cartridge) int {
 		return 0 // Single-bank mode for binary files
 	}
 	return 0x2000 // Multi-bank mode for NES ROMs
+}
+
+// disasm defines the minimal interface needed from the disassembler.
+type disasm interface {
+	// AddAddressToParse adds an address to the list to be processed.
+	AddAddressToParse(address, context, from uint16, currentInstruction instruction.Instruction, isABranchDestination bool)
+	// Cart returns the loaded cartridge.
+	Cart() *cartridge.Cartridge
+	// ChangeAddressRangeToCodeAsData sets a range of code address to code as data types.
+	ChangeAddressRangeToCodeAsData(address uint16, data []byte)
+	// IsBranchDestination checks if an address is a branch destination.
+	IsBranchDestination(address uint16) bool
+	// MarkAddressAsUnreachable marks an address as unreachable code.
+	MarkAddressAsUnreachable(address uint16)
+	// Options returns the disassembler options.
+	Options() options.Disassembler
+	// ProgramCounter returns the current program counter of the execution tracer.
+	ProgramCounter() uint16
+	// ReadMemory reads a byte from the memory at the given address.
+	ReadMemory(address uint16) (byte, error)
+	// ReadMemoryWord reads a word from the memory at the given address.
+	ReadMemoryWord(address uint16) (uint16, error)
+	// SetCodeBaseAddress sets the code base address.
+	SetCodeBaseAddress(address uint16)
+	// SetHandlers sets the program vector handlers.
+	SetHandlers(handlers program.Handlers)
+	// SetVectorsStartAddress sets the start address of the vectors.
+	SetVectorsStartAddress(address uint16)
 }

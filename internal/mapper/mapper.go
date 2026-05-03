@@ -118,42 +118,6 @@ func (m *Mapper) OffsetInfo(address uint16) *offset.DisasmOffset {
 	return offsetInfo
 }
 
-// createSingleBankMapper creates a mapper for single bank systems (e.g., CHIP-8)
-func createSingleBankMapper(cart *cartridge.Cartridge) (*Mapper, error) {
-	bnk := newBank(cart.PRG)
-
-	return &Mapper{
-		banks: []*bank{bnk},
-		mapped: []mappedBank{
-			{bank: bnk},
-		},
-	}, nil
-}
-
-// createMultiBankMapper creates a mapper for multi-bank systems (e.g., NES)
-func createMultiBankMapper(cart *cartridge.Cartridge, bankWindowSize int) (*Mapper, error) {
-	prgSize := len(cart.PRG)
-	mappedBanks := prgSize / bankWindowSize
-	mappedWindows := 0x10000 / bankWindowSize
-
-	m := &Mapper{
-		addressShifts:  16 - log2(mappedWindows),
-		bankWindowSize: bankWindowSize,
-		banksMapped:    make([]mappedBank, mappedBanks),
-		mapped:         make([]mappedBank, mappedWindows),
-	}
-
-	m.initializeBanks(cart.PRG)
-
-	if err := m.populateBankMappings(bankWindowSize); err != nil {
-		return nil, err
-	}
-
-	m.configureDefaultBankMapping()
-
-	return m, nil
-}
-
 // populateBankMappings creates the bank mappings for multi-bank systems
 func (m *Mapper) populateBankMappings(bankWindowSize int) error {
 	bankNumber := 0
@@ -195,6 +159,42 @@ func (m *Mapper) setMappedBank(address uint16, bank mappedBank) {
 		bankWindow = address >> m.addressShifts
 	}
 	m.mapped[bankWindow] = bank
+}
+
+// createSingleBankMapper creates a mapper for single bank systems (e.g., CHIP-8)
+func createSingleBankMapper(cart *cartridge.Cartridge) (*Mapper, error) {
+	bnk := newBank(cart.PRG)
+
+	return &Mapper{
+		banks: []*bank{bnk},
+		mapped: []mappedBank{
+			{bank: bnk},
+		},
+	}, nil
+}
+
+// createMultiBankMapper creates a mapper for multi-bank systems (e.g., NES)
+func createMultiBankMapper(cart *cartridge.Cartridge, bankWindowSize int) (*Mapper, error) {
+	prgSize := len(cart.PRG)
+	mappedBanks := prgSize / bankWindowSize
+	mappedWindows := 0x10000 / bankWindowSize
+
+	m := &Mapper{
+		addressShifts:  16 - log2(mappedWindows),
+		bankWindowSize: bankWindowSize,
+		banksMapped:    make([]mappedBank, mappedBanks),
+		mapped:         make([]mappedBank, mappedWindows),
+	}
+
+	m.initializeBanks(cart.PRG)
+
+	if err := m.populateBankMappings(bankWindowSize); err != nil {
+		return nil, err
+	}
+
+	m.configureDefaultBankMapping()
+
+	return m, nil
 }
 
 // log2 computes the binary logarithm of x, rounded up to the next integer.

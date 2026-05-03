@@ -7,24 +7,6 @@ import (
 	"github.com/retroenv/retrogolib/arch/system/nes"
 )
 
-type paramReaderFunc func(dis disasm, address uint16) (any, []byte, error)
-
-var paramReader = map[m6502.AddressingMode]paramReaderFunc{
-	m6502.ImpliedAddressing:     paramReaderImplied,
-	m6502.ImmediateAddressing:   paramReaderImmediate,
-	m6502.AccumulatorAddressing: paramReaderAccumulator,
-	m6502.AbsoluteAddressing:    paramReaderAbsolute,
-	m6502.AbsoluteXAddressing:   paramReaderAbsoluteX,
-	m6502.AbsoluteYAddressing:   paramReaderAbsoluteY,
-	m6502.ZeroPageAddressing:    paramReaderZeroPage,
-	m6502.ZeroPageXAddressing:   paramReaderZeroPageX,
-	m6502.ZeroPageYAddressing:   paramReaderZeroPageY,
-	m6502.RelativeAddressing:    paramReaderRelative,
-	m6502.IndirectAddressing:    paramReaderIndirect,
-	m6502.IndirectXAddressing:   paramReaderIndirectX,
-	m6502.IndirectYAddressing:   paramReaderIndirectY,
-}
-
 // ReadOpParam reads the opcode parameters after the first opcode byte
 // and translates it into system specific types.
 func (ar *Arch6502) ReadOpParam(addressing int, address uint16) (any, []byte, error) {
@@ -57,6 +39,24 @@ func (ar *Arch6502) ReadMemory(address uint16) (byte, error) {
 		return 0, fmt.Errorf("invalid read from address #%04x", address)
 	}
 	return value, nil
+}
+
+type paramReaderFunc func(dis disasm, address uint16) (any, []byte, error)
+
+var paramReader = map[m6502.AddressingMode]paramReaderFunc{
+	m6502.ImpliedAddressing:     paramReaderImplied,
+	m6502.ImmediateAddressing:   paramReaderImmediate,
+	m6502.AccumulatorAddressing: paramReaderAccumulator,
+	m6502.AbsoluteAddressing:    paramReaderAbsolute,
+	m6502.AbsoluteXAddressing:   paramReaderAbsoluteX,
+	m6502.AbsoluteYAddressing:   paramReaderAbsoluteY,
+	m6502.ZeroPageAddressing:    paramReaderZeroPage,
+	m6502.ZeroPageXAddressing:   paramReaderZeroPageX,
+	m6502.ZeroPageYAddressing:   paramReaderZeroPageY,
+	m6502.RelativeAddressing:    paramReaderRelative,
+	m6502.IndirectAddressing:    paramReaderIndirect,
+	m6502.IndirectXAddressing:   paramReaderIndirectX,
+	m6502.IndirectYAddressing:   paramReaderIndirectY,
 }
 
 func paramReaderImplied(disasm, uint16) (any, []byte, error) {

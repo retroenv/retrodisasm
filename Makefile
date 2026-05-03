@@ -1,10 +1,12 @@
-GOLANGCI_VERSION = v2.6.1
+GOLANGCI_VERSION = v2.12.1
+RETROGOLINT_VERSION = v1.0.1
 
 help: ## show help, shown by default if no target is specified
 	@grep -E '^[0-9a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 lint: ## run code linters
 	golangci-lint run
+	retrogolint
 
 build-all: ## build code
 	go build ./...
@@ -24,6 +26,7 @@ install: ## install all binaries
 
 install-linters: ## install all used linters
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_VERSION}
+	go install github.com/retroenv/retrogolint/cmd/retrogolint@${RETROGOLINT_VERSION}
 
 release: ## build release binaries for current git tag and publish on github
 	goreleaser release

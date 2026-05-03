@@ -35,11 +35,6 @@ type Pipeline struct {
 	loader   *loader.Loader
 }
 
-// nopCloser wraps an io.Writer to add a no-op Close method.
-type nopCloser struct {
-	io.Writer
-}
-
 // New creates a new disassembly pipeline.
 func New(logger *log.Logger) *Pipeline {
 	return &Pipeline{
@@ -208,18 +203,6 @@ func (p *Pipeline) runDisassembly(ctx context.Context, dis *disasm.Disasm, write
 	return result, nil
 }
 
-// generateBankFilename creates a per-bank output filename from the main output path
-// and the bank name. For example, ("output.asm", "PRG_BANK_3") -> "output_bank_3.asm".
-func generateBankFilename(outputPath, bankName string) string {
-	ext := filepath.Ext(outputPath)
-	base := outputPath[:len(outputPath)-len(ext)]
-
-	// Convert bank name to lowercase filename suffix: "PRG_BANK_3" -> "bank_3"
-	suffix := strings.TrimPrefix(strings.ToLower(bankName), "prg_")
-
-	return base + "_" + suffix + ext
-}
-
 // printInfo prints information about the ROM being processed.
 func (p *Pipeline) printInfo(opts options.Program, cart *cartridge.Cartridge, system arch.System) {
 	if opts.Quiet {
@@ -245,6 +228,23 @@ func (p *Pipeline) printInfo(opts options.Program, cart *cartridge.Cartridge, sy
 	}
 }
 
+// nopCloser wraps an io.Writer to add a no-op Close method.
+type nopCloser struct {
+	io.Writer
+}
+
 func (nc *nopCloser) Close() error {
 	return nil
+}
+
+// generateBankFilename creates a per-bank output filename from the main output path
+// and the bank name. For example, ("output.asm", "PRG_BANK_3") -> "output_bank_3.asm".
+func generateBankFilename(outputPath, bankName string) string {
+	ext := filepath.Ext(outputPath)
+	base := outputPath[:len(outputPath)-len(ext)]
+
+	// Convert bank name to lowercase filename suffix: "PRG_BANK_3" -> "bank_3"
+	suffix := strings.TrimPrefix(strings.ToLower(bankName), "prg_")
+
+	return base + "_" + suffix + ext
 }

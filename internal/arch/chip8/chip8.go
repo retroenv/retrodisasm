@@ -43,18 +43,6 @@ type Dependencies struct {
 	Mapper offset.Mapper
 }
 
-// disasm defines the minimal interface needed from the disassembler.
-type disasm interface {
-	// AddAddressToParse adds an address to the list to be processed.
-	AddAddressToParse(address, context, from uint16, currentInstruction instruction.Instruction, isABranchDestination bool)
-	// ProgramCounter returns the current program counter of the execution tracer.
-	ProgramCounter() uint16
-	// ReadMemory reads a byte from the memory at the given address.
-	ReadMemory(address uint16) (byte, error)
-	// SetCodeBaseAddress sets the code base address.
-	SetCodeBaseAddress(address uint16)
-}
-
 // Chip8 implements the arch.Architecture interface for CHIP-8 processors.
 // CHIP-8 is an interpreted programming language with 4KB of memory,
 // 16 general-purpose 8-bit registers, and a simple instruction set.
@@ -384,24 +372,6 @@ func (c *Chip8) formatSkipInstruction(opcode uint16) string {
 	return fmt.Sprintf("V%X", x)
 }
 
-// decodeOpcode extracts the 16-bit opcode from instruction bytes.
-func decodeOpcode(data []byte) (uint16, bool) {
-	if len(data) < 2 {
-		return 0, false
-	}
-	return uint16(data[0])<<8 | uint16(data[1]), true
-}
-
-// extractRegisterX extracts the X register nibble from a CHIP-8 opcode.
-func extractRegisterX(opcode uint16) uint16 {
-	return (opcode & 0x0F00) >> 8
-}
-
-// extractRegisterY extracts the Y register nibble from a CHIP-8 opcode.
-func extractRegisterY(opcode uint16) uint16 {
-	return (opcode & 0x00F0) >> 4
-}
-
 // extractTargetAddressInROM extracts the target address from a CHIP-8 instruction
 // and returns (memory address, true) if it's in ROM, or (0, false) if it targets
 // interpreter memory (< $200) or is invalid.
@@ -420,4 +390,34 @@ func (c *Chip8) extractTargetAddressInROM(data []byte) (uint16, bool) {
 	}
 
 	return target, true
+}
+
+// disasm defines the minimal interface needed from the disassembler.
+type disasm interface {
+	// AddAddressToParse adds an address to the list to be processed.
+	AddAddressToParse(address, context, from uint16, currentInstruction instruction.Instruction, isABranchDestination bool)
+	// ProgramCounter returns the current program counter of the execution tracer.
+	ProgramCounter() uint16
+	// ReadMemory reads a byte from the memory at the given address.
+	ReadMemory(address uint16) (byte, error)
+	// SetCodeBaseAddress sets the code base address.
+	SetCodeBaseAddress(address uint16)
+}
+
+// decodeOpcode extracts the 16-bit opcode from instruction bytes.
+func decodeOpcode(data []byte) (uint16, bool) {
+	if len(data) < 2 {
+		return 0, false
+	}
+	return uint16(data[0])<<8 | uint16(data[1]), true
+}
+
+// extractRegisterX extracts the X register nibble from a CHIP-8 opcode.
+func extractRegisterX(opcode uint16) uint16 {
+	return (opcode & 0x0F00) >> 8
+}
+
+// extractRegisterY extracts the Y register nibble from a CHIP-8 opcode.
+func extractRegisterY(opcode uint16) uint16 {
+	return (opcode & 0x00F0) >> 4
 }

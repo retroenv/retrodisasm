@@ -19,24 +19,6 @@ const (
 	variableNamingIndexed = "_var_%04x_indexed"
 )
 
-// architecture defines the minimal interface needed from arch.Architecture
-type architecture interface {
-	// IsAddressingIndexed returns if the opcode is using indexed addressing.
-	IsAddressingIndexed(opcode instruction.Opcode) bool
-	// ProcessVariableUsage processes the variable usage of an offset.
-	ProcessVariableUsage(offsetInfo *offset.DisasmOffset, reference string) error
-}
-
-// mapper defines the minimal interface needed from the mapper
-type mapper interface {
-	// MappedBank returns the mapped bank for the given address.
-	MappedBank(address uint16) offset.MappedBank
-	// MappedBankIndex returns the mapped bank index for the given address.
-	MappedBankIndex(address uint16) uint16
-	// OffsetInfo returns the offset info for the given address.
-	OffsetInfo(address uint16) *offset.DisasmOffset
-}
-
 // Dependencies contains the dependencies needed by Vars.
 type Dependencies struct {
 	Mapper mapper
@@ -48,16 +30,6 @@ type Vars struct {
 
 	arch   architecture
 	mapper mapper
-}
-
-type variable struct {
-	reads  bool
-	writes bool
-
-	address      uint16
-	name         string
-	indexedUsage bool                   // access with X/Y registers indicates table
-	usageAt      []offset.BankReference // list of all indexes that use this offset
 }
 
 // New creates a new variables manager.
@@ -240,4 +212,32 @@ func (v *Vars) generateVariableName(offsetInfo *offset.DisasmOffset, indexedUsag
 	default:
 		return fmt.Sprintf(variableNaming, address)
 	}
+}
+
+// architecture defines the minimal interface needed from arch.Architecture
+type architecture interface {
+	// IsAddressingIndexed returns if the opcode is using indexed addressing.
+	IsAddressingIndexed(opcode instruction.Opcode) bool
+	// ProcessVariableUsage processes the variable usage of an offset.
+	ProcessVariableUsage(offsetInfo *offset.DisasmOffset, reference string) error
+}
+
+// mapper defines the minimal interface needed from the mapper
+type mapper interface {
+	// MappedBank returns the mapped bank for the given address.
+	MappedBank(address uint16) offset.MappedBank
+	// MappedBankIndex returns the mapped bank index for the given address.
+	MappedBankIndex(address uint16) uint16
+	// OffsetInfo returns the offset info for the given address.
+	OffsetInfo(address uint16) *offset.DisasmOffset
+}
+
+type variable struct {
+	reads  bool
+	writes bool
+
+	address      uint16
+	name         string
+	indexedUsage bool                   // access with X/Y registers indicates table
+	usageAt      []offset.BankReference // list of all indexes that use this offset
 }

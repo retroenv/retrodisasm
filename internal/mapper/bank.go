@@ -14,6 +14,17 @@ const (
 
 var _ offset.MappedBank = mappedBank{}
 
+func (m *Mapper) initializeBanks(prg []byte) {
+	for i := 0; i < len(prg); {
+		size := min(len(prg)-i, 0x8000)
+
+		b := prg[i : i+size]
+		bnk := newBank(b)
+		m.banks = append(m.banks, bnk)
+		i += size
+	}
+}
+
 type bank struct {
 	prg []byte
 
@@ -35,17 +46,6 @@ func newBank(prg []byte) *bank {
 		b.offsets[i] = &offset.DisasmOffset{}
 	}
 	return b
-}
-
-func (m *Mapper) initializeBanks(prg []byte) {
-	for i := 0; i < len(prg); {
-		size := min(len(prg)-i, 0x8000)
-
-		b := prg[i : i+size]
-		bnk := newBank(b)
-		m.banks = append(m.banks, bnk)
-		i += size
-	}
 }
 
 func (m mappedBank) OffsetInfo(index uint16) *offset.DisasmOffset {

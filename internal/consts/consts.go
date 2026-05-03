@@ -24,10 +24,6 @@ type Consts struct {
 	*symbols.Manager[Constant]
 }
 
-type architecture interface {
-	Constants() (map[uint16]Constant, error)
-}
-
 // New creates a new constants manager.
 func New(ar architecture) (*Consts, error) {
 	constants, err := ar.Constants()
@@ -119,4 +115,8 @@ func (c *Consts) AssignBankConstants(bankID int, prgBank *program.PRGBank) {
 			prgBank.Constants[constantInfo.Write] = address
 		}
 	}
+}
+
+type architecture interface {
+	Constants() (map[uint16]Constant, error)
 }

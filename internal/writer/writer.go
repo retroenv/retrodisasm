@@ -12,8 +12,6 @@ import (
 
 const dataBytesPerLine = 16
 
-type lineWriterFunc func(line string, byteCount int) error
-
 // AssemblerWriter defines a shared interface used by the different assembler compatibility packages.
 // Their constructors need to return this shared interface, having them return the actual type instead of
 // the interface results in compiler errors for the constructor variable that they are assigned to.
@@ -275,6 +273,8 @@ func (w Writer) bundlePRGDataWrites(bank *program.PRGBank, startIndex, endIndex 
 
 	return len(data), nil
 }
+
+type lineWriterFunc func(line string, byteCount int) error
 
 func getPrgData(bank *program.PRGBank, startIndex, endIndex int) []byte {
 	var data []byte

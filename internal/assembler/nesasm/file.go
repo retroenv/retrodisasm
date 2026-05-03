@@ -24,16 +24,6 @@ type FileWriter struct {
 	writer        *writer.Writer
 }
 
-type prgBankWrite struct {
-	bank        *program.PRGBank
-	isMultiBank bool
-	firstBank   bool
-}
-
-type customWrite func() error
-
-type lineWrite string
-
 // New creates a new file writer.
 // nolint: ireturn
 func New(app *program.Program, options options.Disassembler, mainWriter io.Writer, newBankWriter assembler.NewBankWriter) writer.AssemblerWriter {
@@ -220,6 +210,16 @@ func (f FileWriter) writeBankVectorsTo(w io.Writer, bank *program.PRGBank) error
 	}
 	return nil
 }
+
+type prgBankWrite struct {
+	bank        *program.PRGBank
+	isMultiBank bool
+	firstBank   bool
+}
+
+type customWrite func() error
+
+type lineWrite string
 
 // bankFilename derives the bank output filename from the main output filename
 // and the bank name. Matches the logic in pipeline.generateBankFilename.

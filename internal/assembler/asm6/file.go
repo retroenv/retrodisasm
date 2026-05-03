@@ -25,25 +25,6 @@ type FileWriter struct {
 	writer        *writer.Writer
 }
 
-type headerByteWrite struct {
-	value   byte
-	comment string
-}
-
-type prgBankWrite struct {
-	address   string
-	bank      *program.PRGBank
-	lastBank  bool
-	firstBank bool
-}
-
-type customWrite func() error
-
-type lineWrite struct {
-	line    string
-	comment string
-}
-
 // New creates a new file writer.
 // nolint: ireturn
 func New(app *program.Program, options options.Disassembler, mainWriter io.Writer, newBankWriter assembler.NewBankWriter) writer.AssemblerWriter {
@@ -231,6 +212,25 @@ func (f FileWriter) writeVectorsTo(w io.Writer, vectorsAddr uint16, nmi, reset, 
 		return fmt.Errorf("writing vectors: %w", err)
 	}
 	return nil
+}
+
+type headerByteWrite struct {
+	value   byte
+	comment string
+}
+
+type prgBankWrite struct {
+	address   string
+	bank      *program.PRGBank
+	lastBank  bool
+	firstBank bool
+}
+
+type customWrite func() error
+
+type lineWrite struct {
+	line    string
+	comment string
 }
 
 // bankFilename derives the bank output filename from the main output filename

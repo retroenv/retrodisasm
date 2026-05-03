@@ -147,29 +147,6 @@ func (w *FileWriter) writeBank(bank *program.PRGBank, firstBank, lastBank bool) 
 	return nil
 }
 
-// writeVectorsTo writes the IRQ vectors to the specified writer.
-func writeVectorsTo(w io.Writer, vectorsAddr uint16, nmi, reset, irq string) error {
-	addr := fmt.Sprintf("$%04X", vectorsAddr)
-
-	if _, err := fmt.Fprintf(w, "\n.org %s\n\n", addr); err != nil {
-		return fmt.Errorf("writing vector org: %w", err)
-	}
-
-	if _, err := fmt.Fprintf(w, vectors, nmi, reset, irq); err != nil {
-		return fmt.Errorf("writing vectors: %w", err)
-	}
-
-	return nil
-}
-
-// bankFilename derives the bank output filename from the main output filename
-// and the bank name. Matches the logic in pipeline.generateBankFilename.
-func bankFilename(outputFilename, bankName string) string {
-	base := strings.TrimSuffix(outputFilename, ".asm")
-	suffix := strings.TrimPrefix(strings.ToLower(bankName), "prg_")
-	return base + "_" + suffix + ".asm"
-}
-
 // writeCHR writes the CHR content.
 func (w *FileWriter) writeCHR() error {
 	if len(w.app.CHR) == 0 {
@@ -200,4 +177,27 @@ func (w *FileWriter) writeCHR() error {
 	}
 
 	return nil
+}
+
+// writeVectorsTo writes the IRQ vectors to the specified writer.
+func writeVectorsTo(w io.Writer, vectorsAddr uint16, nmi, reset, irq string) error {
+	addr := fmt.Sprintf("$%04X", vectorsAddr)
+
+	if _, err := fmt.Fprintf(w, "\n.org %s\n\n", addr); err != nil {
+		return fmt.Errorf("writing vector org: %w", err)
+	}
+
+	if _, err := fmt.Fprintf(w, vectors, nmi, reset, irq); err != nil {
+		return fmt.Errorf("writing vectors: %w", err)
+	}
+
+	return nil
+}
+
+// bankFilename derives the bank output filename from the main output filename
+// and the bank name. Matches the logic in pipeline.generateBankFilename.
+func bankFilename(outputFilename, bankName string) string {
+	base := strings.TrimSuffix(outputFilename, ".asm")
+	suffix := strings.TrimPrefix(strings.ToLower(bankName), "prg_")
+	return base + "_" + suffix + ".asm"
 }
