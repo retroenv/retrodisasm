@@ -13,9 +13,9 @@ func TestInstruction_IsCall(t *testing.T) {
 		ins      *chip8.Instruction
 		expected bool
 	}{
-		{"call instruction", chip8.Call, true},
-		{"jump instruction", chip8.Jp, false},
-		{"load instruction", chip8.Ld, false},
+		{"call instruction", chip8.CallInst, true},
+		{"jump instruction", chip8.JpInst, false},
+		{"load instruction", chip8.LdInst, false},
 		{"nil instruction", nil, false},
 	}
 
@@ -35,8 +35,8 @@ func TestInstruction_IsNil(t *testing.T) {
 		expected bool
 	}{
 		{"nil instruction", nil, true},
-		{"valid instruction", chip8.Jp, false},
-		{"call instruction", chip8.Call, false},
+		{"valid instruction", chip8.JpInst, false},
+		{"call instruction", chip8.CallInst, false},
 	}
 
 	for _, tt := range tests {
@@ -55,11 +55,11 @@ func TestInstruction_Name(t *testing.T) {
 		expected string
 	}{
 		{"nil instruction", nil, ""},
-		{"jump instruction", chip8.Jp, chip8.Jp.Name},
-		{"call instruction", chip8.Call, chip8.Call.Name},
-		{"load instruction", chip8.Ld, chip8.Ld.Name},
-		{"clear instruction", chip8.Cls, chip8.Cls.Name},
-		{"return instruction", chip8.Ret, chip8.Ret.Name},
+		{"jump instruction", chip8.JpInst, chip8.JpName},
+		{"call instruction", chip8.CallInst, chip8.CallName},
+		{"load instruction", chip8.LdInst, chip8.LdName},
+		{"clear instruction", chip8.ClsInst, chip8.ClsName},
+		{"return instruction", chip8.RetInst, chip8.RetName},
 	}
 
 	for _, tt := range tests {
@@ -77,12 +77,12 @@ func TestInstruction_Unofficial(t *testing.T) {
 		ins  *chip8.Instruction
 	}{
 		{"nil instruction", nil},
-		{"jump instruction", chip8.Jp},
-		{"call instruction", chip8.Call},
-		{"load instruction", chip8.Ld},
-		{"clear instruction", chip8.Cls},
-		{"return instruction", chip8.Ret},
-		{"draw instruction", chip8.Drw},
+		{"jump instruction", chip8.JpInst},
+		{"call instruction", chip8.CallInst},
+		{"load instruction", chip8.LdInst},
+		{"clear instruction", chip8.ClsInst},
+		{"return instruction", chip8.RetInst},
+		{"draw instruction", chip8.DrwInst},
 	}
 
 	for _, tt := range tests {
@@ -99,25 +99,25 @@ func TestInstruction_Unofficial(t *testing.T) {
 func TestInstructionWrapper(t *testing.T) {
 	// Test with various CHIP-8 instructions
 	instructions := []*chip8.Instruction{
-		chip8.Cls,
-		chip8.Ret,
-		chip8.Jp,
-		chip8.Call,
-		chip8.Se,
-		chip8.Sne,
-		chip8.Ld,
-		chip8.Add,
-		chip8.Or,
-		chip8.And,
-		chip8.Xor,
-		chip8.Sub,
-		chip8.Subn,
-		chip8.Shr,
-		chip8.Shl,
-		chip8.Rnd,
-		chip8.Drw,
-		chip8.Skp,
-		chip8.Sknp,
+		chip8.ClsInst,
+		chip8.RetInst,
+		chip8.JpInst,
+		chip8.CallInst,
+		chip8.SeInst,
+		chip8.SneInst,
+		chip8.LdInst,
+		chip8.AddInst,
+		chip8.OrInst,
+		chip8.AndInst,
+		chip8.XorInst,
+		chip8.SubInst,
+		chip8.SubnInst,
+		chip8.ShrInst,
+		chip8.ShlInst,
+		chip8.RndInst,
+		chip8.DrwInst,
+		chip8.SkpInst,
+		chip8.SknpInst,
 	}
 
 	for _, ins := range instructions {
@@ -130,7 +130,7 @@ func TestInstructionWrapper(t *testing.T) {
 			assert.False(t, instr.Unofficial())
 
 			// Test call detection (only CALL should return true)
-			expectedIsCall := ins == chip8.Call
+			expectedIsCall := ins == chip8.CallInst
 			assert.Equal(t, expectedIsCall, instr.IsCall())
 		})
 	}

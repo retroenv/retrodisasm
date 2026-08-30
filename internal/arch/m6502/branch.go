@@ -2,21 +2,21 @@ package m6502
 
 import (
 	"github.com/retroenv/retrodisasm/internal/offset"
-	"github.com/retroenv/retrogolib/arch/cpu/m6502"
+	"github.com/retroenv/retrogolib/arch/cpu/cpu6502"
 	"github.com/retroenv/retrogolib/log"
 )
 
 // complementaryBranches defines pairs of branch instructions that test opposite conditions of the same flag.
 // If both instructions in a pair appear consecutively, they create an unconditional branch pattern.
 var complementaryBranches = map[string]string{
-	m6502.Beq.Name: m6502.Bne.Name, // Zero flag: equal vs not equal
-	m6502.Bne.Name: m6502.Beq.Name,
-	m6502.Bcc.Name: m6502.Bcs.Name, // Carry flag: clear vs set
-	m6502.Bcs.Name: m6502.Bcc.Name,
-	m6502.Bpl.Name: m6502.Bmi.Name, // Negative flag: plus vs minus
-	m6502.Bmi.Name: m6502.Bpl.Name,
-	m6502.Bvc.Name: m6502.Bvs.Name, // Overflow flag: clear vs set
-	m6502.Bvs.Name: m6502.Bvc.Name,
+	cpu6502.BeqName: cpu6502.BneName, // Zero flag: equal vs not equal
+	cpu6502.BneName: cpu6502.BeqName,
+	cpu6502.BccName: cpu6502.BcsName, // Carry flag: clear vs set
+	cpu6502.BcsName: cpu6502.BccName,
+	cpu6502.BplName: cpu6502.BmiName, // Negative flag: plus vs minus
+	cpu6502.BmiName: cpu6502.BplName,
+	cpu6502.BvcName: cpu6502.BvsName, // Overflow flag: clear vs set
+	cpu6502.BvsName: cpu6502.BvcName,
 }
 
 // ComplementaryBranchPair represents a detected complementary branch sequence.
@@ -47,7 +47,7 @@ func (ar *Arch6502) DetectComplementaryBranchSequence(address uint16, offsetInfo
 	}
 
 	// Check if the next byte is a valid opcode
-	nextOpcode := m6502.Opcodes[nextByte]
+	nextOpcode := cpu6502.Opcodes[nextByte]
 	if nextOpcode.Instruction == nil {
 		return false
 	}

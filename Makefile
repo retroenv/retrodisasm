@@ -1,5 +1,5 @@
-GOLANGCI_VERSION = v2.12.1
-RETROGOLINT_VERSION = v1.0.1
+GOLANGCI_VERSION = v2.13.2
+RETROGOLINT_VERSION = v1.0.3
 
 help: ## show help, shown by default if no target is specified
 	@grep -E '^[0-9a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'

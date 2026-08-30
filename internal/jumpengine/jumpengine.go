@@ -14,10 +14,45 @@ import (
 
 const jumpEngineLastInstructionsCheck = 16
 
+// mapper defines the minimal interface needed from the mapper
+type mapper interface {
+	// OffsetInfo returns the offset information for the given address.
+	OffsetInfo(address uint16) *offset.DisasmOffset
+}
+
+// disasm defines the minimal interface needed from the disassembler
+type disasm interface {
+	// AddAddressToParse adds an address to the list to be processed.
+	AddAddressToParse(address, context, from uint16, currentInstruction instruction.Instruction, isABranchDestination bool)
+	// DeleteFunctionReturnToParse deletes a function return address from the list of addresses to parse.
+	DeleteFunctionReturnToParse(address uint16)
+	// ReadMemory reads a byte from the memory at the given address.
+	ReadMemory(address uint16) (byte, error)
+	// ReadMemoryWord reads a word from the memory at the given address.
+	ReadMemoryWord(address uint16) (uint16, error)
+}
+
 // Dependencies contains the dependencies needed by JumpEngine.
 type Dependencies struct {
 	Disasm disasm
 	Mapper mapper
+}
+
+// architecture defines the minimal interface needed from arch.Architecture
+type architecture interface {
+	// AddressingParam returns the address of the param if it references an address.
+	AddressingParam(param any) (uint16, bool)
+	// LastCodeAddress returns the last possible address of code.
+	LastCodeAddress() uint16
+	// ReadOpParam reads the parameter of an opcode.
+	ReadOpParam(addressing int, address uint16) (any, []byte, error)
+}
+
+// jumpEngineCaller stores info about a caller of a jump engine, which is followed by a list of function addresses
+type jumpEngineCaller struct {
+	entries           int  // count of referenced functions in the table
+	terminated        bool // marks whether the end of the table has been found
+	tableStartAddress uint16
 }
 
 // JumpEngine implements jump engine detection and processing.
@@ -289,39 +324,4 @@ func (j *JumpEngine) processJumpEngineEntry(address uint16, jumpEngine *jumpEngi
 
 	j.dis.AddAddressToParse(destination, destination, address, nil, true)
 	return true, nil
-}
-
-// architecture defines the minimal interface needed from arch.Architecture
-type architecture interface {
-	// AddressingParam returns the address of the param if it references an address.
-	AddressingParam(param any) (uint16, bool)
-	// LastCodeAddress returns the last possible address of code.
-	LastCodeAddress() uint16
-	// ReadOpParam reads the parameter of an opcode.
-	ReadOpParam(addressing int, address uint16) (any, []byte, error)
-}
-
-// mapper defines the minimal interface needed from the mapper
-type mapper interface {
-	// OffsetInfo returns the offset information for the given address.
-	OffsetInfo(address uint16) *offset.DisasmOffset
-}
-
-// disasm defines the minimal interface needed from the disassembler
-type disasm interface {
-	// AddAddressToParse adds an address to the list to be processed.
-	AddAddressToParse(address, context, from uint16, currentInstruction instruction.Instruction, isABranchDestination bool)
-	// DeleteFunctionReturnToParse deletes a function return address from the list of addresses to parse.
-	DeleteFunctionReturnToParse(address uint16)
-	// ReadMemory reads a byte from the memory at the given address.
-	ReadMemory(address uint16) (byte, error)
-	// ReadMemoryWord reads a word from the memory at the given address.
-	ReadMemoryWord(address uint16) (uint16, error)
-}
-
-// jumpEngineCaller stores info about a caller of a jump engine, which is followed by a list of function addresses
-type jumpEngineCaller struct {
-	entries           int  // count of referenced functions in the table
-	terminated        bool // marks whether the end of the table has been found
-	tableStartAddress uint16
 }

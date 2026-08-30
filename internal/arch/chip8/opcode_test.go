@@ -14,7 +14,7 @@ func TestOpcode_Addressing(t *testing.T) {
 			Mask:  0xF000,
 			Value: 0x1000,
 		},
-		Instruction: chip8.Jp,
+		Instruction: chip8.JpInst,
 	}
 
 	opcode := Opcode{op: testOpcode}
@@ -25,7 +25,7 @@ func TestOpcode_Addressing(t *testing.T) {
 
 func TestOpcode_Instruction(t *testing.T) {
 	testOpcode := chip8.Opcode{
-		Instruction: chip8.Jp,
+		Instruction: chip8.JpInst,
 	}
 
 	opcode := Opcode{op: testOpcode}
@@ -33,7 +33,7 @@ func TestOpcode_Instruction(t *testing.T) {
 
 	// Verify it returns the correct wrapped instruction
 	assert.False(t, instr.IsNil())
-	assert.Equal(t, chip8.Jp.Name, instr.Name())
+	assert.Equal(t, chip8.JpName, instr.Name())
 }
 
 func TestOpcode_ReadsMemory(t *testing.T) {
@@ -43,13 +43,13 @@ func TestOpcode_ReadsMemory(t *testing.T) {
 		expected    bool
 	}{
 		{"nil instruction", nil, false},
-		{"LD instruction", chip8.Ld, true},
-		{"DRW instruction", chip8.Drw, true},
-		{"JP instruction", chip8.Jp, false},
-		{"CALL instruction", chip8.Call, false},
-		{"CLS instruction", chip8.Cls, false},
-		{"RET instruction", chip8.Ret, false},
-		{"ADD instruction", chip8.Add, false},
+		{"LD instruction", chip8.LdInst, true},
+		{"DRW instruction", chip8.DrwInst, true},
+		{"JP instruction", chip8.JpInst, false},
+		{"CALL instruction", chip8.CallInst, false},
+		{"CLS instruction", chip8.ClsInst, false},
+		{"RET instruction", chip8.RetInst, false},
+		{"ADD instruction", chip8.AddInst, false},
 	}
 
 	for _, tt := range tests {
@@ -72,13 +72,13 @@ func TestOpcode_WritesMemory(t *testing.T) {
 		expected    bool
 	}{
 		{"nil instruction", nil, false},
-		{"LD instruction", chip8.Ld, true},
-		{"DRW instruction", chip8.Drw, false}, // DRW writes to display memory, not main memory
-		{"JP instruction", chip8.Jp, false},
-		{"CALL instruction", chip8.Call, false},
-		{"CLS instruction", chip8.Cls, false},
-		{"RET instruction", chip8.Ret, false},
-		{"ADD instruction", chip8.Add, false},
+		{"LD instruction", chip8.LdInst, true},
+		{"DRW instruction", chip8.DrwInst, false}, // DRW writes to display memory, not main memory
+		{"JP instruction", chip8.JpInst, false},
+		{"CALL instruction", chip8.CallInst, false},
+		{"CLS instruction", chip8.ClsInst, false},
+		{"RET instruction", chip8.RetInst, false},
+		{"ADD instruction", chip8.AddInst, false},
 	}
 
 	for _, tt := range tests {
@@ -100,13 +100,13 @@ func TestOpcode_ReadWritesMemory(t *testing.T) {
 		instruction *chip8.Instruction
 	}{
 		{"nil instruction", nil},
-		{"LD instruction", chip8.Ld},
-		{"DRW instruction", chip8.Drw},
-		{"JP instruction", chip8.Jp},
-		{"CALL instruction", chip8.Call},
-		{"CLS instruction", chip8.Cls},
-		{"RET instruction", chip8.Ret},
-		{"ADD instruction", chip8.Add},
+		{"LD instruction", chip8.LdInst},
+		{"DRW instruction", chip8.DrwInst},
+		{"JP instruction", chip8.JpInst},
+		{"CALL instruction", chip8.CallInst},
+		{"CLS instruction", chip8.ClsInst},
+		{"RET instruction", chip8.RetInst},
+		{"ADD instruction", chip8.AddInst},
 	}
 
 	for _, tt := range tests {

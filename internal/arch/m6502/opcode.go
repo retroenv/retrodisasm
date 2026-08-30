@@ -2,13 +2,13 @@ package m6502
 
 import (
 	"github.com/retroenv/retrodisasm/internal/instruction"
-	"github.com/retroenv/retrogolib/arch/cpu/m6502"
+	"github.com/retroenv/retrogolib/arch/cpu/cpu6502"
 )
 
 var _ instruction.Opcode = &Opcode{}
 
 type Opcode struct {
-	op m6502.Opcode
+	op cpu6502.Opcode
 }
 
 func (o Opcode) Addressing() int {
@@ -20,13 +20,13 @@ func (o Opcode) Instruction() instruction.Instruction {
 }
 
 func (o Opcode) ReadsMemory() bool {
-	return o.op.ReadsMemory(m6502.MemoryReadInstructions)
+	return o.op.ReadsMemory(cpu6502.MemoryReadInstructions)
 }
 
 func (o Opcode) WritesMemory() bool {
-	return o.op.WritesMemory(m6502.MemoryWriteInstructions)
+	return o.op.WritesMemory(cpu6502.MemoryWriteInstructions)
 }
 
 func (o Opcode) ReadWritesMemory() bool {
-	return o.op.ReadWritesMemory(m6502.MemoryReadWriteInstructions)
+	return o.op.ReadWritesMemory(cpu6502.MemoryReadWriteInstructions)
 }

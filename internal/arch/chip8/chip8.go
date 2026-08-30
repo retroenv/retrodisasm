@@ -37,6 +37,18 @@ const (
 	LastCodeAddress = 0xFFF
 )
 
+// disasm defines the minimal interface needed from the disassembler.
+type disasm interface {
+	// AddAddressToParse adds an address to the list to be processed.
+	AddAddressToParse(address, context, from uint16, currentInstruction instruction.Instruction, isABranchDestination bool)
+	// ProgramCounter returns the current program counter of the execution tracer.
+	ProgramCounter() uint16
+	// ReadMemory reads a byte from the memory at the given address.
+	ReadMemory(address uint16) (byte, error)
+	// SetCodeBaseAddress sets the code base address.
+	SetCodeBaseAddress(address uint16)
+}
+
 // Dependencies contains the dependencies needed by Chip8.
 type Dependencies struct {
 	Disasm disasm
@@ -155,13 +167,13 @@ func (c *Chip8) FormatBranchReference(offsetInfo *offset.DisasmOffset, label str
 
 	switch opcode & 0xF000 {
 	case 0x1000:
-		return fmt.Sprintf("%s %s", chip8.Jp.Name, label)
+		return fmt.Sprintf("%s %s", chip8.JpName, label)
 	case 0x2000:
-		return fmt.Sprintf("%s %s", chip8.Call.Name, label)
+		return fmt.Sprintf("%s %s", chip8.CallName, label)
 	case 0xA000:
-		return fmt.Sprintf("%s I, %s", chip8.Ld.Name, label)
+		return fmt.Sprintf("%s I, %s", chip8.LdName, label)
 	case 0xB000:
-		return fmt.Sprintf("%s V0, %s", chip8.Jp.Name, label)
+		return fmt.Sprintf("%s V0, %s", chip8.JpName, label)
 	default:
 		return offset.FormatBranchReference(offsetInfo, label)
 	}
@@ -254,27 +266,27 @@ func (c *Chip8) handleDataReference(address uint16, offsetInfo *offset.DisasmOff
 // Returns the formatted parameter string for the given instruction.
 func (c *Chip8) formatInstruction(name string, opcode uint16) string {
 	switch name {
-	case chip8.Cls.Name, chip8.Ret.Name:
+	case chip8.ClsName, chip8.RetName:
 		return "" // No parameters
-	case chip8.Jp.Name:
+	case chip8.JpName:
 		return c.formatJumpInstruction(opcode)
-	case chip8.Call.Name:
+	case chip8.CallName:
 		return fmt.Sprintf("$%03X", opcode&0x0FFF)
-	case chip8.Se.Name, chip8.Sne.Name:
+	case chip8.SeName, chip8.SneName:
 		return c.formatCompareInstruction(opcode)
-	case chip8.Ld.Name:
+	case chip8.LdName:
 		return c.formatLoadInstruction(opcode)
-	case chip8.Add.Name:
+	case chip8.AddName:
 		return c.formatAddInstruction(opcode)
-	case chip8.Or.Name, chip8.And.Name, chip8.Xor.Name, chip8.Sub.Name, chip8.Subn.Name:
+	case chip8.OrName, chip8.AndName, chip8.XorName, chip8.SubName, chip8.SubnName:
 		return c.formatBinaryInstruction(opcode)
-	case chip8.Shr.Name, chip8.Shl.Name:
+	case chip8.ShrName, chip8.ShlName:
 		return c.formatShiftInstruction(opcode)
-	case chip8.Rnd.Name:
+	case chip8.RndName:
 		return c.formatRandomInstruction(opcode)
-	case chip8.Drw.Name:
+	case chip8.DrwName:
 		return c.formatDrawInstruction(opcode)
-	case chip8.Skp.Name, chip8.Sknp.Name:
+	case chip8.SkpName, chip8.SknpName:
 		return c.formatSkipInstruction(opcode)
 	}
 	return ""
@@ -390,18 +402,6 @@ func (c *Chip8) extractTargetAddressInROM(data []byte) (uint16, bool) {
 	}
 
 	return target, true
-}
-
-// disasm defines the minimal interface needed from the disassembler.
-type disasm interface {
-	// AddAddressToParse adds an address to the list to be processed.
-	AddAddressToParse(address, context, from uint16, currentInstruction instruction.Instruction, isABranchDestination bool)
-	// ProgramCounter returns the current program counter of the execution tracer.
-	ProgramCounter() uint16
-	// ReadMemory reads a byte from the memory at the given address.
-	ReadMemory(address uint16) (byte, error)
-	// SetCodeBaseAddress sets the code base address.
-	SetCodeBaseAddress(address uint16)
 }
 
 // decodeOpcode extracts the 16-bit opcode from instruction bytes.

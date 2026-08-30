@@ -8,7 +8,7 @@ import (
 	"github.com/retroenv/retrodisasm/internal/offset"
 	"github.com/retroenv/retrodisasm/internal/options"
 	"github.com/retroenv/retrodisasm/internal/program"
-	"github.com/retroenv/retrogolib/arch/cpu/m6502"
+	"github.com/retroenv/retrogolib/arch/cpu/cpu6502"
 	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
 	"github.com/retroenv/retrogolib/assert"
 	"github.com/retroenv/retrogolib/log"
@@ -54,7 +54,7 @@ func TestDetectComplementaryBranchSequenceAtEndOfROM(t *testing.T) {
 
 	offsetInfo := &offset.DisasmOffset{}
 	offsetInfo.Data = []byte{0xD0, 0x02}
-	offsetInfo.Opcode = &Opcode{op: m6502.Opcodes[0xD0]}
+	offsetInfo.Opcode = &Opcode{op: cpu6502.Opcodes[0xD0]}
 
 	detected := arch.DetectComplementaryBranchSequence(0x8000, offsetInfo)
 	assert.False(t, detected)
@@ -130,7 +130,7 @@ func testBranchSequence(t *testing.T, instruction, nextInstruction byte) (bool, 
 
 	offsetInfo := &offset.DisasmOffset{}
 	offsetInfo.Data = []byte{instruction, 0x02}
-	offsetInfo.Opcode = &Opcode{op: m6502.Opcodes[instruction]}
+	offsetInfo.Opcode = &Opcode{op: cpu6502.Opcodes[instruction]}
 
 	detected := arch.DetectComplementaryBranchSequence(0x8000, offsetInfo)
 	return detected, offsetInfo

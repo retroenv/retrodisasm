@@ -5,7 +5,7 @@ import (
 
 	"github.com/retroenv/retrodisasm/internal/options"
 	"github.com/retroenv/retrodisasm/internal/program"
-	"github.com/retroenv/retrogolib/arch/cpu/m6502"
+	"github.com/retroenv/retrogolib/arch/cpu/cpu6502"
 	"github.com/retroenv/retrogolib/arch/system/nes"
 	"github.com/retroenv/retrogolib/log"
 )
@@ -59,7 +59,7 @@ func (ar *Arch6502) initializeIrqHandlers() error {
 }
 
 func (ar *Arch6502) initializeNMIHandler(handlers *program.Handlers) (uint16, error) {
-	nmi, err := ar.dis.ReadMemoryWord(m6502.NMIAddress)
+	nmi, err := ar.dis.ReadMemoryWord(cpu6502.NMIAddress)
 	if err != nil {
 		return 0, fmt.Errorf("reading NMI address: %w", err)
 	}
@@ -78,7 +78,7 @@ func (ar *Arch6502) initializeNMIHandler(handlers *program.Handlers) (uint16, er
 }
 
 func (ar *Arch6502) initializeResetHandler(handlers *program.Handlers) (uint16, error) {
-	reset, err := ar.dis.ReadMemoryWord(m6502.ResetAddress)
+	reset, err := ar.dis.ReadMemoryWord(cpu6502.ResetAddress)
 	if err != nil {
 		return 0, fmt.Errorf("reading reset address: %w", err)
 	}
@@ -96,7 +96,7 @@ func (ar *Arch6502) initializeResetHandler(handlers *program.Handlers) (uint16, 
 }
 
 func (ar *Arch6502) initializeIRQHandler(handlers *program.Handlers) (uint16, error) {
-	irq, err := ar.dis.ReadMemoryWord(m6502.IrqAddress)
+	irq, err := ar.dis.ReadMemoryWord(cpu6502.IrqAddress)
 	if err != nil {
 		return 0, fmt.Errorf("reading IRQ address: %w", err)
 	}
@@ -153,7 +153,7 @@ func (ar *Arch6502) initializeBinaryMode(opts options.Disassembler, handlers pro
 
 	// Set code base address before accessing offsets
 	ar.dis.SetCodeBaseAddress(reset)
-	ar.dis.SetVectorsStartAddress(m6502.InterruptVectorStartAddress)
+	ar.dis.SetVectorsStartAddress(cpu6502.InterruptVectorStartAddress)
 
 	offsetInfo := ar.mapper.OffsetInfo(reset)
 	if offsetInfo != nil {
@@ -179,7 +179,7 @@ func (ar *Arch6502) calculateCodeBaseAddress(resetHandler uint16) {
 	if opts.BaseAddress != 0 {
 		// Use custom base address from options
 		ar.dis.SetCodeBaseAddress(opts.BaseAddress)
-		ar.dis.SetVectorsStartAddress(m6502.InterruptVectorStartAddress)
+		ar.dis.SetVectorsStartAddress(cpu6502.InterruptVectorStartAddress)
 		return
 	}
 
@@ -187,13 +187,13 @@ func (ar *Arch6502) calculateCodeBaseAddress(resetHandler uint16) {
 	if cart == nil || len(cart.PRG) == 0 {
 		// No cart data (binary mode), use default
 		ar.dis.SetCodeBaseAddress(0x8000)
-		ar.dis.SetVectorsStartAddress(m6502.InterruptVectorStartAddress)
+		ar.dis.SetVectorsStartAddress(cpu6502.InterruptVectorStartAddress)
 		return
 	}
 
 	halfPrg := len(cart.PRG) % 0x8000
 	codeBaseAddress := uint16(0x8000 + halfPrg)
-	vectorsStartAddress := uint16(m6502.InterruptVectorStartAddress)
+	vectorsStartAddress := uint16(cpu6502.InterruptVectorStartAddress)
 
 	// fix up calculated code base address for half sized PRG ROMs that have a different
 	// code base address configured in the assembler, like "M.U.S.C.L.E."

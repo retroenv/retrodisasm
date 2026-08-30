@@ -104,10 +104,10 @@ func TestInstruction_IsJump(t *testing.T) {
 		instr    *chip8cpu.Instruction
 		expected bool
 	}{
-		{"jump instruction", chip8cpu.Jp, true},
-		{"call instruction", chip8cpu.Call, false},
-		{"load instruction", chip8cpu.Ld, false},
-		{"return instruction", chip8cpu.Ret, false},
+		{"jump instruction", chip8cpu.JpInst, true},
+		{"call instruction", chip8cpu.CallInst, false},
+		{"load instruction", chip8cpu.LdInst, false},
+		{"return instruction", chip8cpu.RetInst, false},
 	}
 
 	for _, tt := range tests {
@@ -125,10 +125,10 @@ func TestInstruction_IsReturn(t *testing.T) {
 		instr    *chip8cpu.Instruction
 		expected bool
 	}{
-		{"return instruction", chip8cpu.Ret, true},
-		{"call instruction", chip8cpu.Call, false},
-		{"jump instruction", chip8cpu.Jp, false},
-		{"load instruction", chip8cpu.Ld, false},
+		{"return instruction", chip8cpu.RetInst, true},
+		{"call instruction", chip8cpu.CallInst, false},
+		{"jump instruction", chip8cpu.JpInst, false},
+		{"load instruction", chip8cpu.LdInst, false},
 	}
 
 	for _, tt := range tests {
@@ -146,14 +146,14 @@ func TestInstruction_IsSkip(t *testing.T) {
 		instr    *chip8cpu.Instruction
 		expected bool
 	}{
-		{"SE instruction", chip8cpu.Se, true},
-		{"SNE instruction", chip8cpu.Sne, true},
-		{"SKP instruction", chip8cpu.Skp, true},
-		{"SKNP instruction", chip8cpu.Sknp, true},
-		{"jump instruction", chip8cpu.Jp, false},
-		{"call instruction", chip8cpu.Call, false},
-		{"load instruction", chip8cpu.Ld, false},
-		{"return instruction", chip8cpu.Ret, false},
+		{"SE instruction", chip8cpu.SeInst, true},
+		{"SNE instruction", chip8cpu.SneInst, true},
+		{"SKP instruction", chip8cpu.SkpInst, true},
+		{"SKNP instruction", chip8cpu.SknpInst, true},
+		{"jump instruction", chip8cpu.JpInst, false},
+		{"call instruction", chip8cpu.CallInst, false},
+		{"load instruction", chip8cpu.LdInst, false},
+		{"return instruction", chip8cpu.RetInst, false},
 		{"nil instruction", nil, false},
 	}
 
@@ -173,11 +173,11 @@ func TestInstruction_IsDataReference(t *testing.T) {
 		data     []byte
 		expected bool
 	}{
-		{"LD I instruction", chip8cpu.Ld, []byte{0xA2, 0x00}, true},
-		{"LD V instruction", chip8cpu.Ld, []byte{0x62, 0x00}, false},
-		{"non-LD instruction", chip8cpu.Jp, []byte{0x12, 0x00}, false},
-		{"insufficient data", chip8cpu.Ld, []byte{0xA2}, false},
-		{"empty data", chip8cpu.Ld, []byte{}, false},
+		{"LD I instruction", chip8cpu.LdInst, []byte{0xA2, 0x00}, true},
+		{"LD V instruction", chip8cpu.LdInst, []byte{0x62, 0x00}, false},
+		{"non-LD instruction", chip8cpu.JpInst, []byte{0x12, 0x00}, false},
+		{"insufficient data", chip8cpu.LdInst, []byte{0xA2}, false},
+		{"empty data", chip8cpu.LdInst, []byte{}, false},
 	}
 
 	for _, tt := range tests {

@@ -3,14 +3,14 @@ package m6502
 import (
 	"fmt"
 
-	"github.com/retroenv/retrogolib/arch/cpu/m6502"
+	"github.com/retroenv/retrogolib/arch/cpu/cpu6502"
 	"github.com/retroenv/retrogolib/arch/system/nes"
 )
 
 // ReadOpParam reads the opcode parameters after the first opcode byte
 // and translates it into system specific types.
 func (ar *Arch6502) ReadOpParam(addressing int, address uint16) (any, []byte, error) {
-	fun, ok := paramReader[m6502.AddressingMode(addressing)]
+	fun, ok := paramReader[cpu6502.AddressingMode(addressing)]
 	if !ok {
 		return nil, nil, fmt.Errorf("unsupported addressing mode %00x", addressing)
 	}
@@ -43,20 +43,20 @@ func (ar *Arch6502) ReadMemory(address uint16) (byte, error) {
 
 type paramReaderFunc func(dis disasm, address uint16) (any, []byte, error)
 
-var paramReader = map[m6502.AddressingMode]paramReaderFunc{
-	m6502.ImpliedAddressing:     paramReaderImplied,
-	m6502.ImmediateAddressing:   paramReaderImmediate,
-	m6502.AccumulatorAddressing: paramReaderAccumulator,
-	m6502.AbsoluteAddressing:    paramReaderAbsolute,
-	m6502.AbsoluteXAddressing:   paramReaderAbsoluteX,
-	m6502.AbsoluteYAddressing:   paramReaderAbsoluteY,
-	m6502.ZeroPageAddressing:    paramReaderZeroPage,
-	m6502.ZeroPageXAddressing:   paramReaderZeroPageX,
-	m6502.ZeroPageYAddressing:   paramReaderZeroPageY,
-	m6502.RelativeAddressing:    paramReaderRelative,
-	m6502.IndirectAddressing:    paramReaderIndirect,
-	m6502.IndirectXAddressing:   paramReaderIndirectX,
-	m6502.IndirectYAddressing:   paramReaderIndirectY,
+var paramReader = map[cpu6502.AddressingMode]paramReaderFunc{
+	cpu6502.ImpliedAddressing:     paramReaderImplied,
+	cpu6502.ImmediateAddressing:   paramReaderImmediate,
+	cpu6502.AccumulatorAddressing: paramReaderAccumulator,
+	cpu6502.AbsoluteAddressing:    paramReaderAbsolute,
+	cpu6502.AbsoluteXAddressing:   paramReaderAbsoluteX,
+	cpu6502.AbsoluteYAddressing:   paramReaderAbsoluteY,
+	cpu6502.ZeroPageAddressing:    paramReaderZeroPage,
+	cpu6502.ZeroPageXAddressing:   paramReaderZeroPageX,
+	cpu6502.ZeroPageYAddressing:   paramReaderZeroPageY,
+	cpu6502.RelativeAddressing:    paramReaderRelative,
+	cpu6502.IndirectAddressing:    paramReaderIndirect,
+	cpu6502.IndirectXAddressing:   paramReaderIndirectX,
+	cpu6502.IndirectYAddressing:   paramReaderIndirectY,
 }
 
 func paramReaderImplied(disasm, uint16) (any, []byte, error) {
@@ -73,7 +73,7 @@ func paramReaderImmediate(dis disasm, address uint16) (any, []byte, error) {
 }
 
 func paramReaderAccumulator(disasm, uint16) (any, []byte, error) {
-	return m6502.Accumulator(0), nil, nil
+	return cpu6502.Accumulator(0), nil, nil
 }
 
 func paramReaderAbsolute(dis disasm, address uint16) (any, []byte, error) {
@@ -82,7 +82,7 @@ func paramReaderAbsolute(dis disasm, address uint16) (any, []byte, error) {
 		return nil, nil, err
 	}
 
-	return m6502.Absolute(w), opcodes, nil
+	return cpu6502.Absolute(w), opcodes, nil
 }
 
 func paramReaderAbsoluteX(dis disasm, address uint16) (any, []byte, error) {
@@ -90,7 +90,7 @@ func paramReaderAbsoluteX(dis disasm, address uint16) (any, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return m6502.AbsoluteX(w), opcodes, nil
+	return cpu6502.AbsoluteX(w), opcodes, nil
 }
 
 func paramReaderAbsoluteY(dis disasm, address uint16) (any, []byte, error) {
@@ -98,7 +98,7 @@ func paramReaderAbsoluteY(dis disasm, address uint16) (any, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return m6502.AbsoluteY(w), opcodes, nil
+	return cpu6502.AbsoluteY(w), opcodes, nil
 }
 
 func paramReaderZeroPage(dis disasm, address uint16) (any, []byte, error) {
@@ -107,7 +107,7 @@ func paramReaderZeroPage(dis disasm, address uint16) (any, []byte, error) {
 		return nil, nil, fmt.Errorf("reading memory at address %04x: %w", address+1, err)
 	}
 	opcodes := []byte{b}
-	return m6502.ZeroPage(b), opcodes, nil
+	return cpu6502.ZeroPage(b), opcodes, nil
 }
 
 func paramReaderZeroPageX(dis disasm, address uint16) (any, []byte, error) {
@@ -116,7 +116,7 @@ func paramReaderZeroPageX(dis disasm, address uint16) (any, []byte, error) {
 		return nil, nil, fmt.Errorf("reading memory at address %04x: %w", address+1, err)
 	}
 	opcodes := []byte{b}
-	return m6502.ZeroPageX(b), opcodes, nil
+	return cpu6502.ZeroPageX(b), opcodes, nil
 }
 
 func paramReaderZeroPageY(dis disasm, address uint16) (any, []byte, error) {
@@ -125,7 +125,7 @@ func paramReaderZeroPageY(dis disasm, address uint16) (any, []byte, error) {
 		return nil, nil, fmt.Errorf("reading memory at address %04x: %w", address+1, err)
 	}
 	opcodes := []byte{b}
-	return m6502.ZeroPageY(b), opcodes, nil
+	return cpu6502.ZeroPageY(b), opcodes, nil
 }
 
 func paramReaderRelative(dis disasm, address uint16) (any, []byte, error) {
@@ -142,7 +142,7 @@ func paramReaderRelative(dis disasm, address uint16) (any, []byte, error) {
 	}
 
 	opcodes := []byte{byte(offset)}
-	return m6502.Absolute(address), opcodes, nil
+	return cpu6502.Absolute(address), opcodes, nil
 }
 
 func paramReaderIndirect(dis disasm, address uint16) (any, []byte, error) {
@@ -151,7 +151,7 @@ func paramReaderIndirect(dis disasm, address uint16) (any, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return m6502.Indirect(w), opcodes, nil
+	return cpu6502.Indirect(w), opcodes, nil
 }
 
 func paramReaderIndirectX(dis disasm, address uint16) (any, []byte, error) {
@@ -160,7 +160,7 @@ func paramReaderIndirectX(dis disasm, address uint16) (any, []byte, error) {
 		return nil, nil, fmt.Errorf("reading memory at address %04x: %w", address+1, err)
 	}
 	opcodes := []byte{b}
-	return m6502.IndirectX(b), opcodes, nil
+	return cpu6502.IndirectX(b), opcodes, nil
 }
 
 func paramReaderIndirectY(dis disasm, address uint16) (any, []byte, error) {
@@ -169,7 +169,7 @@ func paramReaderIndirectY(dis disasm, address uint16) (any, []byte, error) {
 		return nil, nil, fmt.Errorf("reading memory at address %04x: %w", address+1, err)
 	}
 	opcodes := []byte{b}
-	return m6502.IndirectY(b), opcodes, nil
+	return cpu6502.IndirectY(b), opcodes, nil
 }
 
 func paramReadWord(dis disasm, address uint16) (uint16, []byte, error) {

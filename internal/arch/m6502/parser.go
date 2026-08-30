@@ -7,7 +7,7 @@ import (
 	"github.com/retroenv/retrodisasm/internal/instruction"
 	"github.com/retroenv/retrodisasm/internal/offset"
 	"github.com/retroenv/retrodisasm/internal/program"
-	"github.com/retroenv/retrogolib/arch/cpu/m6502"
+	"github.com/retroenv/retrogolib/arch/cpu/cpu6502"
 	"github.com/retroenv/retrogolib/arch/system/nes"
 	"github.com/retroenv/retrogolib/arch/system/nes/parameter"
 )
@@ -26,14 +26,14 @@ func (ar *Arch6502) initializeOffsetInfo(offsetInfo *offset.DisasmOffset) (bool,
 	if err != nil {
 		return false, fmt.Errorf("reading memory at address %04x: %w", pc, err)
 	}
-	offsetInfo.Data = make([]byte, 1, m6502.MaxOpcodeSize)
+	offsetInfo.Data = make([]byte, 1, cpu6502.MaxOpcodeSize)
 	offsetInfo.Data[0] = b
 
 	if offsetInfo.IsType(program.DataOffset) {
 		return false, nil // was set by CDL
 	}
 
-	opcode := m6502.Opcodes[b]
+	opcode := cpu6502.Opcodes[b]
 	if opcode.Instruction == nil {
 		// consider an unknown instruction as start of data
 		offsetInfo.SetType(program.DataOffset)
@@ -67,19 +67,19 @@ func (ar *Arch6502) processParamInstruction(address uint16, offsetInfo *offset.D
 	}
 	offsetInfo.Data = append(offsetInfo.Data, opcodes...)
 
-	if address+uint16(len(offsetInfo.Data)) > m6502.InterruptVectorStartAddress {
+	if address+uint16(len(offsetInfo.Data)) > cpu6502.InterruptVectorStartAddress {
 		return "", errInstructionOverlapsIRQHandlers
 	}
 
-	paramAsString, err := parameter.String(ar.converter, m6502.AddressingMode(opcode.Addressing()), param)
+	paramAsString, err := parameter.String(ar.converter, cpu6502.AddressingMode(opcode.Addressing()), param)
 	if err != nil {
 		return "", fmt.Errorf("getting parameter as string: %w", err)
 	}
 
 	paramAsString = ar.replaceParamByAlias(address, opcode, param, paramAsString)
 
-	if _, ok := m6502.BranchingInstructions[opcode.Instruction().Name()]; ok {
-		addr, ok := param.(m6502.Absolute)
+	if _, ok := cpu6502.BranchingInstructions[opcode.Instruction().Name()]; ok {
+		addr, ok := param.(cpu6502.Absolute)
 		if ok {
 			ar.dis.AddAddressToParse(uint16(addr), offsetInfo.Context, pc, opcode.Instruction(), true)
 		}
@@ -91,11 +91,11 @@ func (ar *Arch6502) processParamInstruction(address uint16, offsetInfo *offset.D
 // handleInstructionIRQOverlap handles an instruction overlapping with the start of the IRQ handlers.
 // The opcodes are cut until the start of the IRQ handlers and the offset is converted to type data.
 func (ar *Arch6502) handleInstructionIRQOverlap(address uint16, offsetInfo *offset.DisasmOffset) {
-	if address > m6502.InterruptVectorStartAddress {
+	if address > cpu6502.InterruptVectorStartAddress {
 		return
 	}
 
-	keepLength := int(m6502.InterruptVectorStartAddress - address)
+	keepLength := int(cpu6502.InterruptVectorStartAddress - address)
 	offsetInfo.Data = offsetInfo.Data[:keepLength]
 
 	for i := range keepLength {
@@ -110,11 +110,11 @@ func (ar *Arch6502) handleInstructionIRQOverlap(address uint16, offsetInfo *offs
 func (ar *Arch6502) replaceParamByAlias(address uint16, opcode instruction.Opcode, param any, paramAsString string) string {
 	forceVariableUsage := false
 	addressReference, addressValid := ar.AddressingParam(param)
-	if !addressValid || addressReference >= m6502.InterruptVectorStartAddress {
+	if !addressValid || addressReference >= cpu6502.InterruptVectorStartAddress {
 		return paramAsString
 	}
 
-	if _, ok := m6502.BranchingInstructions[opcode.Instruction().Name()]; ok {
+	if _, ok := cpu6502.BranchingInstructions[opcode.Instruction().Name()]; ok {
 		var handleParam bool
 		handleParam, forceVariableUsage = checkBranchingParam(addressReference, opcode)
 		if !handleParam {
@@ -158,13 +158,13 @@ func (ar *Arch6502) markIndexedReferenceAsData(address uint16) {
 // and forces variable usage.
 func checkBranchingParam(address uint16, opcode instruction.Opcode) (bool, bool) {
 	name := opcode.Instruction().Name()
-	addressing := m6502.AddressingMode(opcode.Addressing())
+	addressing := cpu6502.AddressingMode(opcode.Addressing())
 
 	switch {
-	case name == m6502.Jmp.Name && addressing == m6502.IndirectAddressing:
+	case name == cpu6502.JmpName && addressing == cpu6502.IndirectAddressing:
 		return true, false
-	case name == m6502.Jmp.Name || name == m6502.Jsr.Name:
-		if addressing == m6502.AbsoluteAddressing && address < nes.CodeBaseAddress {
+	case name == cpu6502.JmpName || name == cpu6502.JsrName:
+		if addressing == cpu6502.AbsoluteAddressing && address < nes.CodeBaseAddress {
 			return true, true
 		}
 	}

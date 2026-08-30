@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/retroenv/retrodisasm/internal/offset"
-	"github.com/retroenv/retrogolib/arch/cpu/m6502"
+	"github.com/retroenv/retrogolib/arch/cpu/cpu6502"
 	"github.com/retroenv/retrogolib/log"
 )
 
@@ -18,8 +18,8 @@ const (
 // This can be found in some official games like Super Mario Bros.
 func (ar *Arch6502) checkForJumpEngineJmp(jumpAddress uint16, offsetInfo *offset.DisasmOffset) error {
 	instruction := offsetInfo.Opcode.Instruction()
-	addressing := m6502.AddressingMode(offsetInfo.Opcode.Addressing())
-	if instruction.Name() != m6502.Jmp.Name || addressing != m6502.IndirectAddressing {
+	addressing := cpu6502.AddressingMode(offsetInfo.Opcode.Addressing())
+	if instruction.Name() != cpu6502.JmpName || addressing != cpu6502.IndirectAddressing {
 		return nil
 	}
 
@@ -56,8 +56,8 @@ func (ar *Arch6502) checkForJumpEngineJmp(jumpAddress uint16, offsetInfo *offset
 // checkForJumpEngineCall checks if the current instruction is a call into a jump engine function.
 func (ar *Arch6502) checkForJumpEngineCall(address uint16, offsetInfo *offset.DisasmOffset) error {
 	instruction := offsetInfo.Opcode.Instruction()
-	addressing := m6502.AddressingMode(offsetInfo.Opcode.Addressing())
-	if instruction.Name() != m6502.Jsr.Name || addressing != m6502.AbsoluteAddressing {
+	addressing := cpu6502.AddressingMode(offsetInfo.Opcode.Addressing())
+	if instruction.Name() != cpu6502.JsrName || addressing != cpu6502.AbsoluteAddressing {
 		return nil
 	}
 

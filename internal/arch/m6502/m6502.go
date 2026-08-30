@@ -12,12 +12,40 @@ import (
 	"github.com/retroenv/retrodisasm/internal/options"
 	"github.com/retroenv/retrodisasm/internal/program"
 	"github.com/retroenv/retrodisasm/internal/vars"
-	"github.com/retroenv/retrogolib/arch/cpu/m6502"
+	"github.com/retroenv/retrogolib/arch/cpu/cpu6502"
 	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
 	"github.com/retroenv/retrogolib/arch/system/nes/parameter"
 	"github.com/retroenv/retrogolib/log"
 	"github.com/retroenv/retrogolib/set"
 )
+
+// disasm defines the minimal interface needed from the disassembler.
+type disasm interface {
+	// AddAddressToParse adds an address to the list to be processed.
+	AddAddressToParse(address, context, from uint16, currentInstruction instruction.Instruction, isABranchDestination bool)
+	// Cart returns the loaded cartridge.
+	Cart() *cartridge.Cartridge
+	// ChangeAddressRangeToCodeAsData sets a range of code address to code as data types.
+	ChangeAddressRangeToCodeAsData(address uint16, data []byte)
+	// IsBranchDestination checks if an address is a branch destination.
+	IsBranchDestination(address uint16) bool
+	// MarkAddressAsUnreachable marks an address as unreachable code.
+	MarkAddressAsUnreachable(address uint16)
+	// Options returns the disassembler options.
+	Options() options.Disassembler
+	// ProgramCounter returns the current program counter of the execution tracer.
+	ProgramCounter() uint16
+	// ReadMemory reads a byte from the memory at the given address.
+	ReadMemory(address uint16) (byte, error)
+	// ReadMemoryWord reads a word from the memory at the given address.
+	ReadMemoryWord(address uint16) (uint16, error)
+	// SetCodeBaseAddress sets the code base address.
+	SetCodeBaseAddress(address uint16)
+	// SetHandlers sets the program vector handlers.
+	SetHandlers(handlers program.Handlers)
+	// SetVectorsStartAddress sets the start address of the vectors.
+	SetVectorsStartAddress(address uint16)
+}
 
 // Dependencies contains the dependencies needed by Arch6502.
 type Dependencies struct {
@@ -75,7 +103,7 @@ func (ar *Arch6502) SetCodeBaseAddress(address uint16) {
 // This is used in systems where the last address is reserved for
 // the interrupt vector table.
 func (ar *Arch6502) LastCodeAddress() uint16 {
-	return m6502.InterruptVectorStartAddress
+	return cpu6502.InterruptVectorStartAddress
 }
 
 func (ar *Arch6502) ProcessOffset(address uint16, offsetInfo *offset.DisasmOffset) (bool, error) {
@@ -92,7 +120,7 @@ func (ar *Arch6502) ProcessOffset(address uint16, offsetInfo *offset.DisasmOffse
 	name := instruction.Name()
 	pc := ar.dis.ProgramCounter()
 
-	if op.Addressing() == int(m6502.ImpliedAddressing) {
+	if op.Addressing() == int(cpu6502.ImpliedAddressing) {
 		offsetInfo.Code = name
 	} else {
 		params, err := ar.processParamInstruction(pc, offsetInfo)
@@ -111,7 +139,7 @@ func (ar *Arch6502) ProcessOffset(address uint16, offsetInfo *offset.DisasmOffse
 	if ar.DetectComplementaryBranchSequence(pc, offsetInfo) {
 		nextAddress := pc + uint16(len(offsetInfo.Data))
 		nextByte, _ := ar.dis.ReadMemory(nextAddress)
-		nextOpcode := m6502.Opcodes[nextByte]
+		nextOpcode := cpu6502.Opcodes[nextByte]
 
 		ar.complementaryBranchPairs = append(ar.complementaryBranchPairs, ComplementaryBranchPair{
 			FirstAddress:  pc,
@@ -127,7 +155,7 @@ func (ar *Arch6502) ProcessOffset(address uint16, offsetInfo *offset.DisasmOffse
 	// If so, don't add the following address to parse (it's unreachable code)
 	isSecondComplementaryBranch := ar.complementaryBranchSecondAddrs.Contains(pc)
 
-	if _, ok := m6502.NotExecutingFollowingOpcodeInstructions[name]; ok {
+	if _, ok := cpu6502.NotExecutingFollowingOpcodeInstructions[name]; ok {
 		if err := ar.checkForJumpEngineJmp(pc, offsetInfo); err != nil {
 			return false, err
 		}
@@ -158,32 +186,4 @@ func (ar *Arch6502) BankWindowSize(_ *cartridge.Cartridge) int {
 		return 0 // Single-bank mode for binary files
 	}
 	return 0x2000 // Multi-bank mode for NES ROMs
-}
-
-// disasm defines the minimal interface needed from the disassembler.
-type disasm interface {
-	// AddAddressToParse adds an address to the list to be processed.
-	AddAddressToParse(address, context, from uint16, currentInstruction instruction.Instruction, isABranchDestination bool)
-	// Cart returns the loaded cartridge.
-	Cart() *cartridge.Cartridge
-	// ChangeAddressRangeToCodeAsData sets a range of code address to code as data types.
-	ChangeAddressRangeToCodeAsData(address uint16, data []byte)
-	// IsBranchDestination checks if an address is a branch destination.
-	IsBranchDestination(address uint16) bool
-	// MarkAddressAsUnreachable marks an address as unreachable code.
-	MarkAddressAsUnreachable(address uint16)
-	// Options returns the disassembler options.
-	Options() options.Disassembler
-	// ProgramCounter returns the current program counter of the execution tracer.
-	ProgramCounter() uint16
-	// ReadMemory reads a byte from the memory at the given address.
-	ReadMemory(address uint16) (byte, error)
-	// ReadMemoryWord reads a word from the memory at the given address.
-	ReadMemoryWord(address uint16) (uint16, error)
-	// SetCodeBaseAddress sets the code base address.
-	SetCodeBaseAddress(address uint16)
-	// SetHandlers sets the program vector handlers.
-	SetHandlers(handlers program.Handlers)
-	// SetVectorsStartAddress sets the start address of the vectors.
-	SetVectorsStartAddress(address uint16)
 }

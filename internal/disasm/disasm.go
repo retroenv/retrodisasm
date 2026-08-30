@@ -28,6 +28,36 @@ import (
 type FileWriterConstructor func(app *program.Program, options options.Disassembler,
 	mainWriter io.Writer, newBankWriter assembler.NewBankWriter) writer.AssemblerWriter
 
+// architecture defines the minimal interface needed from the architecture.
+type architecture interface {
+	// AddressingParam returns the address of the param if it references an address.
+	AddressingParam(param any) (uint16, bool)
+	// BankWindowSize returns the bank window size.
+	BankWindowSize(cart *cartridge.Cartridge) int
+	// Constants returns the constants translation map.
+	Constants() (map[uint16]consts.Constant, error)
+	// FormatBranchReference formats an instruction that references a branch or data label.
+	FormatBranchReference(offsetInfo *offset.DisasmOffset, label string) string
+	// HandleDisambiguousInstructions translates disambiguous instructions into data bytes.
+	HandleDisambiguousInstructions(address uint16, offsetInfo *offset.DisasmOffset) bool
+	// Initialize the architecture.
+	Initialize() error
+	// IsAddressingIndexed returns if the opcode is using indexed addressing.
+	IsAddressingIndexed(opcode instruction.Opcode) bool
+	// LastCodeAddress returns the last possible address of code.
+	LastCodeAddress() uint16
+	// PostProcessCode performs architecture-specific post-processing after all code is disassembled.
+	PostProcessCode() error
+	// ProcessOffset processes an offset and returns if the offset was processed and an error if any.
+	ProcessOffset(address uint16, offsetInfo *offset.DisasmOffset) (bool, error)
+	// ProcessVariableUsage processes the variable usage of an offset.
+	ProcessVariableUsage(offsetInfo *offset.DisasmOffset, reference string) error
+	// ReadMemory reads a byte from memory at the given address using architecture-specific logic.
+	ReadMemory(address uint16) (byte, error)
+	// ReadOpParam reads the parameter of an opcode.
+	ReadOpParam(addressing int, address uint16) (any, []byte, error)
+}
+
 // Disasm implements a disassembler.
 type Disasm struct {
 	arch    architecture
@@ -286,34 +316,4 @@ func (dis *Disasm) loadCodeDataLog() error {
 
 	dis.mapper.ApplyCodeDataLog(prgFlags)
 	return nil
-}
-
-// architecture defines the minimal interface needed from the architecture.
-type architecture interface {
-	// AddressingParam returns the address of the param if it references an address.
-	AddressingParam(param any) (uint16, bool)
-	// BankWindowSize returns the bank window size.
-	BankWindowSize(cart *cartridge.Cartridge) int
-	// Constants returns the constants translation map.
-	Constants() (map[uint16]consts.Constant, error)
-	// FormatBranchReference formats an instruction that references a branch or data label.
-	FormatBranchReference(offsetInfo *offset.DisasmOffset, label string) string
-	// HandleDisambiguousInstructions translates disambiguous instructions into data bytes.
-	HandleDisambiguousInstructions(address uint16, offsetInfo *offset.DisasmOffset) bool
-	// Initialize the architecture.
-	Initialize() error
-	// IsAddressingIndexed returns if the opcode is using indexed addressing.
-	IsAddressingIndexed(opcode instruction.Opcode) bool
-	// LastCodeAddress returns the last possible address of code.
-	LastCodeAddress() uint16
-	// PostProcessCode performs architecture-specific post-processing after all code is disassembled.
-	PostProcessCode() error
-	// ProcessOffset processes an offset and returns if the offset was processed and an error if any.
-	ProcessOffset(address uint16, offsetInfo *offset.DisasmOffset) (bool, error)
-	// ProcessVariableUsage processes the variable usage of an offset.
-	ProcessVariableUsage(offsetInfo *offset.DisasmOffset, reference string) error
-	// ReadMemory reads a byte from memory at the given address using architecture-specific logic.
-	ReadMemory(address uint16) (byte, error)
-	// ReadOpParam reads the parameter of an opcode.
-	ReadOpParam(addressing int, address uint16) (any, []byte, error)
 }

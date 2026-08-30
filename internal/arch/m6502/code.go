@@ -3,7 +3,7 @@ package m6502
 import (
 	"github.com/retroenv/retrodisasm/internal/offset"
 	"github.com/retroenv/retrodisasm/internal/program"
-	"github.com/retroenv/retrogolib/arch/cpu/m6502"
+	"github.com/retroenv/retrogolib/arch/cpu/cpu6502"
 )
 
 // HandleDisambiguousInstructions translates disambiguous instructions into data bytes as it
@@ -11,7 +11,7 @@ import (
 // bytes being assembled and make the resulting ROM not matching the original.
 func (ar *Arch6502) HandleDisambiguousInstructions(address uint16, offsetInfo *offset.DisasmOffset) bool {
 	instruction := offsetInfo.Opcode.Instruction()
-	if !instruction.Unofficial() || address >= m6502.InterruptVectorStartAddress {
+	if !instruction.Unofficial() || address >= cpu6502.InterruptVectorStartAddress {
 		return false
 	}
 
@@ -22,8 +22,8 @@ func (ar *Arch6502) HandleDisambiguousInstructions(address uint16, offsetInfo *o
 		return false
 	}
 
-	if instruction.Name() != m6502.Nop.Name &&
-		instruction.Name() != m6502.Sbc.Name &&
+	if instruction.Name() != cpu6502.NopName &&
+		instruction.Name() != cpu6502.SbcName &&
 		opts.AssemblerSupportsUnofficial {
 
 		return false

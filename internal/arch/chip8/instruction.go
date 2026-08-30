@@ -18,7 +18,7 @@ type Instruction struct {
 
 // IsCall returns true if the instruction is a call instruction.
 func (i Instruction) IsCall() bool {
-	return i.ins == chip8.Call
+	return i.ins == chip8.CallInst
 }
 
 // IsNil returns true if the instruction is nil.
@@ -42,12 +42,12 @@ func (i Instruction) Unofficial() bool {
 
 // IsJump returns true if the instruction is a jump instruction.
 func (i Instruction) IsJump() bool {
-	return i.ins == chip8.Jp
+	return i.ins == chip8.JpInst
 }
 
 // IsReturn returns true if the instruction is a return instruction.
 func (i Instruction) IsReturn() bool {
-	return i.ins == chip8.Ret
+	return i.ins == chip8.RetInst
 }
 
 // IsSkip returns true if the instruction is a conditional skip instruction.
@@ -60,7 +60,7 @@ func (i Instruction) IsSkip() bool {
 
 // IsDataReference returns true if the instruction references data (LD I, addr).
 func (i Instruction) IsDataReference(data []byte) bool {
-	if i.ins != chip8.Ld || len(data) < 2 {
+	if i.ins != chip8.LdInst || len(data) < 2 {
 		return false
 	}
 	opcode := uint16(data[0])<<8 | uint16(data[1])

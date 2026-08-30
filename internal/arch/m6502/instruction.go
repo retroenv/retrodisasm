@@ -2,19 +2,19 @@ package m6502
 
 import (
 	"github.com/retroenv/retrodisasm/internal/instruction"
-	"github.com/retroenv/retrogolib/arch/cpu/m6502"
+	"github.com/retroenv/retrogolib/arch/cpu/cpu6502"
 )
 
 var _ instruction.Instruction = &Instruction{}
 
 // Instruction represents a 6502 CPU instruction.
 type Instruction struct {
-	ins *m6502.Instruction
+	ins *cpu6502.Instruction
 }
 
 // IsCall returns true if the instruction is a call.
 func (i Instruction) IsCall() bool {
-	return i.ins.Name == m6502.Jsr.Name
+	return i.ins.Name == cpu6502.JsrName
 }
 
 // IsNil returns true if the instruction is nil.
