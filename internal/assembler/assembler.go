@@ -6,6 +6,7 @@ import (
 	"io"
 	"slices"
 
+	"github.com/retroenv/retrodisasm/internal/program"
 	"github.com/retroenv/retrogolib/arch"
 )
 
@@ -49,4 +50,20 @@ func WriteCHRInclude(w io.Writer, filename, directivePrefix string) error {
 		return fmt.Errorf("writing CHR include: %w", err)
 	}
 	return nil
+}
+
+// VectorReferences returns handler labels only when their addresses are inside
+// the emitted code range. Invalid vectors must remain literal to round-trip.
+func VectorReferences(bank *program.PRGBank, handlers program.Handlers) (string, string, string) {
+	vectorStart := int(bank.BaseAddress) + len(bank.Offsets) - 6
+	resolve := func(name string, address uint16) string {
+		if name != "" && int(address) >= int(bank.BaseAddress) && int(address) < vectorStart {
+			return name
+		}
+		return fmt.Sprintf("$%04X", address)
+	}
+
+	return resolve(handlers.NMI, bank.Vectors[0]),
+		resolve(handlers.Reset, bank.Vectors[1]),
+		resolve(handlers.IRQ, bank.Vectors[2])
 }
