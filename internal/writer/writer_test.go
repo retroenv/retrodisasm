@@ -39,3 +39,18 @@ func TestOutputAliasMap_EmitsWhenAddressDiffers(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(out, "FOO = $0010"))
 	assert.Equal(t, 1, strings.Count(out, "FOO = $0020"))
 }
+
+func TestProcessPRGWritesCrossSegmentBranchAsBytes(t *testing.T) {
+	var buf bytes.Buffer
+	bank := program.NewPRGBank(2)
+	bank.Offsets[0] = program.Offset{
+		Data: []byte{0xD0, 0x2E},
+		Type: program.CodeOffset,
+		Code: "bne _label_c010",
+	}
+	w := New(&program.Program{}, &buf, Options{LiteralCrossSegmentBranches: true})
+
+	assert.NoError(t, w.ProcessPRG(bank, 2))
+
+	assert.Equal(t, "  .byte $d0, $2e\n", buf.String())
+}

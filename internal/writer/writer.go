@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/retroenv/retrodisasm/internal/program"
+	"github.com/retroenv/retrogolib/set"
 )
 
 const dataBytesPerLine = 16
@@ -30,8 +31,9 @@ type Writer struct {
 
 // Options of the writer.
 type Options struct {
-	DirectivePrefix string // nesasm requires a space before a directive
-	OffsetComments  bool
+	DirectivePrefix             string // nesasm requires a space before a directive
+	LiteralCrossSegmentBranches bool
+	OffsetComments              bool
 }
 
 // New creates a new writer.
@@ -48,6 +50,12 @@ func New(app *program.Program, writer io.Writer, options Options) *Writer {
 // ProcessPRG processes the PRG segment and writes all code offsets, labels and their comments.
 func (w Writer) ProcessPRG(bank *program.PRGBank, endIndex int) error {
 	var previousLineWasCode bool
+	labels := set.New[string]()
+	for _, offset := range bank.Offsets {
+		if offset.Label != "" {
+			labels.Add(offset.Label)
+		}
+	}
 
 	for i := 0; i < endIndex; i++ {
 		offset := bank.Offsets[i]
@@ -70,7 +78,7 @@ func (w Writer) ProcessPRG(bank *program.PRGBank, endIndex int) error {
 		}
 		previousLineWasCode = offset.IsType(program.CodeOffset | program.CodeAsData)
 
-		adjustment, err := w.writeOffset(bank, i, endIndex, offset)
+		adjustment, err := w.writeOffset(bank, i, endIndex, offset, labels)
 		if err != nil {
 			return err
 		}
@@ -169,9 +177,18 @@ func (w Writer) WriteCommentHeader() error {
 	return nil
 }
 
-func (w Writer) writeOffset(bank *program.PRGBank, index, endIndex int, offset program.Offset) (int, error) {
+func (w Writer) writeOffset(bank *program.PRGBank, index, endIndex int, offset program.Offset,
+	labels set.Set[string]) (int, error) {
+
 	if offset.IsType(program.CodeOffset) && len(offset.Data) == 0 {
 		return 0, nil
+	}
+	if w.options.LiteralCrossSegmentBranches && isBranchToMissingLabel(offset, labels) {
+		offset.Code = fmt.Sprintf("%s.byte $%02x, $%02x", w.options.DirectivePrefix, offset.Data[0], offset.Data[1])
+		if err := w.writeCodeLine(offset); err != nil {
+			return 0, fmt.Errorf("writing cross-segment branch: %w", err)
+		}
+		return 1, nil
 	}
 	if offset.IsType(program.FunctionReference) {
 		if err := w.writeCodeLine(offset); err != nil {
@@ -275,6 +292,17 @@ func (w Writer) bundlePRGDataWrites(bank *program.PRGBank, startIndex, endIndex 
 }
 
 type lineWriterFunc func(line string, byteCount int) error
+
+func isBranchToMissingLabel(offset program.Offset, labels set.Set[string]) bool {
+	if len(offset.Data) != 2 || offset.Data[0]&0x1F != 0x10 {
+		return false
+	}
+	fields := strings.Fields(offset.Code)
+	if len(fields) != 2 || !strings.HasPrefix(fields[1], "_") {
+		return false
+	}
+	return !labels.Contains(fields[1])
+}
 
 func getPrgData(bank *program.PRGBank, startIndex, endIndex int) []byte {
 	var data []byte
