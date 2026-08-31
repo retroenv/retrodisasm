@@ -3,8 +3,10 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,17 +32,19 @@ import (
 
 // Pipeline orchestrates the complete disassembly workflow.
 type Pipeline struct {
-	logger   *log.Logger
-	detector *detector.Detector
-	loader   *loader.Loader
+	logger    *log.Logger
+	detector  *detector.Detector
+	loader    *loader.Loader
+	writeFile func(string, []byte, fs.FileMode) error
 }
 
 // New creates a new disassembly pipeline.
 func New(logger *log.Logger) *Pipeline {
 	return &Pipeline{
-		logger:   logger,
-		detector: detector.New(logger),
-		loader:   loader.New(),
+		logger:    logger,
+		detector:  detector.New(logger),
+		loader:    loader.New(),
+		writeFile: os.WriteFile,
 	}
 }
 
@@ -88,6 +92,14 @@ func (p *Pipeline) ExecuteWithCartridge(ctx context.Context, cart *cartridge.Car
 		return nil, fmt.Errorf("incompatible assembler: %w", err)
 	}
 
+	if opts.ExportCHR {
+		includeFilename, err := p.exportCHR(cart, opts, system)
+		if err != nil {
+			return nil, err
+		}
+		disasmOpts.CHRFilename = includeFilename
+	}
+
 	// Create disassembler
 	dis, err := p.createDisassembler(opts, disasmOpts, cart, system)
 	if err != nil {
@@ -112,6 +124,28 @@ func (p *Pipeline) ExecuteWithCartridge(ctx context.Context, cart *cartridge.Car
 	}
 
 	return result, nil
+}
+
+func (p *Pipeline) exportCHR(cart *cartridge.Cartridge, opts options.Program, system arch.System) (string, error) {
+	if system != arch.NES {
+		return "", errors.New("CHR-ROM export is only supported for NES ROMs")
+	}
+	if opts.Binary {
+		return "", errors.New("CHR-ROM export cannot be used with -binary")
+	}
+	if len(cart.CHR) == 0 {
+		return "", errors.New("cartridge has no CHR-ROM to export")
+	}
+
+	outputFilename, includeFilename, err := chrFilenames(opts)
+	if err != nil {
+		return "", err
+	}
+	if err := p.writeFile(outputFilename, cart.CHR, 0o644); err != nil {
+		return "", fmt.Errorf("writing CHR-ROM file %s: %w", outputFilename, err)
+	}
+
+	return includeFilename, nil
 }
 
 // createDisassembler creates and configures the disassembler for the detected system.
@@ -235,6 +269,52 @@ type nopCloser struct {
 
 func (nc *nopCloser) Close() error {
 	return nil
+}
+
+func chrFilenames(opts options.Program) (string, string, error) {
+	outputFilename := opts.CHRFilename
+	if outputFilename == "" {
+		base := opts.Output
+		if base == "" || base == options.OutputStdout {
+			base = opts.Input
+		}
+		if base == "" {
+			return "", "", errors.New("cannot derive CHR-ROM filename without an input or output filename")
+		}
+		ext := filepath.Ext(base)
+		outputFilename = strings.TrimSuffix(base, ext) + ".chr"
+	}
+	chrPath, err := filepath.Abs(outputFilename)
+	if err != nil {
+		return "", "", fmt.Errorf("resolving CHR-ROM output path: %w", err)
+	}
+	if opts.Input != "" {
+		inputPath, err := filepath.Abs(opts.Input)
+		if err != nil {
+			return "", "", fmt.Errorf("resolving input ROM path: %w", err)
+		}
+		if chrPath == inputPath {
+			return "", "", errors.New("CHR-ROM output filename would overwrite the input ROM")
+		}
+	}
+
+	includeFilename := outputFilename
+	if opts.Output != "" && opts.Output != options.OutputStdout {
+		// Includes are resolved relative to the generated assembly source.
+		assemblyPath, err := filepath.Abs(opts.Output)
+		if err != nil {
+			return "", "", fmt.Errorf("resolving assembly output path: %w", err)
+		}
+		if chrPath == assemblyPath {
+			return "", "", errors.New("CHR-ROM output filename would overwrite the assembly output")
+		}
+		includeFilename, err = filepath.Rel(filepath.Dir(assemblyPath), chrPath)
+		if err != nil {
+			return "", "", fmt.Errorf("resolving CHR-ROM include path: %w", err)
+		}
+	}
+
+	return outputFilename, filepath.ToSlash(includeFilename), nil
 }
 
 // generateBankFilename creates a per-bank output filename from the main output path

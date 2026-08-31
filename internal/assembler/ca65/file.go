@@ -226,6 +226,12 @@ func (f FileWriter) writeCHR() error {
 	if err := f.writeSegment("TILES"); err != nil {
 		return err
 	}
+	if f.options.CHRFilename != "" {
+		if err := assembler.WriteCHRInclude(f.mainWriter, f.options.CHRFilename, ""); err != nil {
+			return fmt.Errorf("writing CHR include directive: %w", err)
+		}
+		return nil
+	}
 
 	if f.options.ZeroBytes {
 		if err := f.writer.BundleDataWrites(f.app.CHR, nil); err != nil {

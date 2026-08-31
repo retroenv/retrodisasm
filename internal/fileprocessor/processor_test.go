@@ -3,6 +3,8 @@ package fileprocessor
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -53,6 +55,35 @@ func TestBinaryOptionSetsCodeOnly(t *testing.T) {
 				tt.expectVectorsSegment, tt.expectCodeSegmentName)
 		})
 	}
+}
+
+func TestProcessFileExportsCHR(t *testing.T) {
+	tempDir := t.TempDir()
+	inputFilename := filepath.Join(tempDir, "game.nes")
+	outputFilename := filepath.Join(tempDir, "game.asm")
+	chrFilename := filepath.Join(tempDir, "game.chr")
+
+	rom := createMinimalNESROM(createTestCode())
+	wantCHR := rom[len(rom)-8192:]
+	wantCHR[0] = 0x12
+	wantCHR[len(wantCHR)-1] = 0x34
+	assert.NoError(t, os.WriteFile(inputFilename, rom, 0o644))
+
+	opts := options.Program{
+		Parameters: options.Parameters{Input: inputFilename, Output: outputFilename},
+		Flags:      options.Flags{Assembler: "ca65", System: arch.NES.String(), Quiet: true},
+		ExportCHR:  true,
+	}
+	disasmOpts := options.NewDisassembler(opts.Assembler, opts.System)
+	assert.NoError(t, ProcessFile(context.Background(), log.NewTestLogger(t), opts, disasmOpts))
+
+	gotCHR, err := os.ReadFile(chrFilename)
+	assert.NoError(t, err)
+	assert.Equal(t, wantCHR, gotCHR)
+
+	assembly, err := os.ReadFile(outputFilename)
+	assert.NoError(t, err)
+	assert.Contains(t, string(assembly), "_chr_0000:\n.incbin \"game.chr\"")
 }
 
 func createTestCode() []byte {

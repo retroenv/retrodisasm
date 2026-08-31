@@ -170,6 +170,17 @@ func (f FileWriter) writeBank(w prgBankWrite) error {
 
 // writeCHR writes the CHR content to the output.
 func (f FileWriter) writeCHR() error {
+	if f.options.CHRFilename != "" {
+		// CHR labels use PPU address space even though the bytes follow PRG-ROM.
+		if _, err := fmt.Fprint(f.mainWriter, "\n.base $0000\n\n"); err != nil {
+			return fmt.Errorf("writing CHR base: %w", err)
+		}
+		if err := assembler.WriteCHRInclude(f.mainWriter, f.options.CHRFilename, ""); err != nil {
+			return fmt.Errorf("writing CHR include directive: %w", err)
+		}
+		return nil
+	}
+
 	if f.options.ZeroBytes {
 		if err := f.writer.BundleDataWrites(f.app.CHR, nil); err != nil {
 			return fmt.Errorf("writing CHR data: %w", err)

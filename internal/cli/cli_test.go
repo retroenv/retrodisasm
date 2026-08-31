@@ -57,6 +57,67 @@ func TestParseFlags_DisasmOptions(t *testing.T) {
 	}
 }
 
+func TestParseFlags_CHRExport(t *testing.T) {
+	tests := []struct {
+		name         string
+		args         []string
+		wantInput    string
+		wantExport   bool
+		wantFilename string
+	}{
+		{
+			name: "disabled",
+			args: []string{"prog", "test.nes"},
+		},
+		{
+			name:       "default filename",
+			args:       []string{"prog", "-chr", "test.nes"},
+			wantExport: true,
+		},
+		{
+			name:         "custom filename",
+			args:         []string{"prog", "-chr=tiles.chr", "test.nes"},
+			wantExport:   true,
+			wantFilename: "tiles.chr",
+		},
+		{
+			name:         "long custom filename",
+			args:         []string{"prog", "--chr=assets/tiles.chr", "test.nes"},
+			wantExport:   true,
+			wantFilename: "assets/tiles.chr",
+		},
+		{
+			name:         "custom filename after input",
+			args:         []string{"prog", "test.nes", "-chr=tiles.chr"},
+			wantExport:   true,
+			wantFilename: "tiles.chr",
+		},
+		{
+			name:      "flag-like input after terminator",
+			args:      []string{"prog", "--", "-chr"},
+			wantInput: "-chr",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldArgs := os.Args
+			t.Cleanup(func() { os.Args = oldArgs })
+			os.Args = tt.args
+
+			opts, _, err := ParseFlags()
+			assert.NoError(t, err)
+			wantInput := tt.wantInput
+			if wantInput == "" {
+				wantInput = "test.nes"
+			}
+			assert.Equal(t, wantInput, opts.Input)
+			assert.Equal(t, tt.wantExport, opts.ExportCHR)
+			assert.Equal(t, tt.wantFilename, opts.CHRFilename)
+		})
+	}
+}
+
 func TestValidateOptionCombinations(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -90,6 +151,15 @@ func TestValidateOptionCombinations(t *testing.T) {
 				Flags: options.Flags{AssembleTest: true},
 			},
 			disasmOpts:  options.Disassembler{OutputUnofficialAsMnemonics: true},
+			expectError: true,
+		},
+		{
+			name: "custom CHR filename in batch mode",
+			opts: options.Program{
+				Parameters: options.Parameters{Batch: "*.nes", CHRFilename: "tiles.chr"},
+				ExportCHR:  true,
+			},
+			disasmOpts:  options.Disassembler{},
 			expectError: true,
 		},
 	}

@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/retroenv/retrodisasm/internal/assembler"
 	"github.com/retroenv/retrodisasm/internal/program"
 	"github.com/retroenv/retrodisasm/internal/writer"
 	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
@@ -155,6 +156,16 @@ func (w *FileWriter) writeCHR() error {
 
 	if _, err := fmt.Fprintln(w.mainWriter); err != nil {
 		return fmt.Errorf("writing newline: %w", err)
+	}
+	if w.options.CHRFilename != "" {
+		// CHR labels use PPU address space even though the bytes follow PRG-ROM.
+		if _, err := fmt.Fprint(w.mainWriter, ".org $0000\n\n"); err != nil {
+			return fmt.Errorf("writing CHR origin: %w", err)
+		}
+		if err := assembler.WriteCHRInclude(w.mainWriter, w.options.CHRFilename, ""); err != nil {
+			return fmt.Errorf("writing CHR include directive: %w", err)
+		}
+		return nil
 	}
 
 	if w.options.ZeroBytes {
