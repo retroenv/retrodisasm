@@ -148,10 +148,20 @@ func (ar *Arch6502) markIndexedReferenceAsData(address uint16) {
 		return
 	}
 	offsetInfo.SetType(program.DataOffset)
-	if len(offsetInfo.Data) == 0 {
+	if len(offsetInfo.Data) == 0 && !ar.previousOffsetOwnsByte(address) {
 		b := ar.mapper.ReadMemory(address)
 		offsetInfo.Data = []byte{b}
 	}
+}
+
+func (ar *Arch6502) previousOffsetOwnsByte(address uint16) bool {
+	for distance := uint16(1); distance < cpu6502.MaxOpcodeSize; distance++ {
+		previous := ar.mapper.OffsetInfo(address - distance)
+		if previous != nil && len(previous.Data) > int(distance) {
+			return true
+		}
+	}
+	return false
 }
 
 // checkBranchingParam checks whether the branching instruction should do a variable check for the parameter
