@@ -71,6 +71,20 @@ retrodisasm -binary -base C000 -o output.asm code.bin
 
 ### NES-Specific Options
 
+#### `-chr[=file]`
+
+Export CHR-ROM and reference it from the generated assembly with an `_chr_0000` label. Without a filename, the output uses the assembly filename with a `.chr` extension. Use the equals form to provide a custom filename.
+
+```bash
+retrodisasm -chr -o build/game.asm game.nes
+# Writes build/game.chr and includes "game.chr" from build/game.asm
+
+retrodisasm -chr=assets/tiles.chr -o build/game.asm game.nes
+# Writes assets/tiles.chr and includes "../assets/tiles.chr"
+```
+
+This option requires an NES cartridge with CHR-ROM and is not available in `-binary` mode. With `-batch`, use bare `-chr` so each ROM receives its own derived filename.
+
 #### `-c string`
 ca65 linker configuration file path.
 ```bash

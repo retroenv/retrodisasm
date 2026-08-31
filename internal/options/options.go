@@ -20,6 +20,7 @@ type Positional struct {
 type Parameters struct {
 	Input       string `flag:"i" usage:"input ROM file"`
 	Output      string `flag:"o" usage:"output .asm file (default: <input>.asm, use - for stdout)"`
+	CHRFilename string `flag:"chr" usage:"export CHR-ROM (default: <output>.chr; custom: -chr=<file>)"`
 	Config      string `flag:"c" usage:"ca65 linker config file"`
 	CodeDataLog string `flag:"cdl" usage:"Code/Data log file (.cdl)"`
 	Batch       string `flag:"batch" usage:"batch process files matching pattern (e.g. *.nes)"`
@@ -51,6 +52,8 @@ type Program struct {
 	Parameters
 	Flags
 	OutputFlags
+
+	ExportCHR bool
 }
 
 // Disassembler defines options to control the disassembler.
@@ -69,6 +72,7 @@ type Disassembler struct {
 	SplitBanks                  bool // write each PRG bank as a separate .asm file
 	StopAtUnofficial            bool // stop tracing at unofficial opcodes unless explicitly branched to
 	ZeroBytes                   bool
+	CHRFilename                 string // CHR-ROM include path
 	OutputFilename              string // output filename for bank file generation
 }
 

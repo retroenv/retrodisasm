@@ -16,6 +16,8 @@ const (
 	Retroasm = "retroasm"
 )
 
+const chrLabel = "_chr_0000"
+
 // SystemAssemblers maps each system to its supported assemblers.
 var SystemAssemblers = map[arch.System][]string{
 	arch.NES:         {Asm6, Ca65, Nesasm, Retroasm},
@@ -38,5 +40,13 @@ func ValidateSystemAssembler(system arch.System, assembler string) error {
 			assembler, system, supported)
 	}
 
+	return nil
+}
+
+// WriteCHRInclude writes the shared CHR-ROM label and binary include directive.
+func WriteCHRInclude(w io.Writer, filename, directivePrefix string) error {
+	if _, err := fmt.Fprintf(w, "%s:\n%s.incbin %q\n", chrLabel, directivePrefix, filename); err != nil {
+		return fmt.Errorf("writing CHR include: %w", err)
+	}
 	return nil
 }

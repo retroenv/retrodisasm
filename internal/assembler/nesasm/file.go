@@ -158,6 +158,16 @@ func (f FileWriter) writeCHR(nextBank int) func() error {
 		if _, err := fmt.Fprint(f.mainWriter, "\n .DATA"); err != nil {
 			return fmt.Errorf("writing CHR bank: %w", err)
 		}
+		if f.options.CHRFilename != "" {
+			writeFunc := writeBankSelector(nextBank, -1)
+			if err := writeFunc(f.mainWriter); err != nil {
+				return fmt.Errorf("writing bank switch: %w", err)
+			}
+			if err := assembler.WriteCHRInclude(f.mainWriter, f.options.CHRFilename, " "); err != nil {
+				return fmt.Errorf("writing CHR include directive: %w", err)
+			}
+			return nil
+		}
 
 		banks := chrBanks(nextBank, f.app.CHR)
 

@@ -42,7 +42,10 @@ func ParseFlags() (options.Program, options.Disassembler, error) {
 	fs.AddSection("Output options", &opts.OutputFlags)
 	fs.AddPositional(&pos)
 
-	_, err := fs.Parse(os.Args[1:])
+	args, exportCHR := normalizeCHRArguments(os.Args[1:])
+	opts.ExportCHR = exportCHR
+
+	_, err := fs.Parse(args)
 	if err != nil {
 		return opts, options.Disassembler{}, &UsageError{flagSet: fs}
 	}
@@ -69,10 +72,48 @@ func ParseFlags() (options.Program, options.Disassembler, error) {
 	return opts, disasmOptions, nil
 }
 
+// normalizeCHRArguments allows -chr to act as a boolean flag while retaining
+// the standard Go flag syntax -chr=<file> for its optional filename. Moving it
+// before positional arguments also lets the flag work after the input filename.
+func normalizeCHRArguments(args []string) ([]string, bool) {
+	normalized := make([]string, 0, len(args))
+	chrArguments := make([]string, 0, 1)
+	var exportCHR bool
+	parseFlags := true
+
+	for _, arg := range args {
+		if arg == "--" {
+			parseFlags = false
+			normalized = append(normalized, arg)
+			continue
+		}
+		if !parseFlags {
+			normalized = append(normalized, arg)
+			continue
+		}
+
+		switch {
+		case arg == "-chr" || arg == "--chr":
+			chrArguments = append(chrArguments, arg+"=")
+			exportCHR = true
+		case strings.HasPrefix(arg, "-chr=") || strings.HasPrefix(arg, "--chr="):
+			chrArguments = append(chrArguments, arg)
+			exportCHR = true
+		default:
+			normalized = append(normalized, arg)
+		}
+	}
+
+	return append(chrArguments, normalized...), exportCHR
+}
+
 // validateOptionCombinations checks for incompatible option combinations.
 func validateOptionCombinations(opts options.Program, disasmOptions options.Disassembler) error {
 	if opts.AssembleTest && disasmOptions.OutputUnofficialAsMnemonics {
 		return errors.New("-output-unofficial and -verify cannot be used together: unofficial mnemonics may assemble to different bytes")
+	}
+	if opts.ExportCHR && opts.CHRFilename != "" && opts.Batch != "" {
+		return errors.New("a custom -chr filename cannot be used with -batch; use bare -chr to derive a filename for each ROM")
 	}
 	return nil
 }

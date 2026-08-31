@@ -14,6 +14,7 @@ retrodisasm is a tracing disassembler for retro console and computer systems tha
 * **Execution Flow Tracing** - Differentiates code from data through program flow analysis
 * **Multi-Architecture** - Modular design supporting multiple retro systems
 * **Multiple Assemblers** - Output compatible with various assemblers
+* **CHR-ROM Export** - Optionally extract graphics data into an included `.chr` file
 * **Batch Processing** - Process multiple ROMs at once
 * **Smart Output** - Omits trailing zeros, translates RAM addresses to aliases
 

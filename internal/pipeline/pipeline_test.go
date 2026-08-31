@@ -3,10 +3,14 @@ package pipeline
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io/fs"
+	"path/filepath"
 	"testing"
 
 	"github.com/retroenv/retrodisasm/internal/options"
 	"github.com/retroenv/retrogolib/arch"
+	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
 	"github.com/retroenv/retrogolib/arch/system/nes/parameter"
 	"github.com/retroenv/retrogolib/assert"
 	"github.com/retroenv/retrogolib/log"
@@ -155,6 +159,187 @@ func TestExecute(t *testing.T) {
 		_, err := p.Execute(ctx, opts, disasmOpts, &buf)
 		assert.Error(t, err)
 	})
+}
+
+func TestExecuteWithCartridgeExportsCHR(t *testing.T) {
+	chr := make([]byte, 8192)
+	chr[0] = 0x12
+	chr[len(chr)-1] = 0x34
+
+	tests := []struct {
+		assembler string
+		wantSetup string
+	}{
+		{assembler: "asm6", wantSetup: ".base $0000"},
+		{assembler: "ca65", wantSetup: ".segment \"TILES\""},
+		{assembler: "nesasm", wantSetup: " .DATA"},
+		{assembler: "retroasm", wantSetup: ".org $0000"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.assembler, func(t *testing.T) {
+			logger := log.NewTestLogger(t)
+			p := New(logger)
+			cart, err := p.loader.LoadFromBytes(buildMinimalNESROMWithCHR(chr), false, arch.NES)
+			assert.NoError(t, err)
+
+			var gotFilename string
+			var gotData []byte
+			var gotPerm fs.FileMode
+			p.writeFile = func(filename string, data []byte, perm fs.FileMode) error {
+				gotFilename = filename
+				gotData = append([]byte(nil), data...)
+				gotPerm = perm
+				return nil
+			}
+
+			opts := options.Program{
+				Parameters: options.Parameters{Input: "roms/game.nes", Output: filepath.FromSlash("build/game.asm")},
+				Flags:      options.Flags{Assembler: tt.assembler, Quiet: true},
+				ExportCHR:  true,
+			}
+
+			var output bytes.Buffer
+			result, err := p.ExecuteWithCartridge(context.Background(), cart, opts, options.Disassembler{}, &output, arch.NES)
+			assert.NoError(t, err)
+			assert.NotNil(t, result)
+			assert.Equal(t, filepath.FromSlash("build/game.chr"), gotFilename)
+			assert.Equal(t, chr, gotData)
+			assert.Equal(t, fs.FileMode(0o644), gotPerm)
+			assert.Contains(t, output.String(), tt.wantSetup)
+			assert.Contains(t, output.String(), "_chr_0000:\n")
+			assert.Contains(t, output.String(), ".incbin \"game.chr\"")
+		})
+	}
+}
+
+func TestCHRFilenames(t *testing.T) {
+	tests := []struct {
+		name        string
+		opts        options.Program
+		wantOutput  string
+		wantInclude string
+	}{
+		{
+			name:        "derived from assembly output",
+			opts:        options.Program{Parameters: options.Parameters{Output: filepath.FromSlash("build/game.asm")}},
+			wantOutput:  filepath.FromSlash("build/game.chr"),
+			wantInclude: "game.chr",
+		},
+		{
+			name: "custom filename",
+			opts: options.Program{Parameters: options.Parameters{
+				Output:      filepath.FromSlash("build/game.asm"),
+				CHRFilename: filepath.FromSlash("assets/tiles.chr"),
+			}},
+			wantOutput:  filepath.FromSlash("assets/tiles.chr"),
+			wantInclude: "../assets/tiles.chr",
+		},
+		{
+			name:        "derived from input when writing to stdout",
+			opts:        options.Program{Parameters: options.Parameters{Input: filepath.FromSlash("roms/game.nes"), Output: options.OutputStdout}},
+			wantOutput:  filepath.FromSlash("roms/game.chr"),
+			wantInclude: "roms/game.chr",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output, include, err := chrFilenames(tt.opts)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantOutput, output)
+			assert.Equal(t, tt.wantInclude, include)
+		})
+	}
+}
+
+func TestCHRFilenamesRejectsOverwrite(t *testing.T) {
+	tests := []struct {
+		name        string
+		opts        options.Program
+		wantMessage string
+	}{
+		{
+			name:        "missing source filename",
+			opts:        options.Program{},
+			wantMessage: "cannot derive CHR-ROM filename",
+		},
+		{
+			name: "input ROM",
+			opts: options.Program{Parameters: options.Parameters{
+				Input:       "game.nes",
+				CHRFilename: "game.nes",
+			}},
+			wantMessage: "overwrite the input ROM",
+		},
+		{
+			name: "assembly output",
+			opts: options.Program{Parameters: options.Parameters{
+				Output:      "game.asm",
+				CHRFilename: "game.asm",
+			}},
+			wantMessage: "overwrite the assembly output",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := chrFilenames(tt.opts)
+			assert.ErrorContains(t, err, tt.wantMessage)
+		})
+	}
+}
+
+func TestExportCHRRejectsInvalidInputs(t *testing.T) {
+	logger := log.NewTestLogger(t)
+	p := New(logger)
+
+	tests := []struct {
+		name        string
+		cart        *cartridge.Cartridge
+		opts        options.Program
+		system      arch.System
+		wantMessage string
+	}{
+		{
+			name:        "non NES system",
+			cart:        &cartridge.Cartridge{CHR: []byte{1}},
+			system:      arch.CHIP8System,
+			wantMessage: "only supported for NES",
+		},
+		{
+			name:        "binary input",
+			cart:        &cartridge.Cartridge{CHR: []byte{1}},
+			opts:        options.Program{Flags: options.Flags{Binary: true}},
+			system:      arch.NES,
+			wantMessage: "cannot be used with -binary",
+		},
+		{
+			name:        "CHR RAM cartridge",
+			cart:        &cartridge.Cartridge{},
+			system:      arch.NES,
+			wantMessage: "no CHR-ROM",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := p.exportCHR(tt.cart, tt.opts, tt.system)
+			assert.ErrorContains(t, err, tt.wantMessage)
+		})
+	}
+}
+
+func TestExportCHRPropagatesWriteError(t *testing.T) {
+	logger := log.NewTestLogger(t)
+	p := New(logger)
+	wantErr := errors.New("write failed")
+	p.writeFile = func(string, []byte, fs.FileMode) error { return wantErr }
+
+	opts := options.Program{Parameters: options.Parameters{Input: "game.nes"}}
+	_, err := p.exportCHR(&cartridge.Cartridge{CHR: []byte{1}}, opts, arch.NES)
+	assert.ErrorIs(t, err, wantErr)
+	assert.ErrorContains(t, err, "writing CHR-ROM file game.chr")
 }
 
 func TestNopCloser(t *testing.T) {
@@ -331,4 +516,12 @@ func buildMinimalNESROM(prgBanks, mapper byte) []byte {
 	data[7] = mapper & 0xF0                      // Mapper high nibble
 
 	return data
+}
+
+func buildMinimalNESROMWithCHR(chr []byte) []byte {
+	const chrBankSize = 8192
+
+	data := buildMinimalNESROM(1, 0)
+	data[5] = byte(len(chr) / chrBankSize)
+	return append(data, chr...)
 }
