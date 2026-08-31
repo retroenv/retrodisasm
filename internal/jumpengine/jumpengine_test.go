@@ -3,9 +3,30 @@ package jumpengine
 import (
 	"testing"
 
+	"github.com/retroenv/retrodisasm/internal/program"
 	"github.com/retroenv/retrogolib/assert"
 	"github.com/retroenv/retrogolib/log"
 )
+
+func TestProcessJumpEngineEntryStopsAtCompositeCodeOffset(t *testing.T) {
+	logger := log.NewTestLogger(t)
+	mapper := newMockMapper()
+	dis := newMockDisasm(0x10000)
+	dis.Memory[0x8010] = 0x01
+	dis.Memory[0x8011] = 0x80
+	mapper.OffsetInfo(0x8011).SetType(program.CodeOffset | program.CallDestination)
+	je := New(logger, &mockArchitecture{})
+	je.InjectDependencies(Dependencies{Disasm: dis, Mapper: mapper})
+	caller := &jumpEngineCaller{}
+
+	found, err := je.processJumpEngineEntry(0x8010, caller, 0x8000)
+
+	assert.NoError(t, err)
+	assert.False(t, found)
+	assert.True(t, caller.terminated)
+	assert.False(t, mapper.OffsetInfo(0x8010).IsType(program.FunctionReference))
+	assert.True(t, mapper.OffsetInfo(0x8011).IsType(program.CodeOffset|program.CallDestination))
+}
 
 // TestScanForNewJumpEngineEntry_MultipleTerminated verifies that multiple terminated
 // jump engine callers are correctly removed from the processing queue.
