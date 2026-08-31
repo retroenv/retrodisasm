@@ -111,6 +111,30 @@ func TestDisasmReferencingUnofficialInstruction(t *testing.T) {
 	runDisasm(t, nil, input, expected)
 }
 
+func TestDisasmIndexedReferenceIntoInstructionOperand(t *testing.T) {
+	// An indexed reference discovered before the containing instruction is parsed
+	// must not retain data ownership on its operand byte.
+	input := []byte{
+		0xb9, 0x06, 0x80, // $8000 lda a:$8006,Y
+		0xa9, 0x01, // $8003 lda #$01
+		0xd0, 0x00, // $8005 bne $8007
+		0x40, // $8007 rti
+	}
+
+	expected := `Reset:
+        lda a:_data_8005_indexed+1,Y
+        lda #$01
+
+        _data_8005_indexed:
+        bne _label_8007
+
+        _label_8007:
+        rti
+`
+
+	runDisasm(t, nil, input, expected)
+}
+
 // TestDisasmOutputUnofficialAsMnemonics tests that with OutputUnofficialAsMnemonics option,
 // unofficial opcodes are output as actual mnemonics instead of .byte directives.
 func TestDisasmOutputUnofficialAsMnemonics(t *testing.T) {

@@ -87,6 +87,12 @@ func (dis *Disasm) changeAddressRangeToCode(address uint16, data []byte) {
 	lastCodeAddress := dis.arch.LastCodeAddress()
 	for i := 0; i < len(data) && int(address)+i < int(lastCodeAddress); i++ {
 		offsetInfo := dis.mapper.OffsetInfo(address + uint16(i))
+		if i > 0 {
+			// The instruction start owns the complete encoding. Operand offsets may
+			// still carry preliminary data-table classification from an earlier trace.
+			offsetInfo.Data = nil
+			offsetInfo.ClearType(program.DataOffset)
+		}
 		offsetInfo.SetType(program.CodeOffset)
 	}
 }
