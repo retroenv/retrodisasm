@@ -29,5 +29,10 @@ func (i Instruction) Name() string {
 
 // Unofficial returns true if the instruction is not official.
 func (i Instruction) Unofficial() bool {
-	return i.ins.Unofficial
+	return isUnofficialInstruction(i.ins)
+}
+
+func isUnofficialInstruction(ins *cpu6502.Instruction) bool {
+	// KIL is unofficial even when older retrogolib opcode metadata omits the flag.
+	return ins.Unofficial || ins.Name == cpu6502.KilName
 }
