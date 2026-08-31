@@ -62,7 +62,7 @@ func (f FileWriter) Write() error {
 
 	// Only write global vectors for single-bank ROMs
 	if !isMultiBank {
-		writes = append(writes, customWrite(f.writeVectors))
+		writes = append(writes, customWrite(f.writeVectors(nextBank-1)))
 	}
 	writes = append(writes, customWrite(f.writeCHR(nextBank)))
 
@@ -189,19 +189,24 @@ func (f FileWriter) writeCHR(nextBank int) func() error {
 }
 
 // writeVectors writes the IRQ vectors for single-bank ROMs.
-func (f FileWriter) writeVectors() error {
-	if f.options.CodeOnly {
+func (f FileWriter) writeVectors(bankNumber int) func() error {
+	return func() error {
+		if f.options.CodeOnly {
+			return nil
+		}
+
+		if err := writeBankSelector(bankNumber, -1)(f.mainWriter); err != nil {
+			return fmt.Errorf("writing vector bank: %w", err)
+		}
+		if _, err := fmt.Fprintf(f.mainWriter, "\n .org $%04X\n", f.app.VectorsStartAddress); err != nil {
+			return fmt.Errorf("writing segment: %w", err)
+		}
+
+		if _, err := fmt.Fprintf(f.mainWriter, vectors, f.app.Handlers.NMI, f.app.Handlers.Reset, f.app.Handlers.IRQ); err != nil {
+			return fmt.Errorf("writing vectors: %w", err)
+		}
 		return nil
 	}
-
-	if _, err := fmt.Fprintf(f.mainWriter, "\n .org $%04X\n", f.app.VectorsStartAddress); err != nil {
-		return fmt.Errorf("writing segment: %w", err)
-	}
-
-	if _, err := fmt.Fprintf(f.mainWriter, vectors, f.app.Handlers.NMI, f.app.Handlers.Reset, f.app.Handlers.IRQ); err != nil {
-		return fmt.Errorf("writing vectors: %w", err)
-	}
-	return nil
 }
 
 // writeBankVectorsTo writes vectors at the end of a bank for multi-bank ROMs.
