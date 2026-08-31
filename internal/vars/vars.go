@@ -132,10 +132,11 @@ func (v *Vars) Process(codeBaseAddress uint16) error {
 		}
 
 		var dataOffsetInfo *offset.DisasmOffset
+		labelAddress := varInfo.address
 		var addressAdjustment uint16
 		if varInfo.address >= codeBaseAddress {
 			// if the referenced address is inside the code, a label will be created for it
-			dataOffsetInfo, varInfo.address, addressAdjustment = v.getOpcodeStart(varInfo.address)
+			dataOffsetInfo, labelAddress, addressAdjustment = v.getOpcodeStart(varInfo.address)
 		} else {
 			// if the address is outside the code bank, a variable will be created
 			v.MarkUsed(varInfo.address)
@@ -146,7 +147,7 @@ func (v *Vars) Process(codeBaseAddress uint16) error {
 		}
 
 		var reference string
-		varInfo.name, reference = v.dataName(dataOffsetInfo, varInfo.indexedUsage, varInfo.address, addressAdjustment)
+		varInfo.name, reference = v.dataName(dataOffsetInfo, varInfo.indexedUsage, labelAddress, addressAdjustment)
 
 		for _, bankRef := range varInfo.usageAt {
 			offsetInfo := bankRef.Mapped.OffsetInfo(bankRef.Index)

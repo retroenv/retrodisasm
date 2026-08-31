@@ -10,7 +10,8 @@ import (
 )
 
 type mockArch struct {
-	indexed bool
+	indexed    bool
+	references []string
 }
 
 func (m *mockArch) IsAddressingIndexed(opcode instruction.Opcode) bool {
@@ -18,6 +19,7 @@ func (m *mockArch) IsAddressingIndexed(opcode instruction.Opcode) bool {
 }
 
 func (m *mockArch) ProcessVariableUsage(offsetInfo *offset.DisasmOffset, reference string) error {
+	m.references = append(m.references, reference)
 	return nil
 }
 
@@ -181,6 +183,26 @@ func TestGenerateVariableName(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestProcessPreservesReferencedAddressWhenLabelMovesToDataOwner(t *testing.T) {
+	arch := &mockArch{indexed: true}
+	mapper := &mockMapper{offsets: map[uint16]*offset.DisasmOffset{
+		0xF847: {Offset: program.Offset{Data: []byte{0x13, 0x1C}}},
+		0xF848: {},
+	}}
+	vars := New(arch)
+	vars.InjectDependencies(Dependencies{Mapper: mapper})
+	vars.AddReference(0xF848, 0x8000, &mockOpcode{reads: true}, false)
+
+	assert.NoError(t, vars.Process(0xC000))
+
+	varInfo, ok := vars.Get(0xF848)
+	assert.True(t, ok)
+	assert.Equal(t, uint16(0xF848), varInfo.address)
+	assert.Equal(t, "_data_f847_indexed", varInfo.name)
+	assert.Equal(t, []string{"_data_f847_indexed+1"}, arch.references)
+	assert.Equal(t, "_data_f847_indexed", mapper.offsets[0xF847].Label)
 }
 
 func TestSetToProgram(t *testing.T) {
