@@ -31,6 +31,9 @@ func (m *Mapper) ClassifyRemainingAsData() {
 func (m *Mapper) SetProgramBanks(app *program.Program) error {
 	for bnkIndex, bnk := range m.banks {
 		prgBank := program.NewPRGBank(len(bnk.offsets))
+		// Banked PRG segments share the CPU window base even though assemblers
+		// emit each bank into a separate output region.
+		prgBank.BaseAddress = m.codeBaseAddress
 
 		for i := range len(bnk.offsets) {
 			offsetInfo := bnk.offsets[i]

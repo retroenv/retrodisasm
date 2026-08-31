@@ -139,6 +139,7 @@ func TestSetProgramBanks_SingleBank(t *testing.T) {
 	// Verify program bank was created
 	assert.Len(t, app.PRG, 1)
 	assert.Equal(t, "CODE", app.PRG[0].Name)
+	assert.Equal(t, uint16(0x8000), app.PRG[0].BaseAddress)
 	assert.Len(t, app.PRG[0].Offsets, 0x100)
 
 	// Verify AssignBankVariables and AssignBankConstants were called
@@ -177,6 +178,8 @@ func TestSetProgramBanks_MultiBanks(t *testing.T) {
 	assert.Len(t, app.PRG, 2)
 	assert.Equal(t, "PRG_BANK_0", app.PRG[0].Name)
 	assert.Equal(t, "PRG_BANK_1", app.PRG[1].Name)
+	assert.Equal(t, uint16(0x8000), app.PRG[0].BaseAddress)
+	assert.Equal(t, uint16(0x8000), app.PRG[1].BaseAddress)
 
 	// Verify AssignBankVariables and AssignBankConstants were called for each bank
 	assert.Equal(t, 2, mockVars.setBankCalls)
