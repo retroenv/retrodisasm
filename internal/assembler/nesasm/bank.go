@@ -75,8 +75,9 @@ func chrBanks(nextBank int, chr program.CHR) []program.CHR {
 func setPrgBankSelector(prg []program.Offset, index int, bankAddress, bankNumber *int) {
 	offsetInfo := &prg[index]
 
-	// handle bank switches in the middle of an instruction by converting it to data bytes
-	if offsetInfo.IsType(program.CodeOffset) && len(offsetInfo.Data) == 0 {
+	// NESASM's 8 KiB bank boundary may split an instruction or function-reference
+	// .word. Convert it to bytes so the shared writer reaches the bank callback.
+	if offsetInfo.IsType(program.CodeOffset|program.FunctionReference) && len(offsetInfo.Data) == 0 {
 		// look backwards for instruction start
 		instructionStartIndex := index - 1
 		for offsetInfo = &prg[instructionStartIndex]; len(offsetInfo.Data) == 0; {
@@ -91,7 +92,8 @@ func setPrgBankSelector(prg []program.Offset, index int, bankAddress, bankNumber
 		for i := range data {
 			offsetInfo = &prg[instructionStartIndex+i]
 			offsetInfo.Data = data[i : i+1]
-			offsetInfo.ClearType(program.CodeOffset)
+			// Structured-reference types take precedence over DataOffset in the shared writer.
+			offsetInfo.ClearType(program.CodeOffset | program.FunctionReference | program.JumpTable)
 			offsetInfo.SetType(program.CodeAsData | program.DataOffset)
 		}
 		offsetInfo = &prg[index]
