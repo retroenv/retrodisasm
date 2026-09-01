@@ -108,7 +108,7 @@ func (f FileWriter) writePRGBank(t prgBankWrite) error {
 		}
 	}
 
-	bankW := writer.New(f.app, bankWriteCloser, writer.Options{
+	bankW := f.writer.ForOutput(bankWriteCloser, writer.Options{
 		DirectivePrefix: " ",
 		OffsetComments:  f.options.OffsetComments,
 	})

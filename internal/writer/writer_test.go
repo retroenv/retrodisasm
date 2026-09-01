@@ -39,3 +39,16 @@ func TestOutputAliasMap_EmitsWhenAddressDiffers(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(out, "FOO = $0010"))
 	assert.Equal(t, 1, strings.Count(out, "FOO = $0020"))
 }
+
+func TestForOutputSharesAliasEmissionState(t *testing.T) {
+	app := &program.Program{}
+	var first, second bytes.Buffer
+	w := New(app, &first, Options{})
+
+	assert.NoError(t, w.OutputAliasMap(map[string]uint16{"PPU_CTRL": 0x2000}))
+	child := w.ForOutput(&second, Options{})
+	assert.NoError(t, child.OutputAliasMap(map[string]uint16{"PPU_CTRL": 0x2000}))
+
+	assert.Contains(t, first.String(), "PPU_CTRL = $2000")
+	assert.NotContains(t, second.String(), "PPU_CTRL = $2000")
+}

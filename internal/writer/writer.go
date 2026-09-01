@@ -45,6 +45,16 @@ func New(app *program.Program, writer io.Writer, options Options) *Writer {
 	}
 }
 
+// ForOutput creates a writer that shares alias emission state with its parent.
+func (w Writer) ForOutput(output io.Writer, options Options) *Writer {
+	return &Writer{
+		app:            w.app,
+		options:        options,
+		writer:         output,
+		emittedAliases: w.emittedAliases,
+	}
+}
+
 // ProcessPRG processes the PRG segment and writes all code offsets, labels and their comments.
 func (w Writer) ProcessPRG(bank *program.PRGBank, endIndex int) error {
 	var previousLineWasCode bool

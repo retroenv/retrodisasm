@@ -155,7 +155,7 @@ func (f FileWriter) writePRGBank(t prgBankWrite) error {
 		return err
 	}
 
-	bankW := writer.New(f.app, bankWriteCloser, writer.Options{
+	bankW := f.writer.ForOutput(bankWriteCloser, writer.Options{
 		OffsetComments: f.options.OffsetComments,
 	})
 
