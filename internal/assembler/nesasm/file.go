@@ -54,10 +54,13 @@ func (f FileWriter) Write() error {
 
 	nextBank := addPrgBankSelectors(int(f.app.CodeBaseAddress), f.app.PRG)
 	isMultiBank := len(f.app.PRG) > 1
+	prgBankNumber := 0
 	for i, bank := range f.app.PRG {
+		vectorBank := prgBankNumber + (len(bank.Offsets)-1)/bankSize
 		writes = append(writes,
-			prgBankWrite{bank: bank, isMultiBank: isMultiBank, firstBank: i == 0},
+			prgBankWrite{bank: bank, isMultiBank: isMultiBank, firstBank: i == 0, vectorBank: vectorBank},
 		)
+		prgBankNumber += (len(bank.Offsets) + bankSize - 1) / bankSize
 	}
 
 	// Only write global vectors for single-bank ROMs
@@ -127,7 +130,7 @@ func (f FileWriter) writePRGBank(t prgBankWrite) error {
 
 	// For multi-bank ROMs, write vectors at end of each bank
 	if t.isMultiBank && !f.options.CodeOnly {
-		if err := f.writeBankVectorsTo(bankWriteCloser, t.bank); err != nil {
+		if err := f.writeBankVectorsTo(bankWriteCloser, t.bank, t.vectorBank); err != nil {
 			return err
 		}
 	}
@@ -148,7 +151,6 @@ func (f FileWriter) writeROMHeader() error {
 	if _, err := fmt.Fprintf(f.mainWriter, headerByte, "inesmir", f.app.Mirror, " ", "Mirror mode"); err != nil {
 		return fmt.Errorf("writing header: %w", err)
 	}
-
 	return nil
 }
 
@@ -211,7 +213,12 @@ func (f FileWriter) writeVectors(bankNumber int) func() error {
 }
 
 // writeBankVectorsTo writes vectors at the end of a bank for multi-bank ROMs.
-func (f FileWriter) writeBankVectorsTo(w io.Writer, bank *program.PRGBank) error {
+func (f FileWriter) writeBankVectorsTo(w io.Writer, bank *program.PRGBank, bankNumber int) error {
+	// Trailing zeroes can omit the callback that would otherwise select the
+	// final 8 KiB PRG bank before the vectors are written.
+	if err := writeBankSelector(bankNumber, -1)(w); err != nil {
+		return fmt.Errorf("writing vector bank: %w", err)
+	}
 	vectorsAddr := bank.BaseAddress + uint16(len(bank.Offsets)) - 6
 	if _, err := fmt.Fprintf(w, "\n .org $%04X\n", vectorsAddr); err != nil {
 		return fmt.Errorf("writing vector org: %w", err)
@@ -231,6 +238,7 @@ type prgBankWrite struct {
 	bank        *program.PRGBank
 	isMultiBank bool
 	firstBank   bool
+	vectorBank  int
 }
 
 type customWrite func() error
