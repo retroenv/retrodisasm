@@ -14,6 +14,7 @@ import (
 	"github.com/retroenv/retrodisasm/internal/assembler/ca65"
 	"github.com/retroenv/retrodisasm/internal/assembler/retroasm"
 	"github.com/retroenv/retrodisasm/internal/options"
+	"github.com/retroenv/retrodisasm/internal/program"
 	"github.com/retroenv/retrogolib/arch"
 	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
 	"github.com/retroenv/retrogolib/arch/system/nes/parameter"
@@ -37,6 +38,34 @@ func TestDisasmChip8BranchReferenceOperands(t *testing.T) {
 	assert.True(t, strings.Contains(output, "jp V0, _label_020a"))
 	assert.False(t, strings.Contains(output, "ld _label_0208"))
 	assert.False(t, strings.Contains(output, "jp _label_020a"))
+}
+
+func TestDisasmRejectsInterruptVectorsAsCode(t *testing.T) {
+	opts := options.NewDisassembler(assembler.Ca65, arch.NES.String())
+	disasm := testProgram(t, opts, cartridge.New(), nil)
+
+	assert.True(t, disasm.isValidCodeAddress(0xfff9))
+	assert.False(t, disasm.isValidCodeAddress(0xfffa))
+	assert.False(t, disasm.isValidCodeAddress(0xffff))
+}
+
+func TestDisasmSplitsFunctionReferenceAtBranchDestination(t *testing.T) {
+	opts := options.NewDisassembler(assembler.Ca65, arch.NES.String())
+	disasm := testProgram(t, opts, cartridge.New(), nil)
+	owner := disasm.mapper.OffsetInfo(0x8000)
+	owner.Data = []byte{0x25, 0x81}
+	owner.SetType(program.FunctionReference | program.JumpTable)
+	target := disasm.mapper.OffsetInfo(0x8001)
+	target.SetType(program.FunctionReference | program.CallDestination)
+	disasm.branchDestinations.Add(0x8001)
+
+	disasm.processJumpDestinations()
+
+	assert.Equal(t, []byte{0x25}, owner.Data)
+	assert.False(t, owner.IsType(program.FunctionReference|program.JumpTable))
+	assert.Equal(t, []byte{0x81}, target.Data)
+	assert.Equal(t, "_func_8001", target.Label)
+	assert.False(t, target.IsType(program.FunctionReference))
 }
 
 func TestDisasmZeroDataReference(t *testing.T) {

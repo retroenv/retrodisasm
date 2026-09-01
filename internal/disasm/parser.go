@@ -65,7 +65,7 @@ func (dis *Disasm) DeleteFunctionReturnToParse(address uint16) {
 func (dis *Disasm) isValidCodeAddress(address uint16) bool {
 	// Ignore branching into addresses before the code base address, for example when generating code in
 	// zeropage and branching into it to execute it.
-	if address < dis.codeBaseAddress {
+	if address < dis.codeBaseAddress || address >= dis.arch.LastCodeAddress() {
 		return false
 	}
 

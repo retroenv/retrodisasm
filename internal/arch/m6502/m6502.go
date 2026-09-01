@@ -131,6 +131,9 @@ func (ar *Arch6502) ProcessOffset(address uint16, offsetInfo *offset.DisasmOffse
 			}
 			return false, err
 		}
+		if ar.truncateInstructionAtMappedBankBoundary(address, offsetInfo) {
+			return true, nil
+		}
 		offsetInfo.Code = fmt.Sprintf("%s %s", name, params)
 	}
 
@@ -186,4 +189,28 @@ func (ar *Arch6502) BankWindowSize(_ *cartridge.Cartridge) int {
 		return 0 // Single-bank mode for binary files
 	}
 	return 0x2000 // Multi-bank mode for NES ROMs
+}
+
+func (ar *Arch6502) truncateInstructionAtMappedBankBoundary(address uint16, offsetInfo *offset.DisasmOffset) bool {
+	ownedBytes := ar.instructionBytesInMappedBank(address, len(offsetInfo.Data))
+	if ownedBytes == len(offsetInfo.Data) {
+		return false
+	}
+
+	// A CPU instruction may cross from a switchable window into a fixed bank,
+	// but its bytes are not contiguous in the cartridge image.
+	offsetInfo.Data = offsetInfo.Data[:ownedBytes]
+	offsetInfo.SetType(program.CodeAsData)
+	ar.dis.ChangeAddressRangeToCodeAsData(address, offsetInfo.Data)
+	return true
+}
+
+func (ar *Arch6502) instructionBytesInMappedBank(address uint16, length int) int {
+	startBank := ar.mapper.MappedBank(address)
+	for i := 1; i < length; i++ {
+		if ar.mapper.MappedBank(address+uint16(i)).ID() != startBank.ID() {
+			return i
+		}
+	}
+	return length
 }

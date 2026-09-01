@@ -38,9 +38,9 @@ func (dis *Disasm) processJumpDestinations() {
 			offsetInfo.Label = name
 		}
 
-		// if the offset is marked as code but does not have opcode bytes, the jump destination
-		// is inside the second or third byte of an instruction.
-		if (offsetInfo.IsType(program.CodeOffset) || offsetInfo.IsType(program.CodeAsData)) &&
+		// An empty owned offset places the destination inside a multi-byte
+		// instruction or function-pointer record, which must be split for its label.
+		if offsetInfo.IsType(program.CodeOffset|program.CodeAsData|program.FunctionReference) &&
 			len(offsetInfo.Data) == 0 {
 
 			dis.handleJumpIntoInstruction(address)

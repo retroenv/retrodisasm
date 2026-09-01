@@ -20,6 +20,11 @@ func (ar *Arch6502) initializeOffsetInfo(offsetInfo *offset.DisasmOffset) (bool,
 	if offsetInfo.IsType(program.CodeOffset) {
 		return false, nil // was set by CDL
 	}
+	// Jump-engine table entries own both pointer bytes. A branch into the
+	// switchable window may target a different physical bank at runtime.
+	if offsetInfo.IsType(program.FunctionReference) {
+		return false, nil
+	}
 
 	pc := ar.dis.ProgramCounter()
 	b, err := ar.dis.ReadMemory(pc)

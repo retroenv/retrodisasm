@@ -208,14 +208,15 @@ func (m *mockDisasm) ProgramCounter() uint16 {
 // mockMapper is a simple mock implementation for testing.
 type mockMapper struct {
 	offsets map[uint16]*offset.DisasmOffset
+	mapped  map[uint16]offset.MappedBank
 }
 
 func (m *mockMapper) OffsetInfo(address uint16) *offset.DisasmOffset {
 	return m.offsets[address]
 }
 
-func (m *mockMapper) MappedBank(_ uint16) offset.MappedBank {
-	return nil
+func (m *mockMapper) MappedBank(address uint16) offset.MappedBank {
+	return m.mapped[address]
 }
 
 func (m *mockMapper) MappedBankIndex(_ uint16) uint16 {
