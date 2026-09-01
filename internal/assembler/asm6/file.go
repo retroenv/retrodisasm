@@ -154,7 +154,8 @@ func (f FileWriter) writeBank(w prgBankWrite) error {
 	vectorsAddr := w.bank.BaseAddress + uint16(len(w.bank.Offsets)) - 6
 
 	if w.lastBank {
-		if err := f.writeVectorsTo(bankWriteCloser, vectorsAddr, f.app.Handlers.NMI, f.app.Handlers.Reset, f.app.Handlers.IRQ); err != nil {
+		nmi, reset, irq := assembler.VectorReferences(w.bank, f.app.Handlers)
+		if err := f.writeVectorsTo(bankWriteCloser, vectorsAddr, nmi, reset, irq); err != nil {
 			return err
 		}
 	} else {

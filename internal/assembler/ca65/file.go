@@ -96,7 +96,8 @@ func (f FileWriter) Write() error {
 
 	// For single-bank ROMs, write vectors in separate segment
 	if !f.options.CodeOnly && len(f.app.PRG) == 1 {
-		if _, err := fmt.Fprintf(f.mainWriter, vectors, f.app.Handlers.NMI, f.app.Handlers.Reset, f.app.Handlers.IRQ); err != nil {
+		nmi, reset, irq := assembler.VectorReferences(f.app.PRG[0], f.app.Handlers)
+		if _, err := fmt.Fprintf(f.mainWriter, vectors, nmi, reset, irq); err != nil {
 			return fmt.Errorf("writing vectors: %w", err)
 		}
 	}

@@ -202,7 +202,8 @@ func (f FileWriter) writeVectors(bankNumber int) func() error {
 			return fmt.Errorf("writing segment: %w", err)
 		}
 
-		if _, err := fmt.Fprintf(f.mainWriter, vectors, f.app.Handlers.NMI, f.app.Handlers.Reset, f.app.Handlers.IRQ); err != nil {
+		nmi, reset, irq := assembler.VectorReferences(f.app.PRG[0], f.app.Handlers)
+		if _, err := fmt.Fprintf(f.mainWriter, vectors, nmi, reset, irq); err != nil {
 			return fmt.Errorf("writing vectors: %w", err)
 		}
 		return nil
