@@ -33,7 +33,8 @@ type FileWriter struct {
 // nolint: ireturn
 func New(app *program.Program, options options.Disassembler, mainWriter io.Writer, newBankWriter assembler.NewBankWriter) writer.AssemblerWriter {
 	opts := writer.Options{
-		OffsetComments: options.OffsetComments,
+		LiteralCrossSegmentBranches: true,
+		OffsetComments:              options.OffsetComments,
 	}
 	return FileWriter{
 		app:           app,
@@ -156,7 +157,8 @@ func (f FileWriter) writePRGBank(t prgBankWrite) error {
 	}
 
 	bankW := f.writer.ForOutput(bankWriteCloser, writer.Options{
-		OffsetComments: f.options.OffsetComments,
+		LiteralCrossSegmentBranches: true,
+		OffsetComments:              f.options.OffsetComments,
 	})
 
 	if err := bankW.OutputAliasMap(t.bank.Constants); err != nil {
