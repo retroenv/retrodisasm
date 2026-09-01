@@ -151,6 +151,11 @@ func (f FileWriter) writeROMHeader() error {
 	if _, err := fmt.Fprintf(f.mainWriter, headerByte, "inesmir", f.app.Mirror, " ", "Mirror mode"); err != nil {
 		return fmt.Errorf("writing header: %w", err)
 	}
+	if f.app.Battery != 0 {
+		if _, err := fmt.Fprintf(f.mainWriter, headerByte, "inesbat", f.app.Battery, " ", "Battery-backed RAM"); err != nil {
+			return fmt.Errorf("writing header: %w", err)
+		}
+	}
 	return nil
 }
 
