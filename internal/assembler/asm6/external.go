@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -17,10 +18,23 @@ func AssembleUsingExternalApp(ctx context.Context, asmFile, outputFile string) e
 		return fmt.Errorf("%s is not installed", assemblerName)
 	}
 
-	cmd := exec.CommandContext(ctx, assemblerName, asmFile, outputFile)
+	cmd, err := externalCommand(ctx, asmFile, outputFile)
+	if err != nil {
+		return err
+	}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("assembling file: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 
 	return nil
+}
+
+func externalCommand(ctx context.Context, asmFile, outputFile string) (*exec.Cmd, error) {
+	outputPath, err := filepath.Abs(outputFile)
+	if err != nil {
+		return nil, fmt.Errorf("resolving output path: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, assemblerName, filepath.Base(asmFile), outputPath)
+	cmd.Dir = filepath.Dir(asmFile)
+	return cmd, nil
 }
