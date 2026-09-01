@@ -1,4 +1,2 @@
-github.com/retroenv/retrogolib v0.0.0-20260219152321-ad3b83421736 h1:tNtS+7A4zjl0AileGm2eVX0TkoxGWFHEgNeaGVjetnE=
-github.com/retroenv/retrogolib v0.0.0-20260219152321-ad3b83421736/go.mod h1:rzVUGKIa9mg+y0p0bHKqtyFQdnrNPyHM9YOxo9dvNTY=
-github.com/retroenv/retrogolib v0.0.0-20260829162206-e7fb46b052e7 h1:NYUI4xLbiCAaDec52C4h54v88emskIY3VHlaueLZrK0=
-github.com/retroenv/retrogolib v0.0.0-20260829162206-e7fb46b052e7/go.mod h1:2+LjtbhGq9qX5vdNjVvdg/LjWKUwKz1kzJkMacoOdR8=
+github.com/retroenv/retrogolib v0.0.0-20260901202604-29011347d9d1 h1:WM6YVH4NZs0mCYen+1LU6ZDm2VNkYhuy1FrNiyTBtMU=
+github.com/retroenv/retrogolib v0.0.0-20260901202604-29011347d9d1/go.mod h1:2+LjtbhGq9qX5vdNjVvdg/LjWKUwKz1kzJkMacoOdR8=
