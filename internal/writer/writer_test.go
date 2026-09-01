@@ -67,3 +67,32 @@ func TestProcessPRGWritesCrossSegmentBranchAsBytes(t *testing.T) {
 
 	assert.Equal(t, "  .byte $d0, $2e\n", buf.String())
 }
+
+func TestProcessPRGWritesLiteralBranchOutsideSegmentAsBytes(t *testing.T) {
+	var buf bytes.Buffer
+	bank := program.NewPRGBank(0x8000)
+	bank.BaseAddress = 0x8000
+	bank.Offsets[0] = program.Offset{
+		Address: 0x8000,
+		Data:    []byte{0x30, 0x80},
+		Type:    program.CodeOffset,
+		Code:    "bmi $7F82",
+	}
+	w := New(&program.Program{}, &buf, Options{LiteralCrossSegmentBranches: true})
+
+	assert.NoError(t, w.ProcessPRG(bank, 2))
+
+	assert.Equal(t, "  .byte $30, $80\n", buf.String())
+}
+
+func TestGetPrgDataStopsAtBankEnd(t *testing.T) {
+	bank := program.NewPRGBank(3)
+	bank.Offsets[0] = program.Offset{
+		Data: []byte{0xa9, 0x01, 0x02},
+		Type: program.DataOffset,
+	}
+
+	data := getPrgData(bank, 0, 2)
+
+	assert.Equal(t, []byte{0xa9, 0x01}, data)
+}

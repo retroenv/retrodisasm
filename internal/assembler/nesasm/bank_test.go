@@ -25,3 +25,20 @@ func TestSetPrgBankSelectorSplitsFunctionReference(t *testing.T) {
 	assert.True(t, prg[1].IsType(program.CodeAsData|program.DataOffset))
 	assert.NotNil(t, prg[1].WriteCallback)
 }
+
+func TestSetPrgBankSelectorSplitsCodeAsData(t *testing.T) {
+	prg := make([]program.Offset, 3)
+	prg[0].Data = []byte{0xff, 0xff, 0xff}
+	prg[0].SetType(program.CodeAsData | program.DataOffset)
+	prg[1].SetType(program.CodeAsData | program.DataOffset)
+	prg[2].SetType(program.CodeAsData | program.DataOffset)
+	bankAddress := 0xa000
+	bankNumber := 1
+
+	setPrgBankSelector(prg, 1, &bankAddress, &bankNumber)
+
+	assert.Equal(t, []byte{0xff}, prg[0].Data)
+	assert.Equal(t, []byte{0xff}, prg[1].Data)
+	assert.Equal(t, []byte{0xff}, prg[2].Data)
+	assert.NotNil(t, prg[1].WriteCallback)
+}

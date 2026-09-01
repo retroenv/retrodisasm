@@ -75,9 +75,9 @@ func chrBanks(nextBank int, chr program.CHR) []program.CHR {
 func setPrgBankSelector(prg []program.Offset, index int, bankAddress, bankNumber *int) {
 	offsetInfo := &prg[index]
 
-	// NESASM's 8 KiB bank boundary may split an instruction or function-reference
-	// .word. Convert it to bytes so the shared writer reaches the bank callback.
-	if offsetInfo.IsType(program.CodeOffset|program.FunctionReference) && len(offsetInfo.Data) == 0 {
+	// NESASM's 8 KiB bank boundary may split any multi-byte output record.
+	// Convert its owner to individual bytes so the writer reaches the callback.
+	if index > 0 && len(offsetInfo.Data) == 0 {
 		// look backwards for instruction start
 		instructionStartIndex := index - 1
 		for offsetInfo = &prg[instructionStartIndex]; len(offsetInfo.Data) == 0; {

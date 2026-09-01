@@ -193,7 +193,7 @@ func (w Writer) writeOffset(bank *program.PRGBank, index, endIndex int, offset p
 	if offset.IsType(program.CodeOffset) && len(offset.Data) == 0 {
 		return 0, nil
 	}
-	if w.options.LiteralCrossSegmentBranches && isBranchToMissingLabel(offset, labels) {
+	if w.options.LiteralCrossSegmentBranches && isBranchOutsideSegment(offset, bank, labels) {
 		offset.Code = fmt.Sprintf("%s.byte $%02x, $%02x", w.options.DirectivePrefix, offset.Data[0], offset.Data[1])
 		if err := w.writeCodeLine(offset); err != nil {
 			return 0, fmt.Errorf("writing cross-segment branch: %w", err)
@@ -303,15 +303,24 @@ func (w Writer) bundlePRGDataWrites(bank *program.PRGBank, startIndex, endIndex 
 
 type lineWriterFunc func(line string, byteCount int) error
 
-func isBranchToMissingLabel(offset program.Offset, labels set.Set[string]) bool {
+func isBranchOutsideSegment(offset program.Offset, bank *program.PRGBank, labels set.Set[string]) bool {
 	if len(offset.Data) != 2 || offset.Data[0]&0x1F != 0x10 {
 		return false
 	}
 	fields := strings.Fields(offset.Code)
-	if len(fields) != 2 || !strings.HasPrefix(fields[1], "_") {
+	if len(fields) != 2 {
 		return false
 	}
-	return !labels.Contains(fields[1])
+	if strings.HasPrefix(fields[1], "_") {
+		return !labels.Contains(fields[1])
+	}
+
+	var destination uint16
+	if _, err := fmt.Sscanf(fields[1], "$%04X", &destination); err != nil {
+		return false
+	}
+	bankEnd := uint32(bank.BaseAddress) + uint32(len(bank.Offsets))
+	return destination < bank.BaseAddress || uint32(destination) >= bankEnd
 }
 
 func getPrgData(bank *program.PRGBank, startIndex, endIndex int) []byte {
@@ -334,6 +343,11 @@ func getPrgData(bank *program.PRGBank, startIndex, endIndex int) []byte {
 			break
 		}
 
+		remaining := endIndex - i
+		if len(offset.Data) > remaining {
+			data = append(data, offset.Data[:remaining]...)
+			break
+		}
 		data = append(data, offset.Data...)
 	}
 
