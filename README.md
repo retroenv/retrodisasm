@@ -1,37 +1,41 @@
-# retrodisasm - a tracing disassembler for retro systems
+# retrodisasm
 
-[![Build status](https://github.com/retroenv/retrodisasm/actions/workflows/go.yaml/badge.svg?branch=main)](https://github.com/retroenv/retrodisasm/actions)
-[![go.dev reference](https://img.shields.io/badge/go.dev-reference-007d9c?logo=go&logoColor=white&style=flat-square)](https://pkg.go.dev/github.com/retroenv/retrodisasm)
-[![codecov](https://codecov.io/gh/retroenv/retrodisasm/branch/main/graph/badge.svg?token=NS5UY28V3A)](https://codecov.io/gh/retroenv/retrodisasm)
+[![CI](https://github.com/retroenv/retrodisasm/actions/workflows/go.yaml/badge.svg?branch=main)](https://github.com/retroenv/retrodisasm/actions/workflows/go.yaml)
+[![Codecov](https://codecov.io/gh/retroenv/retrodisasm/graph/badge.svg)](https://codecov.io/gh/retroenv/retrodisasm)
+[![Release](https://img.shields.io/github/v/release/retroenv/retrodisasm)](https://github.com/retroenv/retrodisasm/releases/latest)
+[![Go Reference](https://pkg.go.dev/badge/github.com/retroenv/retrodisasm.svg)](https://pkg.go.dev/github.com/retroenv/retrodisasm)
+[![License](https://img.shields.io/github/license/retroenv/retrodisasm)](LICENSE)
+![LLM assisted: human reviewed](https://img.shields.io/badge/LLM%20assisted-human%20reviewed-6f42c1)
 
-> **Note:** This project was renamed from `nesgodisasm` to `retrodisasm` to reflect its expanded support for multiple retro systems beyond just NES.
-
-retrodisasm is a tracing disassembler for retro console and computer systems that generates bit-perfect reassemblable assembly code.
+A tracing disassembler for retro systems that generates bit-perfect,
+reassemblable assembly source.
 
 ## Features
 
-* **Bit-Perfect Reassembly** - Generated assembly reassembles to the exact same binary
-* **Execution Flow Tracing** - Differentiates code from data through program flow analysis
-* **Multi-Architecture** - Modular design supporting multiple retro systems
-* **Multiple Assemblers** - Output compatible with various assemblers
-* **CHR-ROM Export** - Optionally extract graphics data into an included `.chr` file
-* **Batch Processing** - Process multiple ROMs at once
-* **Smart Output** - Omits trailing zeros, translates RAM addresses to aliases
+* **Execution-flow tracing** - Differentiates code from data through program-flow analysis
+* **Bit-perfect reassembly** - Generated assembly reassembles to the exact same binary
+* **Readable output** - Omits trailing zero bytes and replaces known RAM addresses with descriptive aliases
+* **Multiple systems** - Supports NES and CHIP-8 input with automatic detection
+* **Multiple assemblers** - Generates source for different assembler toolchains
+* **Batch verification** - Processes and verifies multiple ROMs in one command
+* **Banked output** - Writes PRG banks inline or as separate assembly files
+* **CHR-ROM export** - Extracts graphics data into an included `.chr` file
 
 ## Supported Systems
 
-| System | Architecture | Assemblers | Documentation |
-|--------|-------------|------------|---------------|
-| **NES** | 6502 | asm6, ca65, nesasm, retroasm | [docs/nes.md](docs/nes.md) |
-| **CHIP-8** | CHIP-8 VM | retroasm | [docs/chip8.md](docs/chip8.md) |
+| System | Architecture | Guide |
+|--------|-------------|-------|
+| **CHIP-8** | CHIP-8 VM | [CHIP-8 guide](docs/chip8.md) |
+| **NES** | 6502 | [NES guide](docs/nes.md) |
 
 ## Quick Start
 
 ### Installation
 
-**Option 1:** Download a binary from [Releases](https://github.com/retroenv/retrodisasm/releases)
+Download a binary for Linux, macOS, or Windows from
+[Releases](https://github.com/retroenv/retrodisasm/releases), or install from
+source with Go 1.22 or newer:
 
-**Option 2:** Install from source:
 ```bash
 go install github.com/retroenv/retrodisasm@latest
 ```
@@ -45,6 +49,24 @@ retrodisasm -o output.asm input.nes      # NES ROM
 retrodisasm -o output.asm input.ch8      # CHIP-8 ROM
 ```
 
+Reassemble and compare NES output with the original ROM:
+
+```bash
+retrodisasm -verify input.nes
+```
+
+Process and verify a collection of ROMs:
+
+```bash
+retrodisasm -verify -batch "roms/*.nes"
+```
+
+Export CHR-ROM to a separate file referenced by the generated assembly:
+
+```bash
+retrodisasm -chr -o output.asm input.nes
+```
+
 Example output (NES):
 ```asm
 Reset:
@@ -55,21 +77,7 @@ Reset:
 ...
 ```
 
-Reassemble with ca65:
-```bash
-ca65 output.asm -o output.o && ld65 output.o -t nes -o output.nes
-```
-
-## Documentation
-
-* **[Command-Line Options Reference](docs/options.md)** - Complete CLI documentation
-* **[NES Disassembly Guide](docs/nes.md)** - NES-specific features and usage
-* **[CHIP-8 Disassembly Guide](docs/chip8.md)** - CHIP-8-specific features and usage
-
-## System Requirements
-
-* **Linux:** 2.6.32+
-* **Windows:** 10+
-* **macOS:** 10.15 Catalina+
-
-Optional: assembler tools for reassembly (ca65, asm6f, nesasm, retroasm) and verification (ca65, asm6f, nesasm).
+See the [command-line reference](docs/options.md) for all options. Reassembly
+and automatic verification require the toolchain for the selected output
+format; see the [assembler setup guide](docs/assemblers.md) for compatibility
+and installation instructions.
