@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.4.0] - 2026-09-01
+
+Added:
+
+* add `-split-banks` option to write each PRG bank to a separate assembly file
+* add iNES 2.0 mapper support
+* add `-chr` option with an optional filename to export CHR-ROM data
+* add CHR-ROM addresses to inline data comments
+* add ALR, ANC, ARR, AXS, and KIL unofficial 6502 opcodes
+
+Changed:
+
+* generate reassemblable banked NES output across supported assemblers
+* split system-specific documentation into NES, CHIP-8, and command-line guides
+
+Fixed:
+
+* fix branches, function references, aliases, and interrupt vectors across PRG banks
+* fix missing or duplicated data at PRG bank boundaries
+* fix indexed operands misidentifying referenced data as code
+* fix data tables misidentified as code by indexed loads
+* fix CHIP-8 branch operands losing instruction-specific formatting
+* fix BRK handling at the end of raw binaries
+* fix multi-file disassembly returning success when one or more files fail
+* fix crashes caused by invalid offsets, vectors, and jump-table opcodes
+
 ## [v0.3.1] - 2026-01-03
 
 Added:
