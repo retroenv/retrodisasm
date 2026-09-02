@@ -133,6 +133,30 @@ func (w Writer) BundleDataWrites(data []byte, lineWriter lineWriterFunc) error {
 	return nil
 }
 
+// BundleAddressedDataWrites bundles data bytes and annotates each line with its starting address.
+func (w Writer) BundleAddressedDataWrites(data []byte, startAddress int) error {
+	address := startAddress
+	lineWriter := func(line string, byteCount int) error {
+		var err error
+		if w.options.OffsetComments {
+			_, err = fmt.Fprintf(w.writer, "%-32s ; $%04X\n", line, address)
+		} else {
+			_, err = fmt.Fprintln(w.writer, line)
+		}
+		if err != nil {
+			return fmt.Errorf("writing addressed data line: %w", err)
+		}
+
+		address += byteCount
+		return nil
+	}
+
+	if err := w.BundleDataWrites(data, lineWriter); err != nil {
+		return fmt.Errorf("writing addressed data: %w", err)
+	}
+	return nil
+}
+
 // OutputAliasMap outputs an alias map, for constants or variables.
 func (w Writer) OutputAliasMap(aliases map[string]uint16) error {
 	if len(aliases) == 0 {

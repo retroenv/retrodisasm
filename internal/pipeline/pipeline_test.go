@@ -213,6 +213,34 @@ func TestExecuteWithCartridgeExportsCHR(t *testing.T) {
 	}
 }
 
+func TestExecuteWithCartridgeAnnotatesInlineCHR(t *testing.T) {
+	chr := make([]byte, 8192)
+	for i := range 18 {
+		chr[i] = byte(i + 1)
+	}
+
+	assemblers := []string{"asm6", "ca65", "nesasm", "retroasm"}
+	for _, assembler := range assemblers {
+		t.Run(assembler, func(t *testing.T) {
+			p := New(log.NewTestLogger(t))
+			cart, err := p.loader.LoadFromBytes(buildMinimalNESROMWithCHR(chr), false, arch.NES)
+			assert.NoError(t, err)
+
+			opts := options.Program{
+				Parameters: options.Parameters{Input: "game.nes"},
+				Flags:      options.Flags{Assembler: assembler, Quiet: true},
+			}
+			disasmOpts := options.NewDisassembler(assembler, arch.NES.String())
+
+			var output bytes.Buffer
+			_, err = p.ExecuteWithCartridge(context.Background(), cart, opts, disasmOpts, &output, arch.NES)
+			assert.NoError(t, err)
+			assert.Contains(t, output.String(), "; $0000")
+			assert.Contains(t, output.String(), "; $0010")
+		})
+	}
+}
+
 func TestCHRFilenames(t *testing.T) {
 	tests := []struct {
 		name        string
