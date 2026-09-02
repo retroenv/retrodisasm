@@ -30,6 +30,8 @@ CHIP-8 disassembly only supports the retroasm format:
 retrodisasm -a retroasm -o output.asm program.ch8
 ```
 
+See [Assembler Setup](assemblers.md) for installation instructions.
+
 ## Binary Mode
 
 Disassemble raw CHIP-8 binary:

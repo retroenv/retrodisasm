@@ -97,6 +97,16 @@ Code/Data Log file (.cdl) from emulators like FCEUX or Mesen.
 retrodisasm -cdl game.cdl -o output.asm input.nes
 ```
 
+#### `-split-banks`
+
+Write each PRG bank to a separate assembly file and include those files from
+the main output. Bank filenames are derived from the output filename.
+
+```bash
+retrodisasm -split-banks -o build/game.asm game.nes
+# Writes build/game.asm and files such as build/game_000.asm
+```
+
 ### Processing Options
 
 #### `-batch string`
@@ -132,8 +142,8 @@ lda #$10    ; $8002
 ```
 
 #### `-nooffsets`
-Omit CPU and PPU addresses in assembly comments. Inline CHR data uses its
-address within CHR-ROM, starting at `$0000`.
+Omit CPU and PPU addresses in assembly comments, including addresses on inline
+CHR-ROM data.
 
 Default output:
 ```asm
@@ -225,17 +235,12 @@ retrodisasm -s chip8 -batch "*.ch8"
 retrodisasm -o - game.nes | less
 ```
 
-## System Requirements
+## Installation Requirements
 
-retrodisasm uses a modern software stack with minimal system dependencies:
-
-* **Linux:** 2.6.32+
-* **Windows:** 10+
-* **macOS:** 10.15 Catalina+
+Prebuilt releases are available for Linux, macOS, and Windows. Building from
+source requires Go 1.22 or newer.
 
 ### Optional Dependencies
 
-* **ca65** - For reassembling ca65 format output and verification
-* **asm6f** - For reassembling asm6 format output and verification (v1.6 modifications v03+ required)
-* **nesasm** - For reassembling nesasm format output and verification
-* **retroasm** - For reassembling retroasm format output (NES and CHIP-8, verification not supported)
+See [Assembler Setup](assemblers.md) for the supported toolchains, verification
+compatibility, and installation instructions.

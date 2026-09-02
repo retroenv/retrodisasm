@@ -44,6 +44,9 @@ retrodisasm -a nesasm -o output.asm input.nes
 retrodisasm -a retroasm -o output.asm input.nes
 ```
 
+See [Assembler Setup](assemblers.md) for compatibility and installation
+instructions.
+
 ### Example Output
 
 ```asm
@@ -93,6 +96,25 @@ retrodisasm -cdl game.cdl -o output.asm input.nes
 Specify a custom linker config:
 ```bash
 retrodisasm -c custom.cfg -o output.asm input.nes
+```
+
+### Split PRG Banks
+
+Write each PRG bank to a separate assembly file and include those files from
+the main output:
+
+```bash
+retrodisasm -split-banks -o build/game.asm input.nes
+```
+
+### CHR-ROM Export
+
+Export CHR-ROM to a file included by the generated assembly. Without a
+filename, the `.chr` filename is derived from the assembly output:
+
+```bash
+retrodisasm -chr -o build/game.asm input.nes
+retrodisasm -chr=assets/tiles.chr -o build/game.asm input.nes
 ```
 
 ### Verification
