@@ -8,19 +8,25 @@ import (
 	"github.com/retroenv/retrodisasm/internal/program"
 )
 
-// ClassifyRemainingAsData marks all unclassified bytes as data.
-// It iterates through all banks and marks bytes that have not been identified as code or data.
+// ClassifyRemainingAsData marks all unowned bytes as data.
 func (m *Mapper) ClassifyRemainingAsData() {
 	for _, bnk := range m.banks {
+		// Empty code offsets represent operand bytes only while an owning encoding covers them.
+		owned := make([]bool, len(bnk.offsets))
 		for i, offsetInfo := range bnk.offsets {
-			if offsetInfo.IsType(program.CodeOffset) ||
-				offsetInfo.IsType(program.DataOffset) ||
-				offsetInfo.IsType(program.FunctionReference) {
+			for j := 1; j < len(offsetInfo.Data) && i+j < len(owned); j++ {
+				owned[i+j] = true
+			}
+		}
 
+		for i, offsetInfo := range bnk.offsets {
+			if len(offsetInfo.Data) > 0 || owned[i] {
 				continue
 			}
 
-			bnk.offsets[i].Data = []byte{bnk.prg[i]}
+			offsetInfo.Data = []byte{bnk.prg[i]}
+			offsetInfo.ClearType(program.CodeOffset | program.FunctionReference | program.JumpTable)
+			offsetInfo.SetType(program.DataOffset)
 		}
 	}
 }

@@ -12,7 +12,7 @@ import (
 
 //nolint:funlen // test functions can be long
 func TestClassifyRemainingAsData(t *testing.T) {
-	t.Run("classifies unclassified offsets as data", func(t *testing.T) {
+	t.Run("classifies empty unowned offsets as data", func(t *testing.T) {
 		cart := &cartridge.Cartridge{
 			PRG: []byte{0x10, 0x20, 0x30, 0x40, 0x50},
 		}
@@ -21,45 +21,41 @@ func TestClassifyRemainingAsData(t *testing.T) {
 		mapper, err := New(arch, cart)
 		assert.NoError(t, err)
 
-		// Mark some offsets as code, others as unclassified
 		mapper.banks[0].offsets[0].SetType(program.CodeOffset)
-		// offset[1] is unclassified - should become data
 		mapper.banks[0].offsets[2].SetType(program.DataOffset)
-		// offset[3] is unclassified - should become data
 		mapper.banks[0].offsets[4].SetType(program.FunctionReference)
 
 		mapper.ClassifyRemainingAsData()
 
-		// Verify unclassified offsets were marked as data
-		assert.Len(t, mapper.banks[0].offsets[0].Data, 0) // Code - no data set
-		assert.Len(t, mapper.banks[0].offsets[1].Data, 1) // Unclassified - data set
-		assert.Equal(t, byte(0x20), mapper.banks[0].offsets[1].Data[0])
-		assert.Len(t, mapper.banks[0].offsets[2].Data, 0) // Already data - no change
-		assert.Len(t, mapper.banks[0].offsets[3].Data, 1) // Unclassified - data set
-		assert.Equal(t, byte(0x40), mapper.banks[0].offsets[3].Data[0])
-		assert.Len(t, mapper.banks[0].offsets[4].Data, 0) // Function ref - no data set
+		for i, value := range cart.PRG {
+			offsetInfo := mapper.banks[0].offsets[i]
+			assert.Equal(t, []byte{value}, offsetInfo.Data)
+			assert.True(t, offsetInfo.IsType(program.DataOffset))
+			assert.False(t, offsetInfo.IsType(program.CodeOffset|program.FunctionReference|program.JumpTable))
+		}
 	})
 
-	t.Run("handles all code bank", func(t *testing.T) {
+	t.Run("preserves operands owned by an instruction", func(t *testing.T) {
 		cart := &cartridge.Cartridge{
-			PRG: []byte{0xEA, 0xEA, 0xEA},
+			PRG: []byte{0x4c, 0x34, 0x12, 0xea},
 		}
 		arch := &mockArchitecture{bankWindowSize: 0}
 
 		mapper, err := New(arch, cart)
 		assert.NoError(t, err)
 
-		// Mark all offsets as code
-		for i := range mapper.banks[0].offsets {
-			mapper.banks[0].offsets[i].SetType(program.CodeOffset)
-		}
+		owner := mapper.banks[0].offsets[0]
+		owner.Data = cart.PRG[:3]
+		owner.SetType(program.CodeOffset)
+		mapper.banks[0].offsets[1].SetType(program.CodeOffset)
+		mapper.banks[0].offsets[2].SetType(program.CodeOffset)
 
 		mapper.ClassifyRemainingAsData()
 
-		// Verify no data was set (all code)
-		for i := range mapper.banks[0].offsets {
-			assert.Len(t, mapper.banks[0].offsets[i].Data, 0)
-		}
+		assert.Equal(t, cart.PRG[:3], owner.Data)
+		assert.Empty(t, mapper.banks[0].offsets[1].Data)
+		assert.Empty(t, mapper.banks[0].offsets[2].Data)
+		assert.Equal(t, []byte{0xea}, mapper.banks[0].offsets[3].Data)
 	})
 
 	t.Run("handles all unclassified bank", func(t *testing.T) {
@@ -71,13 +67,10 @@ func TestClassifyRemainingAsData(t *testing.T) {
 		mapper, err := New(arch, cart)
 		assert.NoError(t, err)
 
-		// All offsets are unclassified by default
 		mapper.ClassifyRemainingAsData()
 
-		// Verify all offsets were marked as data
 		for i := range mapper.banks[0].offsets {
-			assert.Len(t, mapper.banks[0].offsets[i].Data, 1)
-			assert.Equal(t, cart.PRG[i], mapper.banks[0].offsets[i].Data[0])
+			assert.Equal(t, []byte{cart.PRG[i]}, mapper.banks[0].offsets[i].Data)
 		}
 	})
 
@@ -90,17 +83,17 @@ func TestClassifyRemainingAsData(t *testing.T) {
 		mapper, err := New(arch, cart)
 		assert.NoError(t, err)
 
-		// Mark some offsets in each bank
+		mapper.banks[0].offsets[0].Data = []byte{0xea}
 		mapper.banks[0].offsets[0].SetType(program.CodeOffset)
+		mapper.banks[1].offsets[0].Data = []byte{0xea}
 		mapper.banks[1].offsets[0].SetType(program.CodeOffset)
 
 		mapper.ClassifyRemainingAsData()
 
-		// Verify unclassified offsets in both banks were marked as data
-		assert.Len(t, mapper.banks[0].offsets[0].Data, 0)
-		assert.Len(t, mapper.banks[0].offsets[1].Data, 1)
-		assert.Len(t, mapper.banks[1].offsets[0].Data, 0)
-		assert.Len(t, mapper.banks[1].offsets[1].Data, 1)
+		assert.Equal(t, []byte{0xea}, mapper.banks[0].offsets[0].Data)
+		assert.Equal(t, []byte{0}, mapper.banks[0].offsets[1].Data)
+		assert.Equal(t, []byte{0xea}, mapper.banks[1].offsets[0].Data)
+		assert.Equal(t, []byte{0}, mapper.banks[1].offsets[1].Data)
 	})
 }
 
