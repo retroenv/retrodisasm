@@ -1,5 +1,8 @@
 name: CI
 
+permissions:
+  contents: read
+
 on:
   push:
     branches:
@@ -20,19 +23,19 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: [ "1.22" ]
+        go: [ "1.22.x", "stable" ]
 
     steps:
-      - name: Set up Go 1.x
-        uses: actions/setup-go@v5
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go }}
-        id: go
-
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v4
 
       - name: Install linters
+        if: matrix.go == 'stable'
         run: make install-linters
 
       - name: Install ca65
@@ -45,4 +48,5 @@ jobs:
         run: make test
 
       - name: Run linter
+        if: matrix.go == 'stable'
         run: make lint

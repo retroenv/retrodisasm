@@ -1,5 +1,8 @@
 name: codecov
 
+permissions:
+  contents: read
+
 on:
   push:
     branches:
@@ -13,14 +16,13 @@ jobs:
     name: Coverage
     runs-on: ubuntu-latest
     steps:
-      - name: Set up Go 1.x
-        uses: actions/setup-go@v6
-        with:
-          go-version: "1.22"
-        id: go
-
       - name: Check out code into the Go module directory
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27"
 
       - name: Get dependencies
         run: go mod download
