@@ -169,14 +169,14 @@ func (w *FileWriter) writeCHR() error {
 	}
 
 	if w.options.ZeroBytes {
-		if err := w.writer.BundleDataWrites(w.app.CHR, nil); err != nil {
+		if err := w.writer.BundleAddressedDataWrites(w.app.CHR, 0); err != nil {
 			return fmt.Errorf("writing CHR data: %w", err)
 		}
 		return nil
 	}
 
 	lastNonZeroByte := w.app.CHR.LastNonZeroByte()
-	if err := w.writer.BundleDataWrites(w.app.CHR[:lastNonZeroByte], nil); err != nil {
+	if err := w.writer.BundleAddressedDataWrites(w.app.CHR[:lastNonZeroByte], 0); err != nil {
 		return fmt.Errorf("writing CHR data: %w", err)
 	}
 

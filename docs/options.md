@@ -132,7 +132,8 @@ lda #$10    ; $8002
 ```
 
 #### `-nooffsets`
-Omit file offsets in assembly comments.
+Omit CPU and PPU addresses in assembly comments. Inline CHR data uses its
+address within CHR-ROM, starting at `$0000`.
 
 Default output:
 ```asm

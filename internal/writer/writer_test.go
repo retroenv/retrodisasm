@@ -53,6 +53,41 @@ func TestForOutputSharesAliasEmissionState(t *testing.T) {
 	assert.NotContains(t, second.String(), "PPU_CTRL = $2000")
 }
 
+func TestBundleAddressedDataWrites(t *testing.T) {
+	data := make([]byte, 18)
+	for i := range data {
+		data[i] = byte(i)
+	}
+
+	tests := []struct {
+		name           string
+		offsetComments bool
+		want           string
+	}{
+		{
+			name:           "address comments",
+			offsetComments: true,
+			want: ".byte $00, $01, $02, $03, $04, $05, $06, $07, $08, $09, $0a, $0b, $0c, $0d, $0e, $0f ; $1000\n" +
+				".byte $10, $11                   ; $1010\n",
+		},
+		{
+			name: "comments disabled",
+			want: ".byte $00, $01, $02, $03, $04, $05, $06, $07, $08, $09, $0a, $0b, $0c, $0d, $0e, $0f\n" +
+				".byte $10, $11\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			w := New(&program.Program{}, &buf, Options{OffsetComments: tt.offsetComments})
+
+			assert.NoError(t, w.BundleAddressedDataWrites(data, 0x1000))
+			assert.Equal(t, tt.want, buf.String())
+		})
+	}
+}
+
 func TestProcessPRGWritesCrossSegmentBranchAsBytes(t *testing.T) {
 	var buf bytes.Buffer
 	bank := program.NewPRGBank(2)

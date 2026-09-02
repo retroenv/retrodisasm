@@ -179,6 +179,8 @@ func (f FileWriter) writeCHR(nextBank int) func() error {
 		}
 
 		banks := chrBanks(nextBank, f.app.CHR)
+		// CHR addresses stay linear across assembler banks so comments match ROM offsets.
+		address := 0
 
 		for _, bank := range banks {
 			writeFunc := writeBankSelector(nextBank, -1)
@@ -186,10 +188,11 @@ func (f FileWriter) writeCHR(nextBank int) func() error {
 				return fmt.Errorf("writing bank switch: %w", err)
 			}
 
-			if err := f.writer.BundleDataWrites(bank, nil); err != nil {
+			if err := f.writer.BundleAddressedDataWrites(bank, address); err != nil {
 				return fmt.Errorf("writing CHR data: %w", err)
 			}
 
+			address += len(bank)
 			nextBank++
 		}
 
