@@ -182,11 +182,10 @@ func (j *JumpEngine) JumpContextInfo(jumpAddress uint16, offsetInfo *offset.Disa
 
 // HandleJumpEngineDestination processes a newly detected jump engine destination.
 func (j *JumpEngine) HandleJumpEngineDestination(caller, destination, codeBaseAddress uint16) error {
-	for addr := range j.jumpEngines {
-		if addr == destination {
-			return j.handleJumpEngineCaller(caller, codeBaseAddress)
-		}
+	if j.jumpEngines.Contains(destination) {
+		return j.handleJumpEngineCaller(caller, codeBaseAddress)
 	}
+
 	return nil
 }
 

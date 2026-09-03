@@ -2,9 +2,9 @@ package disasm
 
 import (
 	"fmt"
-	"slices"
 
 	"github.com/retroenv/retrodisasm/internal/program"
+	"github.com/retroenv/retrogolib/set"
 )
 
 const (
@@ -16,13 +16,7 @@ const (
 // processJumpDestinations processes all jump destinations and updates the callers with
 // the generated jump destination label name.
 func (dis *Disasm) processJumpDestinations() {
-	branchDestinations := make([]uint16, 0, len(dis.branchDestinations))
-	for dest := range dis.branchDestinations {
-		branchDestinations = append(branchDestinations, dest)
-	}
-	slices.Sort(branchDestinations)
-
-	for _, address := range branchDestinations {
+	for _, address := range set.Sorted(dis.branchDestinations) {
 		offsetInfo := dis.mapper.OffsetInfo(address)
 
 		name := offsetInfo.Label
