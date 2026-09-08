@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+Fixed:
+
+* fix 6502 BIT trick disassembly for masked function entry points and preserve symbolic memory references
+
 ## [v0.4.0] - 2026-09-01
 
 Added:

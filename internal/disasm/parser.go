@@ -104,6 +104,7 @@ func (dis *Disasm) followExecutionFlow(ctx context.Context) error {
 			break
 		}
 		address := uint16(addr)
+		dis.splitParsedInstructionAtBranchDestination(address)
 
 		if dis.offsetsParsed.Contains(address) {
 			continue
@@ -156,6 +157,61 @@ func (dis *Disasm) checkInstructionOverlap(address uint16, offsetInfo *offset.Di
 		offsetInfo.SetType(program.CodeAsData | program.DataOffset)
 		return
 	}
+}
+
+func (dis *Disasm) splitParsedInstructionAtBranchDestination(address uint16) {
+	if !dis.isBranchDestination(address) {
+		return
+	}
+
+	target := dis.mapper.OffsetInfo(address)
+	if target == nil || len(target.Data) != 0 || !target.IsType(program.CodeOffset) {
+		return
+	}
+
+	ownerAddress, owner, ok := dis.findInstructionOwner(address)
+	if !ok {
+		return
+	}
+
+	splitIndex := int(address - ownerAddress)
+	data := owner.Data
+
+	// A late-discovered entry may start inside bytes already claimed by an
+	// earlier trace. Release the suffix so the entry can own and decode it.
+	for i := splitIndex; i < len(data); i++ {
+		offsetInfo := dis.mapper.OffsetInfo(ownerAddress + uint16(i))
+		offsetInfo.Data = nil
+		offsetInfo.ClearType(program.CodeOffset)
+		dis.offsetsParsed.Remove(ownerAddress + uint16(i))
+	}
+
+	owner.Data = data[:splitIndex]
+	owner.Comment = owner.Code
+	owner.Code = ""
+	target.Comment = "branch into instruction detected"
+	dis.ChangeAddressRangeToCodeAsData(ownerAddress, owner.Data)
+}
+
+func (dis *Disasm) findInstructionOwner(address uint16) (uint16, *offset.DisasmOffset, bool) {
+	for candidate := address; candidate > dis.codeBaseAddress; {
+		candidate--
+		offsetInfo := dis.mapper.OffsetInfo(candidate)
+		if offsetInfo == nil {
+			return 0, nil, false
+		}
+		if len(offsetInfo.Data) == 0 {
+			continue
+		}
+
+		distance := int(address - candidate)
+		if offsetInfo.IsType(program.CodeOffset) && len(offsetInfo.Data) > distance {
+			return candidate, offsetInfo, true
+		}
+		return 0, nil, false
+	}
+
+	return 0, nil, false
 }
 
 // isBranchDestination checks if an address is a branch destination.

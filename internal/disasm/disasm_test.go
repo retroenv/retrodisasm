@@ -118,6 +118,146 @@ func TestDisasmBranchIntoUnofficialNop(t *testing.T) {
 	runDisasm(t, nil, input, expected)
 }
 
+func TestDisasmBITTrickWithLateFunctionEntries(t *testing.T) {
+	// The first trace can claim later call targets as a BIT operand. Releasing
+	// that claimed suffix lets each two-byte instruction decode at its entry.
+	input := []byte{
+		0x20, 0x0a, 0x80, // jsr $800a
+		0x20, 0x0d, 0x80, // jsr $800d
+		0x20, 0x10, 0x80, // jsr $8010
+		0x40,       // rti
+		0xa9, 0x05, // $800a: lda #$05
+		0x2c,       // $800c: bit opcode masking lda #$07
+		0xa9, 0x07, // $800d: lda #$07
+		0x2c,       // $800f: bit opcode masking lda #$0b
+		0xa9, 0x0b, // $8010: lda #$0b
+		0x8d, 0x07, 0x20, // $8012: sta $2007
+		0x8d, 0xa9, 0x07, // sta $07a9 (also read by the first BIT)
+		0x8d, 0xa9, 0x0b, // sta $0ba9 (also read by the second BIT)
+		0x60, // rts
+	}
+
+	expected := `
+        PPU_DATA = $2007
+
+
+        _var_07a9 = $07A9
+        _var_0ba9 = $0BA9
+
+        Reset:
+        jsr _func_800a
+        jsr _func_800d
+        jsr _func_8010
+        rti
+
+        _func_800a:
+        lda #$05
+        .byte $2c                        ; bit a:_var_07a9
+
+        _func_800d:
+        lda #$07                       ; branch into instruction detected
+        .byte $2c                        ; bit a:_var_0ba9
+
+        _func_8010:
+        lda #$0B                       ; branch into instruction detected
+        sta PPU_DATA
+        sta a:_var_07a9
+        sta a:_var_0ba9
+        rts
+`
+
+	runDisasm(t, nil, input, expected)
+}
+
+func TestDisasmZeroPageBITTrickWithLateFunctionEntry(t *testing.T) {
+	// The first trace can claim a one-byte call target as a BIT operand. Releasing
+	// that byte lets the instruction decode when its call is discovered later.
+	input := []byte{
+		0x20, 0x07, 0x80, // jsr $8007
+		0x20, 0x09, 0x80, // jsr $8009
+		0x40,       // rti
+		0x38,       // $8007: sec
+		0x24,       // $8008: bit opcode masking clc
+		0x18,       // $8009: clc
+		0x85, 0x18, // sta $18 (also read by BIT)
+		0x60, // rts
+	}
+
+	expected := `
+        _var_0018 = $0018
+
+        Reset:
+        jsr _func_8007
+        jsr _func_8009
+        rti
+
+        _func_8007:
+        sec
+        .byte $24                        ; bit z:_var_0018
+
+        _func_8009:
+        clc                            ; branch into instruction detected
+        sta z:_var_0018
+        rts
+`
+
+	runDisasm(t, nil, input, expected)
+}
+
+func TestDisasmBITTrickPreservesMemoryReference(t *testing.T) {
+	// Splitting BIT before symbol resolution left a numeric operand in its
+	// comment, even though the memory reference had a generated variable name.
+	tests := []struct {
+		name      string
+		lateEntry bool
+	}{
+		{name: "early entry"},
+		{name: "late entry", lateEntry: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := []byte{
+				0x20, 0x0a, 0x80, // jsr $800a
+				0x20, 0x0d, 0x80, // jsr $800d
+				0x9d, 0xa0, 0x04, // sta $04a0,X
+				0x40,       // rti
+				0xa0, 0x00, // $800a: ldy #$00
+				0x2c,       // $800c: bit opcode masking ldy #$04
+				0xa0, 0x04, // $800d: ldy #$04
+				0x60, // rts
+			}
+			if !tt.lateEntry {
+				input[1], input[4] = input[4], input[1]
+			}
+
+			expected := `
+        _var_04a0_indexed = $04A0
+
+        Reset:
+        jsr _func_800a
+        jsr _func_800d
+        sta a:_var_04a0_indexed,X
+        rti
+
+        _func_800a:
+        ldy #$00
+        .byte $2c                        ; bit a:_var_04a0_indexed
+
+        _func_800d:
+        ldy #$04                       ; branch into instruction detected
+        rts
+`
+			if !tt.lateEntry {
+				expected = strings.Replace(expected, "jsr _func_800a\n        jsr _func_800d",
+					"jsr _func_800d\n        jsr _func_800a", 1)
+			}
+
+			runDisasm(t, nil, input, expected)
+		})
+	}
+}
+
 func TestDisasmReferencingUnofficialInstruction(t *testing.T) {
 	input := []byte{
 		0xbd, 0x06, 0x80, // $8000 lda a:_data_8005_indexed+1,X
