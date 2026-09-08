@@ -34,7 +34,7 @@ reassemblable assembly source.
 
 Download a binary for Linux, macOS, or Windows from
 [Releases](https://github.com/retroenv/retrodisasm/releases), or install from
-source with Go 1.22 or newer:
+source with Go 1.25 or newer:
 
 ```bash
 go install github.com/retroenv/retrodisasm@latest

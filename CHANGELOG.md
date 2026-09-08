@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+Changed:
+
+* require Go 1.25 or newer when installing from source
+
 Fixed:
 
 * fix 6502 BIT trick disassembly for masked function entry points and preserve symbolic memory references

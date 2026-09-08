@@ -238,7 +238,7 @@ retrodisasm -o - game.nes | less
 ## Installation Requirements
 
 Prebuilt releases are available for Linux, macOS, and Windows. Building from
-source requires Go 1.22 or newer.
+source requires Go 1.25 or newer.
 
 ### Optional Dependencies
 

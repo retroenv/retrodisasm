@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: [ "1.22.x", "stable" ]
+        go: [ "1.25.x", "stable" ]
 
     steps:
       - name: Check out code into the Go module directory
