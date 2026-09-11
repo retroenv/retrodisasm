@@ -11,6 +11,7 @@ import (
 	"github.com/retroenv/retrodisasm/internal/assembler"
 	"github.com/retroenv/retrodisasm/internal/options"
 	"github.com/retroenv/retrodisasm/internal/program"
+	"github.com/retroenv/retrodisasm/internal/romconfig"
 	"github.com/retroenv/retrogolib/arch"
 	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
 	"github.com/retroenv/retrogolib/assert"
@@ -68,6 +69,7 @@ $8002 = High byte
 	assert.True(t, strings.Contains(output, "LowByte:"), output)
 	assert.True(t, strings.Contains(output, "High byte"), output)
 	assert.True(t, strings.Contains(output, "Original instruction"), output)
+	assert.False(t, strings.Contains(output, "branch into instruction detected"), output)
 }
 
 func TestConfigOverlappingInstruction(t *testing.T) {
@@ -88,6 +90,39 @@ func TestConfigPresentationInsideInstruction(t *testing.T) {
 	assert.Equal(t, []byte{0x12}, app.PRG[0].Offsets[2].Data)
 	assert.True(t, strings.Contains(output, "; Low byte\n"), output)
 	assert.Equal(t, 2, *app.PRG[0].Offsets[2].BlankLines)
+	assert.False(t, strings.Contains(output, "branch into instruction detected"), output)
+}
+
+func TestConfigSymbolAliasesInferredLabel(t *testing.T) {
+	// A ROM label must remain relocatable even when it was inferred instead of configured.
+	dis := &Disasm{config: &romconfig.Config{Symbols: map[string]uint16{"EntryAlias": 0x8000}}}
+	bank := program.NewPRGBank(1)
+	bank.BaseAddress = 0x8000
+	bank.Offsets[0].Label = "Reset"
+	app := &program.Program{PRG: []*program.PRGBank{bank}, Constants: map[string]uint16{}, Variables: map[string]uint16{}}
+
+	assert.NoError(t, dis.assignConfiguredSymbols(app))
+	assert.Equal(t, []string{"EntryAlias"}, bank.Offsets[0].Aliases)
+	assert.Len(t, app.Constants, 0)
+}
+
+func TestConfigSplitsSymbolicDataAcrossMappedBank(t *testing.T) {
+	// A symbolic row can span mapper windows when each emitted directive stays local.
+	dis := configuredDisasm(t, nil, "[data]\n$BFFF=$C000\n[bytes]\n$BFFF=@2")
+	app, _ := processConfiguredDisasm(t, dis)
+	assert.Len(t, app.PRG[0].Offsets[0x3fff].Data, 1)
+	assert.Len(t, app.PRG[0].Offsets[0x4000].Data, 1)
+	assert.True(t, app.PRG[0].Offsets[0x3fff].IsType(program.ExpressionData))
+	assert.True(t, app.PRG[0].Offsets[0x4000].IsType(program.ExpressionData))
+}
+
+func TestConfigRejectsSymbolicWordAcrossMappedBank(t *testing.T) {
+	// One word cannot be represented by two directives without changing its meaning.
+	dis := configuredDisasm(t, nil, "[data]\n$9FFF=$A000\n[words]\n$9FFF=@1")
+	_, err := dis.Process(t.Context(), io.Discard, func(_ string) (io.WriteCloser, error) {
+		return nopWriteCloser{io.Discard}, nil
+	})
+	assert.ErrorContains(t, err, "symbolic word at $9FFF crosses a mapped PRG bank boundary")
 }
 
 func TestConfigValidation(t *testing.T) {

@@ -89,18 +89,22 @@ func TestBundleAddressedDataWrites(t *testing.T) {
 }
 
 func TestProcessPRGWritesCrossSegmentBranchAsBytes(t *testing.T) {
+	// A configured label does not reveal whether a relative branch is local.
+	// The encoded displacement must choose literal output at a segment boundary.
 	var buf bytes.Buffer
 	bank := program.NewPRGBank(2)
+	bank.BaseAddress = 0x8000
 	bank.Offsets[0] = program.Offset{
-		Data: []byte{0xD0, 0x2E},
-		Type: program.CodeOffset,
-		Code: "bne _label_c010",
+		Address: 0x8000,
+		Data:    []byte{0xD0, 0x7F},
+		Type:    program.CodeOffset,
+		Code:    "bne Target",
 	}
 	w := New(&program.Program{}, &buf, Options{LiteralCrossSegmentBranches: true})
 
 	assert.NoError(t, w.ProcessPRG(bank, 2))
 
-	assert.Equal(t, "  .byte $d0, $2e\n", buf.String())
+	assert.Equal(t, "  .byte $d0, $7f\n", buf.String())
 }
 
 func TestProcessPRGWritesLiteralBranchOutsideSegmentAsBytes(t *testing.T) {

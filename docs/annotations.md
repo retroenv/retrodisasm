@@ -121,8 +121,9 @@ prevent automatic tracing of their contents. Records cannot overlap one another
 or conceal a label/comment inside them.
 
 Use `@count` for literal tables to keep their bytes in the ROM rather than the
-INI. The writer preserves symbolic table expressions and record boundaries;
-NESASM may split lines or emit bytes where a record crosses its bank boundary.
+INI. The writer preserves symbolic table expressions and record boundaries.
+Records crossing a mapped PRG bank boundary are emitted as separate directives.
+A 16-bit word must not itself cross the boundary.
 Its `LOW()`/`HIGH()` syntax is selected automatically. Symbol definitions remain
 available even if unused, while redundant inferred names are omitted when
 operand hints replace their references.

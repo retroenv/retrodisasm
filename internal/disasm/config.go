@@ -228,7 +228,7 @@ func (dis *Disasm) applyAnnotations() {
 	if dis.config == nil {
 		return
 	}
-	// Apply every annotation before repairing jump targets, because several
+	// Apply every annotation before splitting instructions, because several
 	// annotation kinds can share an address and need a single repair pass.
 	addresses := set.New[uint16]()
 	for address, comment := range dis.config.CommentsBefore {
@@ -253,7 +253,7 @@ func (dis *Disasm) applyAnnotations() {
 	for _, address := range set.Sorted(addresses) {
 		info := dis.mapper.OffsetInfo(address)
 		if len(info.Data) == 0 && info.IsType(program.CodeOffset|program.CodeAsData|program.FunctionReference) {
-			dis.handleJumpIntoInstruction(address)
+			dis.splitInstructionAt(address, "")
 		}
 	}
 }
@@ -264,14 +264,7 @@ func (dis *Disasm) assignConfiguredSymbols(app *program.Program) error {
 	}
 	for _, name := range slices.Sorted(maps.Keys(dis.config.Symbols)) {
 		value := dis.config.Symbols[name]
-		if dis.config.Labels[value] != "" {
-			for _, bank := range app.PRG {
-				index := int(value) - int(bank.BaseAddress)
-				if index >= 0 && index < len(bank.Offsets) && bank.Offsets[index].Label == dis.config.Labels[value] {
-					bank.Offsets[index].Aliases = append(bank.Offsets[index].Aliases, name)
-					break
-				}
-			}
+		if appendAliasAtAddress(app, value, name) {
 			continue
 		}
 		if address, ok := app.Variables[name]; ok {
@@ -429,6 +422,26 @@ func (dis *Disasm) assignDataExpressions(address uint16, width int, layout romco
 	if err := dis.validateDataExpressions(address, data); err != nil {
 		return err
 	}
+	return dis.assignDataExpressionChunks(address, width, data, expressions)
+}
+
+func (dis *Disasm) assignDataExpressionChunks(address uint16, width int, data []byte, expressions []string) error {
+	for offset := 0; offset < len(data); {
+		chunkAddress := address + uint16(offset)
+		chunkBytes := dis.mappedDataBytes(chunkAddress, len(data)-offset)
+		if chunkBytes < width {
+			return fmt.Errorf("symbolic word at $%04X crosses a mapped PRG bank boundary", chunkAddress)
+		}
+		chunkBytes -= chunkBytes % width
+		chunkExpressions := chunkBytes / width
+		dis.assignDataExpressionChunk(chunkAddress, width, data[offset:offset+chunkBytes],
+			expressions[offset/width:offset/width+chunkExpressions])
+		offset += chunkBytes
+	}
+	return nil
+}
+
+func (dis *Disasm) assignDataExpressionChunk(address uint16, width int, data []byte, expressions []string) {
 	// The first offset owns the complete byte slice so the writer emits one
 	// directive; clear the remaining offsets to prevent duplicate output.
 	for i := range data {
@@ -447,7 +460,17 @@ func (dis *Disasm) assignDataExpressions(address uint16, width int, layout romco
 		formatted[i] = assembler.FormatExpression(dis.options.Assembler, expression)
 	}
 	info.Code = directive + strings.Join(formatted, ", ")
-	return nil
+}
+
+func (dis *Disasm) mappedDataBytes(address uint16, maximum int) int {
+	startIndex := dis.mapper.MappedBankIndex(address)
+	for length := range maximum {
+		current := address + uint16(length)
+		if dis.mapper.MappedBankIndex(current) != startIndex+uint16(length) {
+			return length
+		}
+	}
+	return maximum
 }
 
 func (dis *Disasm) literalDataExpressions(address uint16, width, count int) ([]string, error) {
@@ -556,4 +579,16 @@ func validateConfiguredSymbols(app *program.Program) error {
 		}
 	}
 	return nil
+}
+
+func appendAliasAtAddress(app *program.Program, address uint16, name string) bool {
+	for _, bank := range app.PRG {
+		index := int(address) - int(bank.BaseAddress)
+		if index < 0 || index >= len(bank.Offsets) || bank.Offsets[index].Label == "" {
+			continue
+		}
+		bank.Offsets[index].Aliases = append(bank.Offsets[index].Aliases, name)
+		return true
+	}
+	return false
 }

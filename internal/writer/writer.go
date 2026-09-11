@@ -61,12 +61,6 @@ func (w Writer) ForOutput(output io.Writer, options Options) *Writer {
 // ProcessPRG processes the PRG segment and writes all code offsets, labels and their comments.
 func (w Writer) ProcessPRG(bank *program.PRGBank, endIndex int) error {
 	var previousLineWasCode bool
-	labels := set.New[string]()
-	for _, offset := range bank.Offsets {
-		if offset.Label != "" {
-			labels.Add(offset.Label)
-		}
-	}
 
 	for i := 0; i < endIndex; i++ {
 		offset := bank.Offsets[i]
@@ -91,7 +85,7 @@ func (w Writer) ProcessPRG(bank *program.PRGBank, endIndex int) error {
 
 		previousLineWasCode = offset.IsType(program.CodeOffset | program.CodeAsData)
 
-		adjustment, err := w.writeOffset(bank, i, endIndex, offset, labels)
+		adjustment, err := w.writeOffset(bank, i, endIndex, offset)
 		if err != nil {
 			return err
 		}
@@ -224,16 +218,14 @@ func (w Writer) WriteCommentHeader() error {
 	return nil
 }
 
-func (w Writer) writeOffset(bank *program.PRGBank, index, endIndex int, offset program.Offset,
-	labels set.Set[string]) (int, error) {
-
+func (w Writer) writeOffset(bank *program.PRGBank, index, endIndex int, offset program.Offset) (int, error) {
 	if offset.IsType(program.ExpressionData) {
 		return w.writeExpressionData(offset, endIndex-index)
 	}
 	if offset.IsType(program.CodeOffset) && len(offset.Data) == 0 {
 		return 0, nil
 	}
-	if w.options.LiteralCrossSegmentBranches && isBranchOutsideSegment(offset, bank, labels) {
+	if w.options.LiteralCrossSegmentBranches && isBranchOutsideSegment(offset, bank) {
 		offset.Code = fmt.Sprintf("%s.byte $%02x, $%02x", w.options.DirectivePrefix, offset.Data[0], offset.Data[1])
 		if err := w.writeCodeLine(offset); err != nil {
 			return 0, fmt.Errorf("writing cross-segment branch: %w", err)
@@ -450,22 +442,12 @@ func expressionLines(code string, limit int) ([]string, error) {
 	return append(lines, line), nil
 }
 
-func isBranchOutsideSegment(offset program.Offset, bank *program.PRGBank, labels set.Set[string]) bool {
+func isBranchOutsideSegment(offset program.Offset, bank *program.PRGBank) bool {
 	if len(offset.Data) != 2 || offset.Data[0]&0x1F != 0x10 {
 		return false
 	}
-	fields := strings.Fields(offset.Code)
-	if len(fields) != 2 {
-		return false
-	}
-	if strings.HasPrefix(fields[1], "_") {
-		return !labels.Contains(fields[1])
-	}
 
-	var destination uint16
-	if _, err := fmt.Sscanf(fields[1], "$%04X", &destination); err != nil {
-		return false
-	}
+	destination := uint16(int(offset.Address) + len(offset.Data) + int(int8(offset.Data[1])))
 	bankEnd := uint32(bank.BaseAddress) + uint32(len(bank.Offsets))
 	return destination < bank.BaseAddress || uint32(destination) >= bankEnd
 }
