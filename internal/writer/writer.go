@@ -34,6 +34,7 @@ type Options struct {
 	DirectivePrefix             string // nesasm requires a space before a directive
 	LiteralCrossSegmentBranches bool
 	OffsetComments              bool
+	SymbolicLineLimit           int
 }
 
 // New creates a new writer.
@@ -76,16 +77,18 @@ func (w Writer) ProcessPRG(bank *program.PRGBank, endIndex int) error {
 			}
 		}
 
-		if err := w.writeLabel(i, offset); err != nil {
+		if err := w.writePresentation(i, offset, previousLineWasCode); err != nil {
 			return err
 		}
-
-		// print an empty line in case of data after code and vice versa
-		if i > 0 && offset.Label == "" && offset.IsType(program.CodeOffset|program.CodeAsData) != previousLineWasCode {
-			if _, err := fmt.Fprintln(w.writer); err != nil {
-				return fmt.Errorf("writing line: %w", err)
+		if err := w.writeLabel(offset); err != nil {
+			return err
+		}
+		for _, alias := range offset.Aliases {
+			if _, err := fmt.Fprintf(w.writer, "%s:\n", alias); err != nil {
+				return fmt.Errorf("writing alias label: %w", err)
 			}
 		}
+
 		previousLineWasCode = offset.IsType(program.CodeOffset | program.CodeAsData)
 
 		adjustment, err := w.writeOffset(bank, i, endIndex, offset, labels)
@@ -175,12 +178,22 @@ func (w Writer) OutputAliasMap(aliases map[string]uint16) error {
 		return nil
 	}
 	slices.Sort(toEmit)
+	toEmit, headings := w.groupAliases(toEmit)
 
 	if _, err := fmt.Fprintln(w.writer); err != nil {
 		return fmt.Errorf("writing line: %w", err)
 	}
 
-	for _, name := range toEmit {
+	for i, name := range toEmit {
+		if heading := headings[name]; heading != "" {
+			prefix := ""
+			if i > 0 {
+				prefix = "\n"
+			}
+			if _, err := fmt.Fprintf(w.writer, "%s; %s\n", prefix, heading); err != nil {
+				return fmt.Errorf("writing symbol heading: %w", err)
+			}
+		}
 		address := aliases[name]
 		if _, err := fmt.Fprintf(w.writer, "%s = $%04X\n", name, address); err != nil {
 			return fmt.Errorf("writing alias: %w", err)
@@ -214,6 +227,9 @@ func (w Writer) WriteCommentHeader() error {
 func (w Writer) writeOffset(bank *program.PRGBank, index, endIndex int, offset program.Offset,
 	labels set.Set[string]) (int, error) {
 
+	if offset.IsType(program.ExpressionData) {
+		return w.writeExpressionData(offset, endIndex-index)
+	}
 	if offset.IsType(program.CodeOffset) && len(offset.Data) == 0 {
 		return 0, nil
 	}
@@ -248,15 +264,90 @@ func (w Writer) writeOffset(bank *program.PRGBank, index, endIndex int, offset p
 	return len(offset.Data) - 1, nil
 }
 
-func (w Writer) writeLabel(index int, offset program.Offset) error {
-	if offset.Label == "" {
-		return nil
+func (w Writer) writeExpressionData(offset program.Offset, remaining int) (int, error) {
+	if len(offset.Data) == 0 || len(offset.Data) > remaining {
+		return 0, fmt.Errorf("symbolic data at $%04X crosses a bank boundary or is empty", offset.Address)
 	}
+	lines, err := expressionLines(offset.Code, w.options.SymbolicLineLimit)
+	if err != nil {
+		return 0, err
+	}
+	for _, line := range lines {
+		offset.Code = line
+		if err := w.writeCodeLine(offset); err != nil {
+			return 0, fmt.Errorf("writing symbolic data: %w", err)
+		}
+		offset.Comment = ""
+	}
+	return len(offset.Data) - 1, nil
+}
 
-	if index > 0 {
+func (w Writer) groupAliases(names []string) ([]string, map[string]string) {
+	// Configured groups retain profile order, while ungrouped names keep the
+	// sorted input order for deterministic output.
+	remaining := set.NewFromSlice(names)
+	ordered := make([]string, 0, len(names))
+	headings := make(map[string]string)
+	for _, group := range w.app.SymbolGroups {
+		first := true
+		for _, name := range group.Names {
+			if !remaining.Contains(name) {
+				continue
+			}
+			remaining.Remove(name)
+			ordered = append(ordered, name)
+			if first {
+				headings[name] = group.Heading
+				first = false
+			}
+		}
+	}
+	for _, name := range names {
+		if remaining.Contains(name) {
+			if len(ordered) > 0 && len(headings) > 0 {
+				headings[name] = "Other definitions"
+			}
+			break
+		}
+	}
+	for _, name := range names {
+		if remaining.Contains(name) {
+			ordered = append(ordered, name)
+		}
+	}
+	return ordered, headings
+}
+
+func (w Writer) writePresentation(index int, offset program.Offset, previousCode bool) error {
+	// A configured value overrides automatic separation; zero intentionally
+	// keeps adjacent output together.
+	count := 0
+	if index > 0 && (offset.Label != "" || offset.CommentBefore != "" ||
+		offset.IsType(program.CodeOffset|program.CodeAsData) != previousCode) {
+
+		count = 1
+	}
+	if offset.BlankLines != nil {
+		count = *offset.BlankLines
+	}
+	for range count {
 		if _, err := fmt.Fprintln(w.writer); err != nil {
 			return fmt.Errorf("writing line: %w", err)
 		}
+	}
+	if offset.CommentBefore != "" {
+		for _, line := range strings.Split(offset.CommentBefore, `\n`) {
+			if _, err := fmt.Fprintf(w.writer, "; %s\n", line); err != nil {
+				return fmt.Errorf("writing standalone comment: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+func (w Writer) writeLabel(offset program.Offset) error {
+	if offset.Label == "" {
+		return nil
 	}
 
 	if offset.LabelComment == "" {
@@ -327,6 +418,30 @@ func (w Writer) bundlePRGDataWrites(bank *program.PRGBank, startIndex, endIndex 
 
 type lineWriterFunc func(line string, byteCount int) error
 
+func expressionLines(code string, limit int) ([]string, error) {
+	if limit == 0 || len(code) <= limit {
+		return []string{code}, nil
+	}
+	directive, values, _ := strings.Cut(code, " ")
+	prefix := directive + " "
+	line := prefix
+	var lines []string
+	for _, expression := range strings.Split(values, ", ") {
+		if len(prefix)+len(expression) > limit {
+			return nil, fmt.Errorf("symbolic data expression exceeds line limit %d", limit)
+		}
+		if len(line)+len(expression)+2 > limit && line != prefix {
+			lines = append(lines, line)
+			line = prefix
+		}
+		if line != prefix {
+			line += ", "
+		}
+		line += expression
+	}
+	return append(lines, line), nil
+}
+
 func isBranchOutsideSegment(offset program.Offset, bank *program.PRGBank, labels set.Set[string]) bool {
 	if len(offset.Data) != 2 || offset.Data[0]&0x1F != 0x10 {
 		return false
@@ -358,7 +473,9 @@ func getPrgData(bank *program.PRGBank, startIndex, endIndex int) []byte {
 			break
 		}
 		// stop at first label or code after start index
-		if i > startIndex && (offset.IsType(program.CodeOffset|program.CodeAsData) || offset.Label != "") {
+		if i > startIndex && (offset.IsType(program.CodeOffset|program.CodeAsData|program.ExpressionData) ||
+			offset.Label != "" || offset.Comment != "" || offset.CommentBefore != "" || offset.BlankLines != nil) {
+
 			break
 		}
 		// break at potential bank switch, do ignore callback on first iteration as it has been handled

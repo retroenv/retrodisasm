@@ -31,6 +31,7 @@ func New(app *program.Program, options options.Disassembler, mainWriter io.Write
 		DirectivePrefix:             " ",
 		LiteralCrossSegmentBranches: true,
 		OffsetComments:              options.OffsetComments,
+		SymbolicLineLimit:           120,
 	}
 	return FileWriter{
 		app:           app,
@@ -116,6 +117,7 @@ func (f FileWriter) writePRGBank(t prgBankWrite) error {
 		DirectivePrefix:             " ",
 		LiteralCrossSegmentBranches: true,
 		OffsetComments:              f.options.OffsetComments,
+		SymbolicLineLimit:           120,
 	})
 
 	if err := bankW.OutputAliasMap(t.bank.Constants); err != nil {

@@ -24,10 +24,15 @@ type Offset struct {
 	Address           uint16
 	HasAddressComment bool
 
-	Label        string // name of label or subroutine if identified as a jump destination
-	Code         string // asm output of this instruction
-	Comment      string
-	LabelComment string
+	Label   string   // name of label or subroutine if identified as a jump destination
+	Aliases []string // additional names at the same ROM address
+	Code    string   // asm output of this instruction
+
+	Comment       string
+	CommentBefore string
+	LabelComment  string
+
+	BlankLines *int // nil selects automatic spacing; zero suppresses it.
 }
 
 // Handlers defines the handlers that the system can jump to.
@@ -65,6 +70,14 @@ type Program struct {
 	// how to output them
 	Constants map[string]uint16
 	Variables map[string]uint16
+
+	SymbolGroups []SymbolGroup
+}
+
+// SymbolGroup preserves the presentation order of related definitions.
+type SymbolGroup struct {
+	Heading string
+	Names   []string
 }
 
 // New creates a new program initialize with a program code size.

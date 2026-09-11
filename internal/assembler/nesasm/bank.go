@@ -93,7 +93,7 @@ func setPrgBankSelector(prg []program.Offset, index int, bankAddress, bankNumber
 			offsetInfo = &prg[instructionStartIndex+i]
 			offsetInfo.Data = data[i : i+1]
 			// Structured-reference types take precedence over DataOffset in the shared writer.
-			offsetInfo.ClearType(program.CodeOffset | program.FunctionReference | program.JumpTable)
+			offsetInfo.ClearType(program.CodeOffset | program.FunctionReference | program.JumpTable | program.ExpressionData)
 			offsetInfo.SetType(program.CodeAsData | program.DataOffset)
 		}
 		offsetInfo = &prg[index]

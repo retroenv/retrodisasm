@@ -52,12 +52,13 @@ func (bank PRGBank) LastNonZeroByte(options options.Disassembler) int {
 		// Skip zero bytes that are not code instructions and have no label
 		// BRK instruction (0x00) should be included if it's marked as CodeOffset
 		isZeroByte := len(offset.Data) == 0 || offset.Data[0] == 0
-		isCodeOrHasLabel := offset.IsType(CodeOffset|CodeAsData) || offset.Label != ""
+		isCodeOrHasLabel := offset.IsType(CodeOffset|CodeAsData|ExpressionData) || offset.Label != "" ||
+			offset.Comment != "" || offset.CommentBefore != "" || offset.BlankLines != nil
 
 		if isZeroByte && !isCodeOrHasLabel {
 			continue
 		}
-		return i + 1
+		return min(i+max(1, len(offset.Data)), endIndex)
 	}
 
 	return endIndex

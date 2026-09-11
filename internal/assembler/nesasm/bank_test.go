@@ -42,3 +42,16 @@ func TestSetPrgBankSelectorSplitsCodeAsData(t *testing.T) {
 	assert.Equal(t, []byte{0xff}, prg[2].Data)
 	assert.NotNil(t, prg[1].WriteCallback)
 }
+
+func TestSetPrgBankSelectorSplitsExpressionData(t *testing.T) {
+	// Keeping ExpressionData on a split record emitted the full expression twice.
+	prg := make([]program.Offset, 2)
+	prg[0] = program.Offset{Data: []byte{0, 0x80}, Type: program.DataOffset | program.ExpressionData, Code: ".word Entry"}
+	bankAddress, bankNumber := 0xA000, 1
+	setPrgBankSelector(prg, 1, &bankAddress, &bankNumber)
+	assert.False(t, prg[0].IsType(program.ExpressionData))
+	assert.False(t, prg[1].IsType(program.ExpressionData))
+	assert.Equal(t, []byte{0}, prg[0].Data)
+	assert.Equal(t, []byte{0x80}, prg[1].Data)
+	assert.NotNil(t, prg[1].WriteCallback)
+}

@@ -6,7 +6,7 @@ import (
 )
 
 // OffsetType defines the type of a program offset.
-type OffsetType uint8
+type OffsetType uint16
 
 // addressing modes.
 const (
@@ -18,6 +18,7 @@ const (
 	JumpEngine
 	JumpTable
 	FunctionReference // reference to a function
+	ExpressionData    // data emitted with validated symbolic byte/word expressions
 )
 
 // IsType returns whether the offset is of given type.

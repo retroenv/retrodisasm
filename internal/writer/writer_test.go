@@ -120,6 +120,58 @@ func TestProcessPRGWritesLiteralBranchOutsideSegmentAsBytes(t *testing.T) {
 	assert.Equal(t, "  .byte $30, $80\n", buf.String())
 }
 
+func TestGetPrgDataStopsAtComment(t *testing.T) {
+	// Bundling through an annotated byte used to discard its comment.
+	bank := program.NewPRGBank(3)
+	for i := range bank.Offsets {
+		bank.Offsets[i] = program.Offset{Data: []byte{byte(i)}, Type: program.DataOffset}
+	}
+	bank.Offsets[1].Comment = "Middle byte"
+	assert.Equal(t, []byte{0}, getPrgData(bank, 0, 3))
+	assert.Equal(t, []byte{1, 2}, getPrgData(bank, 1, 3))
+}
+
+func TestPresentationSpacing(t *testing.T) {
+	for _, count := range []int{-1, 0, 2} {
+		bank := program.NewPRGBank(2)
+		bank.Offsets[0] = program.Offset{Data: []byte{0x60}, Code: "rts", Type: program.CodeOffset}
+		bank.Offsets[1] = program.Offset{Data: []byte{1}, Type: program.DataOffset, Label: "Table", CommentBefore: `Heading\nDetails`}
+		want := 1
+		if count >= 0 {
+			bank.Offsets[1].BlankLines = &count
+			want = count
+		}
+		var buf bytes.Buffer
+		wr := New(&program.Program{}, &buf, Options{})
+		assert.NoError(t, wr.ProcessPRG(bank, 2))
+		assert.True(t, strings.Contains(buf.String(), "rts\n"+strings.Repeat("\n", want)+"; Heading\n; Details\nTable:\n"))
+	}
+}
+
+func TestGetPrgDataStopsAtPresentation(t *testing.T) {
+	for _, withComment := range []bool{false, true} {
+		bank := program.NewPRGBank(2)
+		bank.Offsets[0] = program.Offset{Data: []byte{1}, Type: program.DataOffset}
+		bank.Offsets[1] = program.Offset{Data: []byte{2}, Type: program.DataOffset}
+		if withComment {
+			bank.Offsets[1].CommentBefore = "Table"
+		} else {
+			count := 0
+			bank.Offsets[1].BlankLines = &count
+		}
+		assert.Equal(t, []byte{1}, getPrgData(bank, 0, 2))
+	}
+}
+
+func TestExpressionLines(t *testing.T) {
+	// NESASM truncates long input lines, so split only between complete expressions.
+	lines, err := expressionLines(".byte HIGH(TableA), HIGH(TableB), HIGH(TableC)", 34)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{".byte HIGH(TableA), HIGH(TableB)", ".byte HIGH(TableC)"}, lines)
+	_, err = expressionLines(".byte HIGH(TableA)", 10)
+	assert.Error(t, err)
+}
+
 func TestGetPrgDataStopsAtBankEnd(t *testing.T) {
 	bank := program.NewPRGBank(3)
 	bank.Offsets[0] = program.Offset{
