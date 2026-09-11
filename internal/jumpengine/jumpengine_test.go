@@ -8,10 +8,31 @@ import (
 	"github.com/retroenv/retrogolib/log"
 )
 
+func TestProcessJumpEngineEntryRespectsConfigHints(t *testing.T) {
+	// Explicit byte/code annotations must prevent heuristic pointer-table ownership.
+	for _, hint := range []program.OffsetType{program.CodeOffset, program.DataOffset} {
+		for _, address := range []uint16{0x8010, 0x8011} {
+			mapper := newMockMapper()
+			dis := newMockDisasm()
+			dis.Memory[0x8010], dis.Memory[0x8011] = 0x01, 0x80
+			mapper.OffsetInfo(address).CodeHint = hint
+			je := New(log.NewTestLogger(t), &mockArchitecture{})
+			je.InjectDependencies(Dependencies{Disasm: dis, Mapper: mapper})
+			caller := &jumpEngineCaller{}
+
+			found, err := je.processJumpEngineEntry(0x8010, caller, 0x8000)
+			assert.NoError(t, err)
+			assert.False(t, found)
+			assert.True(t, caller.terminated)
+			assert.False(t, mapper.OffsetInfo(0x8010).IsType(program.FunctionReference))
+		}
+	}
+}
+
 func TestProcessJumpEngineEntryStopsAtCompositeCodeOffset(t *testing.T) {
 	logger := log.NewTestLogger(t)
 	mapper := newMockMapper()
-	dis := newMockDisasm(0x10000)
+	dis := newMockDisasm()
 	dis.Memory[0x8010] = 0x01
 	dis.Memory[0x8011] = 0x80
 	mapper.OffsetInfo(0x8011).SetType(program.CodeOffset | program.CallDestination)
@@ -34,7 +55,7 @@ func TestScanForNewJumpEngineEntry_MultipleTerminated(t *testing.T) {
 	logger := log.NewTestLogger(t)
 	ar := &mockArchitecture{}
 	mapper := newMockMapper()
-	dis := newMockDisasm(0x10000)
+	dis := newMockDisasm()
 	je := New(logger, ar)
 	je.InjectDependencies(Dependencies{
 		Disasm: dis,
@@ -72,7 +93,7 @@ func TestScanForNewJumpEngineEntry_MixedTerminated(t *testing.T) {
 	logger := log.NewTestLogger(t)
 	ar := &mockArchitecture{}
 	mapper := newMockMapper()
-	dis := newMockDisasm(0x10000)
+	dis := newMockDisasm()
 
 	// Set up memory with a valid function reference
 	dis.Memory[0x8030] = 0x00 // Low byte

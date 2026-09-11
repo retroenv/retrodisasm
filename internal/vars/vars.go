@@ -58,6 +58,8 @@ type Vars struct {
 
 	arch   architecture
 	mapper mapper
+
+	reservedNames map[uint16]string
 }
 
 // New creates a new variables manager.
@@ -71,6 +73,11 @@ func New(arch architecture) *Vars {
 // InjectDependencies sets the required dependencies for this vars manager.
 func (v *Vars) InjectDependencies(deps Dependencies) {
 	v.mapper = deps.Mapper
+}
+
+// AssignNames supplies explicit names, including variables used only once.
+func (v *Vars) AssignNames(names map[uint16]string) {
+	v.reservedNames = names
 }
 
 // AddReference adds a variable reference if the opcode is accessing
@@ -125,7 +132,9 @@ func (v *Vars) Process(codeBaseAddress uint16) error {
 	variables := v.SortedByUint16(func(v *variable) uint16 { return v.address })
 
 	for _, varInfo := range variables {
-		if len(varInfo.usageAt) == 1 && !varInfo.indexedUsage && varInfo.address < nes.CodeBaseAddress {
+		if len(varInfo.usageAt) == 1 && !varInfo.indexedUsage && varInfo.address < nes.CodeBaseAddress &&
+			v.reservedNames[varInfo.address] == "" {
+
 			if !varInfo.reads || !varInfo.writes {
 				continue // ignore only once usages or ones that are not read and write
 			}
@@ -218,6 +227,10 @@ func (v *Vars) dataName(offsetInfo *offset.DisasmOffset, indexedUsage bool, addr
 }
 
 func (v *Vars) generateVariableName(offsetInfo *offset.DisasmOffset, indexedUsage bool, address uint16) string {
+	if name := v.reservedNames[address]; name != "" {
+		return name
+	}
+
 	if offsetInfo != nil && offsetInfo.Label != "" {
 		// if destination has an existing label, reuse it
 		return offsetInfo.Label

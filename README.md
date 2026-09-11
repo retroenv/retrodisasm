@@ -67,6 +67,14 @@ Export CHR-ROM to a separate file referenced by the generated assembly:
 retrodisasm -chr -o output.asm input.nes
 ```
 
+Apply shared game annotations for names, comments and code/data hints:
+
+```bash
+retrodisasm -annotations game.ini -o output.asm input.nes
+```
+
+See the [annotation guide](docs/annotations.md) for the file format.
+
 Example output (NES):
 ```asm
 Reset:

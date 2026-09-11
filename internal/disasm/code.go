@@ -37,7 +37,7 @@ func (dis *Disasm) processJumpDestinations() {
 		if offsetInfo.IsType(program.CodeOffset|program.CodeAsData|program.FunctionReference) &&
 			len(offsetInfo.Data) == 0 {
 
-			dis.handleJumpIntoInstruction(address)
+			dis.splitInstructionAt(address, "branch into instruction detected")
 		}
 
 		for _, bankRef := range offsetInfo.BranchFrom {
@@ -53,9 +53,9 @@ func (dis *Disasm) processJumpDestinations() {
 	}
 }
 
-// handleJumpIntoInstruction converts an instruction that has a jump destination label inside
-// its second or third opcode bytes into data.
-func (dis *Disasm) handleJumpIntoInstruction(address uint16) {
+// splitInstructionAt converts an instruction that owns address into data bytes.
+// reason explains why it must be split; annotations do not require a diagnostic.
+func (dis *Disasm) splitInstructionAt(address uint16, reason string) {
 	// look backwards for instruction start
 	address--
 
@@ -66,9 +66,18 @@ func (dis *Disasm) handleJumpIntoInstruction(address uint16) {
 
 	offsetInfo := dis.mapper.OffsetInfo(address)
 	if offsetInfo.Code == "" { // disambiguous instruction
-		offsetInfo.Comment = "branch into instruction detected: " + offsetInfo.Comment
+		if reason != "" {
+			offsetInfo.Comment = reason + ": " + offsetInfo.Comment
+		}
 	} else {
-		offsetInfo.Comment = "branch into instruction detected: " + offsetInfo.Code
+		comment := offsetInfo.Code
+		if reason != "" {
+			comment = reason + ": " + comment
+		}
+		if offsetInfo.Comment != "" {
+			comment += " | " + offsetInfo.Comment
+		}
+		offsetInfo.Comment = comment
 		offsetInfo.Code = ""
 	}
 

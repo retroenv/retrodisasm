@@ -49,7 +49,9 @@ func (ar *Arch6502) initializeOffsetInfo(offsetInfo *offset.DisasmOffset) (bool,
 	// unofficial instruction that we didn't explicitly branch to, treat it
 	// as data instead of code and stop tracing.
 	opts := ar.dis.Options()
-	if opts.StopAtUnofficial && isUnofficialInstruction(opcode.Instruction) && !ar.dis.IsBranchDestination(pc) {
+	if opts.StopAtUnofficial && isUnofficialInstruction(opcode.Instruction) && !ar.dis.IsBranchDestination(pc) &&
+		offsetInfo.CodeHint != program.CodeOffset {
+
 		offsetInfo.SetType(program.DataOffset)
 		return false, nil
 	}
@@ -149,7 +151,7 @@ func (ar *Arch6502) replaceParamByAlias(address uint16, opcode instruction.Opcod
 // Only marks bytes that have not already been classified as code.
 func (ar *Arch6502) markIndexedReferenceAsData(address uint16) {
 	offsetInfo := ar.mapper.OffsetInfo(address)
-	if offsetInfo == nil || offsetInfo.IsType(program.CodeOffset) {
+	if offsetInfo == nil || offsetInfo.IsType(program.CodeOffset) || offsetInfo.CodeHint == program.CodeOffset {
 		return
 	}
 	offsetInfo.SetType(program.DataOffset)

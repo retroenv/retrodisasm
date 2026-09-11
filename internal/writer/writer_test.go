@@ -89,18 +89,22 @@ func TestBundleAddressedDataWrites(t *testing.T) {
 }
 
 func TestProcessPRGWritesCrossSegmentBranchAsBytes(t *testing.T) {
+	// A configured label does not reveal whether a relative branch is local.
+	// The encoded displacement must choose literal output at a segment boundary.
 	var buf bytes.Buffer
 	bank := program.NewPRGBank(2)
+	bank.BaseAddress = 0x8000
 	bank.Offsets[0] = program.Offset{
-		Data: []byte{0xD0, 0x2E},
-		Type: program.CodeOffset,
-		Code: "bne _label_c010",
+		Address: 0x8000,
+		Data:    []byte{0xD0, 0x7F},
+		Type:    program.CodeOffset,
+		Code:    "bne Target",
 	}
 	w := New(&program.Program{}, &buf, Options{LiteralCrossSegmentBranches: true})
 
 	assert.NoError(t, w.ProcessPRG(bank, 2))
 
-	assert.Equal(t, "  .byte $d0, $2e\n", buf.String())
+	assert.Equal(t, "  .byte $d0, $7f\n", buf.String())
 }
 
 func TestProcessPRGWritesLiteralBranchOutsideSegmentAsBytes(t *testing.T) {
@@ -170,6 +174,21 @@ func TestExpressionLines(t *testing.T) {
 	assert.Equal(t, []string{".byte HIGH(TableA), HIGH(TableB)", ".byte HIGH(TableC)"}, lines)
 	_, err = expressionLines(".byte HIGH(TableA)", 10)
 	assert.Error(t, err)
+}
+
+func TestProcessPRGWritesAddressForExpressionData(t *testing.T) {
+	// Symbolic data bypasses normal data bundling, which must not drop its address.
+	bank := program.NewPRGBank(4)
+	bank.Offsets[0] = program.Offset{
+		Address: 0x8b10,
+		Code:    ".byte $24, $24, $24, $24",
+		Data:    []byte{0x24, 0x24, 0x24, 0x24},
+		Type:    program.DataOffset | program.ExpressionData,
+	}
+	var buf bytes.Buffer
+	w := New(&program.Program{}, &buf, Options{OffsetComments: true})
+	assert.NoError(t, w.ProcessPRG(bank, 4))
+	assert.Equal(t, "  .byte $24, $24, $24, $24       ; $8B10\n", buf.String())
 }
 
 func TestGetPrgDataStopsAtBankEnd(t *testing.T) {

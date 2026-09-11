@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+Added:
+
+* add `-annotations` support for labels, variables, comments, code/data ranges, and ROM checksum validation
+* add symbolic operands, byte/word tables, custom spacing, standalone comments, and grouped definitions to annotation files
+
 Changed:
 
 * require Go 1.25 or newer when installing from source

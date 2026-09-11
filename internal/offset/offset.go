@@ -18,6 +18,8 @@ type DisasmOffset struct {
 	BranchFrom  []BankReference // list of all addresses that branch to this offset
 	BranchingTo string          // label to jump to if instruction branches
 	Context     uint16          // function or interrupt context that the offset is part of
+
+	CodeHint program.OffsetType // Explicit annotation code/data classification.
 }
 
 // MappedBank represents a mapped memory bank.

@@ -51,9 +51,9 @@ type mockDisasm struct {
 	Memory []byte
 }
 
-func newMockDisasm(memorySize int) *mockDisasm {
+func newMockDisasm() *mockDisasm {
 	return &mockDisasm{
-		Memory: make([]byte, memorySize),
+		Memory: make([]byte, 0x10000),
 	}
 }
 
