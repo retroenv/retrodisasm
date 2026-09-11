@@ -296,7 +296,8 @@ func (j *JumpEngine) processJumpEngineEntry(address uint16, jumpEngine *jumpEngi
 
 	// if the potential jump table entry is already marked as code, the table end is reached
 	if offsetInfo1.IsType(program.CodeOffset|program.CodeAsData) ||
-		offsetInfo2.IsType(program.CodeOffset|program.CodeAsData) {
+		offsetInfo2.IsType(program.CodeOffset|program.CodeAsData) ||
+		offsetInfo1.CodeHint != program.UnknownOffset || offsetInfo2.CodeHint != program.UnknownOffset {
 
 		jumpEngine.terminated = true
 		return false, nil

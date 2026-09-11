@@ -91,7 +91,17 @@ ca65 linker configuration file path.
 retrodisasm -c custom.cfg -o output.asm input.nes
 ```
 
+#### `-annotations string`
+
+Load ROM names, comments, code/data ranges and optional checksum validation from
+an annotations file. See the [annotation guide](annotations.md).
+
+```bash
+retrodisasm -annotations game.ini -o output.asm input.nes
+```
+
 #### `-cdl string`
+
 Code/Data Log file (.cdl) from emulators like FCEUX or Mesen.
 ```bash
 retrodisasm -cdl game.cdl -o output.asm input.nes

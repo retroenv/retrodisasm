@@ -172,6 +172,21 @@ func TestExpressionLines(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestProcessPRGWritesAddressForExpressionData(t *testing.T) {
+	// Symbolic data bypasses normal data bundling, which must not drop its address.
+	bank := program.NewPRGBank(4)
+	bank.Offsets[0] = program.Offset{
+		Address: 0x8b10,
+		Code:    ".byte $24, $24, $24, $24",
+		Data:    []byte{0x24, 0x24, 0x24, 0x24},
+		Type:    program.DataOffset | program.ExpressionData,
+	}
+	var buf bytes.Buffer
+	w := New(&program.Program{}, &buf, Options{OffsetComments: true})
+	assert.NoError(t, w.ProcessPRG(bank, 4))
+	assert.Equal(t, "  .byte $24, $24, $24, $24       ; $8B10\n", buf.String())
+}
+
 func TestGetPrgDataStopsAtBankEnd(t *testing.T) {
 	bank := program.NewPRGBank(3)
 	bank.Offsets[0] = program.Offset{

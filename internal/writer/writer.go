@@ -268,6 +268,14 @@ func (w Writer) writeExpressionData(offset program.Offset, remaining int) (int, 
 	if len(offset.Data) == 0 || len(offset.Data) > remaining {
 		return 0, fmt.Errorf("symbolic data at $%04X crosses a bank boundary or is empty", offset.Address)
 	}
+	if w.options.OffsetComments && !offset.HasAddressComment {
+		address := fmt.Sprintf("$%04X", offset.Address)
+		if offset.Comment == "" {
+			offset.Comment = address
+		} else {
+			offset.Comment = address + "  " + offset.Comment
+		}
+	}
 	lines, err := expressionLines(offset.Code, w.options.SymbolicLineLimit)
 	if err != nil {
 		return 0, err

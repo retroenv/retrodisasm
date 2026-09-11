@@ -113,6 +113,9 @@ func (dis *Disasm) followExecutionFlow(ctx context.Context) error {
 
 		dis.pc = address
 		offsetInfo := dis.mapper.OffsetInfo(dis.pc)
+		if offsetInfo.CodeHint == program.DataOffset {
+			continue
+		}
 
 		inspectCode, err := dis.arch.ProcessOffset(address, offsetInfo)
 		if err != nil {
@@ -120,6 +123,9 @@ func (dis *Disasm) followExecutionFlow(ctx context.Context) error {
 		}
 		if !inspectCode {
 			continue
+		}
+		if err := dis.validateInstructionHints(address, offsetInfo); err != nil {
+			return err
 		}
 
 		dis.checkInstructionOverlap(address, offsetInfo)

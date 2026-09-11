@@ -13,7 +13,9 @@ func (dis *Disasm) ChangeAddressRangeToCodeAsData(address uint16, data []byte) {
 		noLabelOffsets := 1
 		for j := i + 1; j < len(data); j++ {
 			offsetInfoNext := dis.mapper.OffsetInfo(address + uint16(j))
-			if offsetInfoNext.Label == "" {
+			if offsetInfoNext.Label == "" && offsetInfoNext.Comment == "" &&
+				offsetInfoNext.CommentBefore == "" && offsetInfoNext.BlankLines == nil {
+
 				offsetInfoNext.Data = nil
 				offsetInfoNext.SetType(program.CodeAsData | program.DataOffset)
 				noLabelOffsets++

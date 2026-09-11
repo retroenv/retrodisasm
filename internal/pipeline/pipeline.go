@@ -161,6 +161,11 @@ func (p *Pipeline) createDisassembler(opts options.Program, disasmOpts options.D
 	if err != nil {
 		return nil, fmt.Errorf("creating disassembler: %w", err)
 	}
+	if opts.Annotations != "" {
+		if err := dis.ApplyAnnotations(opts.Annotations); err != nil {
+			return nil, fmt.Errorf("applying annotations: %w", err)
+		}
+	}
 	return dis, nil
 }
 

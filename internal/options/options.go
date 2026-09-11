@@ -21,9 +21,12 @@ type Parameters struct {
 	Input       string `flag:"i" usage:"input ROM file"`
 	Output      string `flag:"o" usage:"output .asm file (default: <input>.asm, use - for stdout)"`
 	CHRFilename string `flag:"chr" usage:"export CHR-ROM (default: <output>.chr; custom: -chr=<file>)"`
+
 	Config      string `flag:"c" usage:"ca65 linker config file"`
+	Annotations string `flag:"annotations" usage:"ROM annotations file: names, comments, code/data ranges"`
 	CodeDataLog string `flag:"cdl" usage:"Code/Data log file (.cdl)"`
-	Batch       string `flag:"batch" usage:"batch process files matching pattern (e.g. *.nes)"`
+
+	Batch string `flag:"batch" usage:"batch process files matching pattern (e.g. *.nes)"`
 }
 
 // Flags contains behavior options.

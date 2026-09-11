@@ -68,7 +68,11 @@ func (dis *Disasm) handleJumpIntoInstruction(address uint16) {
 	if offsetInfo.Code == "" { // disambiguous instruction
 		offsetInfo.Comment = "branch into instruction detected: " + offsetInfo.Comment
 	} else {
-		offsetInfo.Comment = "branch into instruction detected: " + offsetInfo.Code
+		comment := "branch into instruction detected: " + offsetInfo.Code
+		if offsetInfo.Comment != "" {
+			comment += " | " + offsetInfo.Comment
+		}
+		offsetInfo.Comment = comment
 		offsetInfo.Code = ""
 	}
 

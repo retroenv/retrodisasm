@@ -8,6 +8,26 @@ import (
 	"github.com/retroenv/retrogolib/assert"
 )
 
+func TestParseFlags_AnnotationsAndLinkerConfig(t *testing.T) {
+	oldArgs := os.Args
+	t.Cleanup(func() { os.Args = oldArgs })
+	os.Args = []string{"retrodisasm", "-annotations", "game.ini", "-c", "linker.cfg", "game.nes"}
+
+	opts, _, err := ParseFlags()
+	assert.NoError(t, err)
+	assert.Equal(t, "game.ini", opts.Annotations)
+	assert.Equal(t, "linker.cfg", opts.Config)
+}
+
+func TestParseFlagsRejectsINI(t *testing.T) {
+	oldArgs := os.Args
+	t.Cleanup(func() { os.Args = oldArgs })
+	os.Args = []string{"retrodisasm", "-ini", "game.ini", "game.nes"}
+
+	_, _, err := ParseFlags()
+	assert.Error(t, err)
+}
+
 func TestParseFlags_DisasmOptions(t *testing.T) {
 	tests := []struct {
 		name string

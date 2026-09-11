@@ -17,6 +17,7 @@ import (
 	"github.com/retroenv/retrodisasm/internal/offset"
 	"github.com/retroenv/retrodisasm/internal/options"
 	"github.com/retroenv/retrodisasm/internal/program"
+	"github.com/retroenv/retrodisasm/internal/romconfig"
 	"github.com/retroenv/retrodisasm/internal/vars"
 	"github.com/retroenv/retrodisasm/internal/writer"
 	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
@@ -66,7 +67,9 @@ type Disasm struct {
 
 	pc uint16 // program counter
 
-	cart                  *cartridge.Cartridge
+	cart   *cartridge.Cartridge
+	config *romconfig.Config
+
 	fileWriterConstructor FileWriterConstructor
 	handlers              program.Handlers
 
@@ -133,6 +136,9 @@ func (dis *Disasm) Process(ctx context.Context, mainWriter io.Writer, newBankWri
 	if err := dis.followExecutionFlow(ctx); err != nil {
 		return nil, err
 	}
+	if err := dis.traceConfiguredCode(ctx); err != nil {
+		return nil, err
+	}
 
 	// Post-process architecture-specific patterns after all branch destinations are known
 	if err := dis.arch.PostProcessCode(); err != nil {
@@ -140,15 +146,31 @@ func (dis *Disasm) Process(ctx context.Context, mainWriter io.Writer, newBankWri
 	}
 
 	dis.mapper.ClassifyRemainingAsData()
+	dis.applyAnnotations()
 	if err := dis.vars.Process(dis.codeBaseAddress); err != nil {
 		return nil, fmt.Errorf("processing variables: %w", err)
 	}
 	dis.constants.Process()
 	dis.processJumpDestinations()
+	if err := dis.applyConfiguredOperands(); err != nil {
+		return nil, err
+	}
+	if err := dis.applyConfiguredData(); err != nil {
+		return nil, err
+	}
 
 	app, err := dis.convertToProgram()
 	if err != nil {
 		return nil, err
+	}
+	if dis.config != nil {
+		if err := dis.assignConfiguredSymbols(app); err != nil {
+			return nil, err
+		}
+		dis.pruneUnusedConfigSymbols(app)
+		if err := validateConfiguredSymbols(app); err != nil {
+			return nil, err
+		}
 	}
 	fileWriter := dis.fileWriterConstructor(app, dis.options, mainWriter, newBankWriter)
 	if err = fileWriter.Write(); err != nil {
