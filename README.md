@@ -73,7 +73,8 @@ Apply shared game annotations for names, comments and code/data hints:
 retrodisasm -annotations game.ini -o output.asm input.nes
 ```
 
-See the [annotation guide](docs/annotations.md) for the file format.
+See the [annotation guide](docs/annotations.md) for the file format and browse
+community-maintained profiles in [disasmdb](https://github.com/retroenv/disasmdb).
 
 Example output (NES):
 ```asm
