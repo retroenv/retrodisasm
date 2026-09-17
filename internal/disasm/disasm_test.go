@@ -776,7 +776,9 @@ func trimStringList(s string) string {
 	return s
 }
 
-func runDisasm(t *testing.T, setup func(options *options.Disassembler, cart *cartridge.Cartridge), input []byte, expected string) {
+func runDisasm(t *testing.T, setup func(options *options.Disassembler, cart *cartridge.Cartridge), input []byte,
+	expected string) {
+
 	t.Helper()
 
 	opts := options.NewDisassembler(assembler.Ca65, arch.NES.String())

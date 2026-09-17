@@ -221,13 +221,17 @@ func TestSetToProgram(t *testing.T) {
 	})
 }
 
+//nolint:funlen // The subtests document the complete bank assignment behavior together.
 func TestAssignBankVariables(t *testing.T) {
 	t.Run("assigns single variable", func(t *testing.T) {
 		vars := New(&mockArch{})
 		vars.AddBank()
 		bank := vars.Bank(0)
 
-		varInfo := &variable{address: 0x0010, name: "_var_0010"}
+		varInfo := &variable{
+			address: 0x0010,
+			name:    "_var_0010",
+		}
 		bank.Set(0x0010, varInfo)
 		bank.Used().Add(0x0010)
 
@@ -252,9 +256,18 @@ func TestAssignBankVariables(t *testing.T) {
 		vars.AddBank()
 		bank := vars.Bank(0)
 
-		var1 := &variable{address: 0x0010, name: "_var_0010"}
-		var2 := &variable{address: 0x0020, name: "_var_0020"}
-		var3 := &variable{address: 0x0030, name: "_var_0030"}
+		var1 := &variable{
+			address: 0x0010,
+			name:    "_var_0010",
+		}
+		var2 := &variable{
+			address: 0x0020,
+			name:    "_var_0020",
+		}
+		var3 := &variable{
+			address: 0x0030,
+			name:    "_var_0030",
+		}
 
 		bank.Set(0x0010, var1)
 		bank.Set(0x0020, var2)
@@ -277,7 +290,10 @@ func TestAddUsage(t *testing.T) {
 	vars := New(&mockArch{})
 	vars.AddBank()
 
-	varInfo := &variable{address: 0x0010, name: "_var_0010"}
+	varInfo := &variable{
+		address: 0x0010,
+		name:    "_var_0010",
+	}
 	vars.AddUsage(0, varInfo)
 
 	bank := vars.Bank(0)

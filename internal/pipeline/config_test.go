@@ -25,7 +25,10 @@ func TestExecuteWithAnnotations(t *testing.T) {
 			cart.PRG[0], cart.PRG[0x7ffd] = 0x60, 0x80
 			opts := options.Program{
 				Parameters: options.Parameters{Annotations: filename},
-				Flags:      options.Flags{Assembler: format, Quiet: true},
+				Flags: options.Flags{
+					Assembler: format,
+					Quiet:     true,
+				},
 			}
 			var output bytes.Buffer
 			pipe := New(log.NewTestLogger(t))
@@ -46,7 +49,10 @@ func TestExecuteWithAnnotationsChecksumFailure(t *testing.T) {
 	assert.NoError(t, os.WriteFile(filename, []byte("[rom]\nprg_crc32=00000000"), 0o600))
 	opts := options.Program{
 		Parameters: options.Parameters{Annotations: filename},
-		Flags:      options.Flags{Assembler: "ca65", Quiet: true},
+		Flags: options.Flags{
+			Assembler: "ca65",
+			Quiet:     true,
+		},
 	}
 	var output bytes.Buffer
 	pipe := New(log.NewTestLogger(t))

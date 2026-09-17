@@ -82,8 +82,11 @@ func TestLoad(t *testing.T) {
 
 		loader := New()
 		opts := options.Program{
-			Parameters: options.Parameters{Input: tmpFile, CodeDataLog: tmpCDL},
-			Flags:      options.Flags{Binary: true},
+			Parameters: options.Parameters{
+				Input:       tmpFile,
+				CodeDataLog: tmpCDL,
+			},
+			Flags: options.Flags{Binary: true},
 		}
 
 		cart, cdlReader, err := loader.Load(opts, arch.NES)
@@ -99,8 +102,11 @@ func TestLoad(t *testing.T) {
 
 		loader := New()
 		opts := options.Program{
-			Parameters: options.Parameters{Input: tmpFile, CodeDataLog: "/nonexistent/cdl.log"},
-			Flags:      options.Flags{Binary: true},
+			Parameters: options.Parameters{
+				Input:       tmpFile,
+				CodeDataLog: "/nonexistent/cdl.log",
+			},
+			Flags: options.Flags{Binary: true},
 		}
 
 		_, _, err := loader.Load(opts, arch.NES)

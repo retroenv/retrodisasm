@@ -219,7 +219,9 @@ func (c *Chip8) formatOffsetCode(offsetInfo *offset.DisasmOffset, instruction in
 }
 
 // handleControlFlow processes control flow based on instruction type
-func (c *Chip8) handleControlFlow(address uint16, offsetInfo *offset.DisasmOffset, instruction instruction.Instruction, instr Instruction) {
+func (c *Chip8) handleControlFlow(address uint16, offsetInfo *offset.DisasmOffset, instruction instruction.Instruction,
+	instr Instruction) {
+
 	pc := c.dis.ProgramCounter()
 
 	switch {
@@ -251,7 +253,9 @@ func (c *Chip8) handleControlFlow(address uint16, offsetInfo *offset.DisasmOffse
 }
 
 // handleDataReference processes data reference instructions
-func (c *Chip8) handleDataReference(address uint16, offsetInfo *offset.DisasmOffset, instruction instruction.Instruction, pc uint16) {
+func (c *Chip8) handleDataReference(address uint16, offsetInfo *offset.DisasmOffset,
+	instruction instruction.Instruction, pc uint16) {
+
 	if target, ok := c.extractTargetAddressInROM(offsetInfo.Data); ok {
 		c.dis.AddAddressToParse(target, offsetInfo.Context, address, instruction, true)
 		targetInfo := c.mapper.OffsetInfo(target)

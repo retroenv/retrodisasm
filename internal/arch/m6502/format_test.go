@@ -27,7 +27,10 @@ func TestApplyOperand(t *testing.T) {
 		{[]byte{0xa9, 0x10}, "<Table+1", 0x10, "lda #<(Table+1)"},
 	} {
 		info := &offset.DisasmOffset{
-			Offset: program.Offset{Data: test.data, Type: program.CodeOffset},
+			Offset: program.Offset{
+				Data: test.data,
+				Type: program.CodeOffset,
+			},
 			Opcode: &Opcode{op: cpu6502.Opcodes[test.data[0]]},
 		}
 		assert.NoError(t, ar.ApplyOperand(0x8000, info, test.expression, test.value))

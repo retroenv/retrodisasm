@@ -128,7 +128,10 @@ func TestGetPrgDataStopsAtComment(t *testing.T) {
 	// Bundling through an annotated byte used to discard its comment.
 	bank := program.NewPRGBank(3)
 	for i := range bank.Offsets {
-		bank.Offsets[i] = program.Offset{Data: []byte{byte(i)}, Type: program.DataOffset}
+		bank.Offsets[i] = program.Offset{
+			Data: []byte{byte(i)},
+			Type: program.DataOffset,
+		}
 	}
 	bank.Offsets[1].Comment = "Middle byte"
 	assert.Equal(t, []byte{0}, getPrgData(bank, 0, 3))
@@ -138,8 +141,17 @@ func TestGetPrgDataStopsAtComment(t *testing.T) {
 func TestPresentationSpacing(t *testing.T) {
 	for _, count := range []int{-1, 0, 2} {
 		bank := program.NewPRGBank(2)
-		bank.Offsets[0] = program.Offset{Data: []byte{0x60}, Code: "rts", Type: program.CodeOffset}
-		bank.Offsets[1] = program.Offset{Data: []byte{1}, Type: program.DataOffset, Label: "Table", CommentBefore: `Heading\nDetails`}
+		bank.Offsets[0] = program.Offset{
+			Data: []byte{0x60},
+			Code: "rts",
+			Type: program.CodeOffset,
+		}
+		bank.Offsets[1] = program.Offset{
+			Data:          []byte{1},
+			Type:          program.DataOffset,
+			Label:         "Table",
+			CommentBefore: `Heading\nDetails`,
+		}
 		want := 1
 		if count >= 0 {
 			bank.Offsets[1].BlankLines = &count
@@ -155,8 +167,14 @@ func TestPresentationSpacing(t *testing.T) {
 func TestGetPrgDataStopsAtPresentation(t *testing.T) {
 	for _, withComment := range []bool{false, true} {
 		bank := program.NewPRGBank(2)
-		bank.Offsets[0] = program.Offset{Data: []byte{1}, Type: program.DataOffset}
-		bank.Offsets[1] = program.Offset{Data: []byte{2}, Type: program.DataOffset}
+		bank.Offsets[0] = program.Offset{
+			Data: []byte{1},
+			Type: program.DataOffset,
+		}
+		bank.Offsets[1] = program.Offset{
+			Data: []byte{2},
+			Type: program.DataOffset,
+		}
 		if withComment {
 			bank.Offsets[1].CommentBefore = "Table"
 		} else {

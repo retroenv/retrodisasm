@@ -68,8 +68,12 @@ func TestReplaceParameter(t *testing.T) {
 		shouldMark bool
 	}{
 		{
-			name:       "replaces read parameter",
-			constant:   Constant{Address: 0x2000, Read: "PPU_CTRL", Write: "PPU_CTRL_W"},
+			name: "replaces read parameter",
+			constant: Constant{
+				Address: 0x2000,
+				Read:    "PPU_CTRL",
+				Write:   "PPU_CTRL_W",
+			},
 			opcode:     &mockOpcode{reads: true},
 			param:      "$2000",
 			wantResult: "PPU_CTRL",
@@ -77,8 +81,12 @@ func TestReplaceParameter(t *testing.T) {
 			shouldMark: true,
 		},
 		{
-			name:       "replaces write parameter",
-			constant:   Constant{Address: 0x2000, Read: "PPU_CTRL", Write: "PPU_CTRL_W"},
+			name: "replaces write parameter",
+			constant: Constant{
+				Address: 0x2000,
+				Read:    "PPU_CTRL",
+				Write:   "PPU_CTRL_W",
+			},
 			opcode:     &mockOpcode{writes: true},
 			param:      "$2000",
 			wantResult: "PPU_CTRL_W",
@@ -86,8 +94,12 @@ func TestReplaceParameter(t *testing.T) {
 			shouldMark: true,
 		},
 		{
-			name:       "replaces indexed parameter",
-			constant:   Constant{Address: 0x2000, Read: "PPU_CTRL", Write: ""},
+			name: "replaces indexed parameter",
+			constant: Constant{
+				Address: 0x2000,
+				Read:    "PPU_CTRL",
+				Write:   "",
+			},
 			opcode:     &mockOpcode{reads: true},
 			param:      "$2000,X",
 			wantResult: "PPU_CTRL,X",
@@ -95,8 +107,12 @@ func TestReplaceParameter(t *testing.T) {
 			shouldMark: true,
 		},
 		{
-			name:       "no replacement when name missing",
-			constant:   Constant{Address: 0x2000, Read: "PPU_CTRL", Write: ""},
+			name: "no replacement when name missing",
+			constant: Constant{
+				Address: 0x2000,
+				Read:    "PPU_CTRL",
+				Write:   "",
+			},
 			opcode:     &mockOpcode{writes: true},
 			param:      "$2000",
 			wantResult: "$2000",
@@ -202,7 +218,11 @@ func TestAssignBankConstants(t *testing.T) {
 		consts.AddBank()
 
 		bank := consts.Bank(0)
-		consts.AddBankItem(bank, 0x2000, Constant{Address: 0x2000, Read: "PPU_CTRL", Write: "PPU_CTRL_W"})
+		consts.AddBankItem(bank, 0x2000, Constant{
+			Address: 0x2000,
+			Read:    "PPU_CTRL",
+			Write:   "PPU_CTRL_W",
+		})
 
 		prgBank := program.NewPRGBank(0x4000)
 		consts.AssignBankConstants(0, prgBank)
@@ -233,8 +253,16 @@ func TestAssignBankConstants(t *testing.T) {
 		consts.AddBank()
 
 		bank := consts.Bank(0)
-		consts.AddBankItem(bank, 0x2000, Constant{Address: 0x2000, Read: "PPU_CTRL", Write: "PPU_CTRL_W"})
-		consts.AddBankItem(bank, 0x2001, Constant{Address: 0x2001, Read: "PPU_MASK", Write: "PPU_MASK_W"})
+		consts.AddBankItem(bank, 0x2000, Constant{
+			Address: 0x2000,
+			Read:    "PPU_CTRL",
+			Write:   "PPU_CTRL_W",
+		})
+		consts.AddBankItem(bank, 0x2001, Constant{
+			Address: 0x2001,
+			Read:    "PPU_MASK",
+			Write:   "PPU_MASK_W",
+		})
 
 		prgBank := program.NewPRGBank(0x4000)
 		consts.AssignBankConstants(0, prgBank)
@@ -256,7 +284,11 @@ func TestAssignBankConstants(t *testing.T) {
 		consts.AddBank()
 
 		bank := consts.Bank(0)
-		consts.AddBankItem(bank, 0x2000, Constant{Address: 0x2000, Read: "PPU_CTRL", Write: ""})
+		consts.AddBankItem(bank, 0x2000, Constant{
+			Address: 0x2000,
+			Read:    "PPU_CTRL",
+			Write:   "",
+		})
 
 		prgBank := program.NewPRGBank(0x4000)
 		consts.AssignBankConstants(0, prgBank)

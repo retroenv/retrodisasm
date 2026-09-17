@@ -97,7 +97,10 @@ func TestExecute(t *testing.T) {
 
 		opts := options.Program{
 			Parameters: options.Parameters{Input: "test.nes"}, // Filename only used for logging
-			Flags:      options.Flags{Assembler: "ca65", Quiet: true},
+			Flags: options.Flags{
+				Assembler: "ca65",
+				Quiet:     true,
+			},
 		}
 		disasmOpts := options.Disassembler{}
 
@@ -116,7 +119,11 @@ func TestExecute(t *testing.T) {
 
 		opts := options.Program{
 			Parameters: options.Parameters{Input: "test.nes"},
-			Flags:      options.Flags{Assembler: "ca65", Binary: true, Quiet: true},
+			Flags: options.Flags{
+				Assembler: "ca65",
+				Binary:    true,
+				Quiet:     true,
+			},
 		}
 		disasmOpts := options.Disassembler{}
 
@@ -135,7 +142,10 @@ func TestExecute(t *testing.T) {
 
 		opts := options.Program{
 			Parameters: options.Parameters{Input: "test.nes"},
-			Flags:      options.Flags{Assembler: "invalid", Quiet: true},
+			Flags: options.Flags{
+				Assembler: "invalid",
+				Quiet:     true,
+			},
 		}
 		disasmOpts := options.Disassembler{}
 
@@ -149,7 +159,10 @@ func TestExecute(t *testing.T) {
 	t.Run("execute with non-existent file", func(t *testing.T) {
 		opts := options.Program{
 			Parameters: options.Parameters{Input: "/nonexistent/file.nes"},
-			Flags:      options.Flags{Assembler: "ca65", Quiet: true},
+			Flags: options.Flags{
+				Assembler: "ca65",
+				Quiet:     true,
+			},
 		}
 		disasmOpts := options.Disassembler{}
 
@@ -194,9 +207,15 @@ func TestExecuteWithCartridgeExportsCHR(t *testing.T) {
 			}
 
 			opts := options.Program{
-				Parameters: options.Parameters{Input: "roms/game.nes", Output: filepath.FromSlash("build/game.asm")},
-				Flags:      options.Flags{Assembler: tt.assembler, Quiet: true},
-				ExportCHR:  true,
+				Parameters: options.Parameters{
+					Input:  "roms/game.nes",
+					Output: filepath.FromSlash("build/game.asm"),
+				},
+				Flags: options.Flags{
+					Assembler: tt.assembler,
+					Quiet:     true,
+				},
+				ExportCHR: true,
 			}
 
 			var output bytes.Buffer
@@ -228,7 +247,10 @@ func TestExecuteWithCartridgeAnnotatesInlineCHR(t *testing.T) {
 
 			opts := options.Program{
 				Parameters: options.Parameters{Input: "game.nes"},
-				Flags:      options.Flags{Assembler: assembler, Quiet: true},
+				Flags: options.Flags{
+					Assembler: assembler,
+					Quiet:     true,
+				},
 			}
 			disasmOpts := options.NewDisassembler(assembler, arch.NES.String())
 
@@ -264,8 +286,11 @@ func TestCHRFilenames(t *testing.T) {
 			wantInclude: "../assets/tiles.chr",
 		},
 		{
-			name:        "derived from input when writing to stdout",
-			opts:        options.Program{Parameters: options.Parameters{Input: filepath.FromSlash("roms/game.nes"), Output: options.OutputStdout}},
+			name: "derived from input when writing to stdout",
+			opts: options.Program{Parameters: options.Parameters{
+				Input:  filepath.FromSlash("roms/game.nes"),
+				Output: options.OutputStdout,
+			}},
 			wantOutput:  filepath.FromSlash("roms/game.chr"),
 			wantInclude: "roms/game.chr",
 		},
@@ -518,7 +543,10 @@ func TestPrintInfo(t *testing.T) {
 
 			opts := options.Program{
 				Parameters: options.Parameters{Input: "test.nes"}, // Filename only used for logging
-				Flags:      options.Flags{Assembler: "ca65", Quiet: tt.quiet},
+				Flags: options.Flags{
+					Assembler: "ca65",
+					Quiet:     tt.quiet,
+				},
 			}
 
 			// Call printInfo - should not panic

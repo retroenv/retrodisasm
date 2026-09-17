@@ -114,7 +114,9 @@ func (ar *Arch6502) handleInstructionIRQOverlap(address uint16, offsetInfo *offs
 
 // replaceParamByAlias replaces the absolute address with an alias name if it can match it to
 // a constant, zero page variable or a code reference.
-func (ar *Arch6502) replaceParamByAlias(address uint16, opcode instruction.Opcode, param any, paramAsString string) string {
+func (ar *Arch6502) replaceParamByAlias(address uint16, opcode instruction.Opcode, param any,
+	paramAsString string) string {
+
 	forceVariableUsage := false
 	addressReference, addressValid := ar.AddressingParam(param)
 	if !addressValid || addressReference >= cpu6502.InterruptVectorStartAddress {

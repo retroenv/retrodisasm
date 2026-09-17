@@ -22,7 +22,9 @@ type FileWriter struct {
 }
 
 // New creates a new retroasm file writer.
-func New(app *program.Program, options options.Disassembler, mainWriter io.Writer, newBankWriter assembler.NewBankWriter) writer.AssemblerWriter {
+func New(app *program.Program, options options.Disassembler, mainWriter io.Writer,
+	newBankWriter assembler.NewBankWriter) writer.AssemblerWriter {
+
 	opts := writer.Options{
 		OffsetComments: options.OffsetComments,
 	}

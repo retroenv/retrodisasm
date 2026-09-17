@@ -37,7 +37,10 @@ func TestParseFlags_DisasmOptions(t *testing.T) {
 		{
 			name: "default flags",
 			args: []string{"prog", "test.nes"},
-			want: options.Disassembler{HexComments: true, OffsetComments: true},
+			want: options.Disassembler{
+				HexComments:    true,
+				OffsetComments: true,
+			},
 		},
 		{
 			name: "nohexcomments flag",
@@ -52,7 +55,11 @@ func TestParseFlags_DisasmOptions(t *testing.T) {
 		{
 			name: "z flag",
 			args: []string{"prog", "-z", "test.nes"},
-			want: options.Disassembler{HexComments: true, OffsetComments: true, ZeroBytes: true},
+			want: options.Disassembler{
+				HexComments:    true,
+				OffsetComments: true,
+				ZeroBytes:      true,
+			},
 		},
 		{
 			name: "all disasm flags",
@@ -176,8 +183,11 @@ func TestValidateOptionCombinations(t *testing.T) {
 		{
 			name: "custom CHR filename in batch mode",
 			opts: options.Program{
-				Parameters: options.Parameters{Batch: "*.nes", CHRFilename: "tiles.chr"},
-				ExportCHR:  true,
+				Parameters: options.Parameters{
+					Batch:       "*.nes",
+					CHRFilename: "tiles.chr",
+				},
+				ExportCHR: true,
 			},
 			disasmOpts:  options.Disassembler{},
 			expectError: true,

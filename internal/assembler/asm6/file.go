@@ -27,7 +27,9 @@ type FileWriter struct {
 
 // New creates a new file writer.
 // nolint: ireturn
-func New(app *program.Program, options options.Disassembler, mainWriter io.Writer, newBankWriter assembler.NewBankWriter) writer.AssemblerWriter {
+func New(app *program.Program, options options.Disassembler, mainWriter io.Writer,
+	newBankWriter assembler.NewBankWriter) writer.AssemblerWriter {
+
 	opts := writer.Options{
 		LiteralCrossSegmentBranches: true,
 		OffsetComments:              options.OffsetComments,
@@ -57,16 +59,43 @@ func (f FileWriter) Write() error {
 
 	if !f.options.CodeOnly {
 		writes = []any{
-			lineWrite{line: "", comment: "NES ROM Disassembly"},
+			lineWrite{
+				line:    "",
+				comment: "NES ROM Disassembly",
+			},
 			customWrite(f.writer.WriteCommentHeader),
-			lineWrite{line: ".db \"NES\", $1a", comment: "Magic string that always begins an iNES header"},
-			headerByteWrite{value: byte(f.app.PrgSize() / 16384), comment: "Number of 16KB PRG-ROM banks"},
-			headerByteWrite{value: byte(len(f.app.CHR) / 8192), comment: "Number of 8KB CHR-ROM banks"},
-			headerByteWrite{value: control1, comment: "Control bits 1"},
-			headerByteWrite{value: control2, comment: "Control bits 2"},
-			headerByteWrite{value: ramByte, comment: "Number of 8KB PRG-RAM banks"},
-			headerByteWrite{value: f.app.VideoFormat, comment: "Video format NTSC/PAL"},
-			lineWrite{line: ".dsb 6", comment: "Padding to fill 16 BYTE iNES Header"},
+			lineWrite{
+				line:    ".db \"NES\", $1a",
+				comment: "Magic string that always begins an iNES header",
+			},
+			headerByteWrite{
+				value:   byte(f.app.PrgSize() / 16384),
+				comment: "Number of 16KB PRG-ROM banks",
+			},
+			headerByteWrite{
+				value:   byte(len(f.app.CHR) / 8192),
+				comment: "Number of 8KB CHR-ROM banks",
+			},
+			headerByteWrite{
+				value:   control1,
+				comment: "Control bits 1",
+			},
+			headerByteWrite{
+				value:   control2,
+				comment: "Control bits 2",
+			},
+			headerByteWrite{
+				value:   ramByte,
+				comment: "Number of 8KB PRG-RAM banks",
+			},
+			headerByteWrite{
+				value:   f.app.VideoFormat,
+				comment: "Video format NTSC/PAL",
+			},
+			lineWrite{
+				line:    ".dsb 6",
+				comment: "Padding to fill 16 BYTE iNES Header",
+			},
 		}
 	}
 

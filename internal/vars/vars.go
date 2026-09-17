@@ -83,9 +83,7 @@ func (v *Vars) AssignNames(names map[uint16]string) {
 // AddReference adds a variable reference if the opcode is accessing
 // the given address directly by reading or writing. In a special case like
 // branching into a zeropage address the variable usage can be forced.
-func (v *Vars) AddReference(addressReference,
-	usageAddress uint16, opcode instruction.Opcode, forceVariableUsage bool) {
-
+func (v *Vars) AddReference(addressReference, usageAddress uint16, opcode instruction.Opcode, forceVariableUsage bool) {
 	var reads, writes bool
 	if opcode.ReadWritesMemory() {
 		reads = true
@@ -213,7 +211,9 @@ func (v *Vars) getOpcodeStart(address uint16) (*offset.DisasmOffset, uint16, uin
 // dataName calculates the name of a variable based on its address and optional address adjustment.
 // It returns the name of the variable and a string to reference it, it is possible that the reference
 // is using an adjuster like +1 or +2.
-func (v *Vars) dataName(offsetInfo *offset.DisasmOffset, indexedUsage bool, address, addressAdjustment uint16) (string, string) {
+func (v *Vars) dataName(offsetInfo *offset.DisasmOffset, indexedUsage bool, address,
+	addressAdjustment uint16) (string, string) {
+
 	name := v.generateVariableName(offsetInfo, indexedUsage, address)
 
 	reference := name

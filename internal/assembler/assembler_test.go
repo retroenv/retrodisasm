@@ -7,6 +7,7 @@ import (
 	"github.com/retroenv/retrogolib/assert"
 )
 
+//nolint:funlen // The table cases are intentionally kept with their assertions.
 func TestVectorReferences(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -16,9 +17,13 @@ func TestVectorReferences(t *testing.T) {
 		want        [3]string
 	}{
 		{
-			name:     "emitted handler labels",
-			vectors:  [3]uint16{0xC100, 0xC200, 0xC300},
-			handlers: program.Handlers{NMI: "NMI", Reset: "Reset", IRQ: "IRQ"},
+			name:    "emitted handler labels",
+			vectors: [3]uint16{0xC100, 0xC200, 0xC300},
+			handlers: program.Handlers{
+				NMI:   "NMI",
+				Reset: "Reset",
+				IRQ:   "IRQ",
+			},
 			definitions: map[uint16]program.Offset{
 				0xC100: {Label: "NMI", Data: []byte{0x40}},
 				0xC200: {Label: "Reset", Data: []byte{0x78}},
@@ -27,15 +32,23 @@ func TestVectorReferences(t *testing.T) {
 			want: [3]string{"NMI", "Reset", "IRQ"},
 		},
 		{
-			name:     "addresses outside code range",
-			vectors:  [3]uint16{0xBFFF, 0xFFFA, 0xFFFF},
-			handlers: program.Handlers{NMI: "NMI", Reset: "Reset", IRQ: "IRQ"},
-			want:     [3]string{"$BFFF", "$FFFA", "$FFFF"},
+			name:    "addresses outside code range",
+			vectors: [3]uint16{0xBFFF, 0xFFFA, 0xFFFF},
+			handlers: program.Handlers{
+				NMI:   "NMI",
+				Reset: "Reset",
+				IRQ:   "IRQ",
+			},
+			want: [3]string{"$BFFF", "$FFFA", "$FFFF"},
 		},
 		{
-			name:     "labels without emitted definitions",
-			vectors:  [3]uint16{0xC100, 0xC200, 0xC300},
-			handlers: program.Handlers{NMI: "NMI", Reset: "Reset", IRQ: "IRQ"},
+			name:    "labels without emitted definitions",
+			vectors: [3]uint16{0xC100, 0xC200, 0xC300},
+			handlers: program.Handlers{
+				NMI:   "NMI",
+				Reset: "Reset",
+				IRQ:   "IRQ",
+			},
 			definitions: map[uint16]program.Offset{
 				0xC100: {Label: "Different", Data: []byte{0x40}},
 				0xC200: {Label: "Reset"},

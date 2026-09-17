@@ -26,7 +26,9 @@ type FileWriter struct {
 
 // New creates a new file writer.
 // nolint: ireturn
-func New(app *program.Program, options options.Disassembler, mainWriter io.Writer, newBankWriter assembler.NewBankWriter) writer.AssemblerWriter {
+func New(app *program.Program, options options.Disassembler, mainWriter io.Writer,
+	newBankWriter assembler.NewBankWriter) writer.AssemblerWriter {
+
 	opts := writer.Options{
 		DirectivePrefix:             " ",
 		LiteralCrossSegmentBranches: true,
@@ -60,7 +62,12 @@ func (f FileWriter) Write() error {
 	for i, bank := range f.app.PRG {
 		vectorBank := prgBankNumber + (len(bank.Offsets)-1)/bankSize
 		writes = append(writes,
-			prgBankWrite{bank: bank, isMultiBank: isMultiBank, firstBank: i == 0, vectorBank: vectorBank},
+			prgBankWrite{
+				bank:        bank,
+				isMultiBank: isMultiBank,
+				firstBank:   i == 0,
+				vectorBank:  vectorBank,
+			},
 		)
 		prgBankNumber += (len(bank.Offsets) + bankSize - 1) / bankSize
 	}

@@ -49,7 +49,8 @@ func New(logger *log.Logger) *Pipeline {
 }
 
 // Execute runs the complete disassembly pipeline.
-func (p *Pipeline) Execute(ctx context.Context, opts options.Program, disasmOpts options.Disassembler, writer io.Writer) (*program.Program, error) {
+func (p *Pipeline) Execute(ctx context.Context, opts options.Program, disasmOpts options.Disassembler,
+	writer io.Writer) (*program.Program, error) {
 	// Detect system architecture
 	system := p.detector.Detect(opts)
 
@@ -149,8 +150,8 @@ func (p *Pipeline) exportCHR(cart *cartridge.Cartridge, opts options.Program, sy
 }
 
 // createDisassembler creates and configures the disassembler for the detected system.
-func (p *Pipeline) createDisassembler(opts options.Program, disasmOpts options.Disassembler,
-	cart *cartridge.Cartridge, system arch.System) (*disasm.Disasm, error) {
+func (p *Pipeline) createDisassembler(opts options.Program, disasmOpts options.Disassembler, cart *cartridge.Cartridge,
+	system arch.System) (*disasm.Disasm, error) {
 
 	fileWriterConstructor, paramConverter, err := p.initializeAssembler(opts.Assembler)
 	if err != nil {
@@ -170,7 +171,9 @@ func (p *Pipeline) createDisassembler(opts options.Program, disasmOpts options.D
 }
 
 // initializeAssembler creates the file writer constructor and parameter converter for the specified assembler.
-func (p *Pipeline) initializeAssembler(assemblerName string) (disasm.FileWriterConstructor, parameter.Converter, error) {
+func (p *Pipeline) initializeAssembler(
+	assemblerName string) (disasm.FileWriterConstructor, parameter.Converter, error) {
+
 	var fileWriterConstructor disasm.FileWriterConstructor
 	var paramCfg parameter.Config
 
@@ -200,7 +203,8 @@ func (p *Pipeline) initializeAssembler(assemblerName string) (disasm.FileWriterC
 
 // createDisassemblerForSystem creates a disassembler for the specified system architecture.
 func (p *Pipeline) createDisassemblerForSystem(system arch.System, paramConverter parameter.Converter,
-	cart *cartridge.Cartridge, disasmOpts options.Disassembler, fileWriterConstructor disasm.FileWriterConstructor) (*disasm.Disasm, error) {
+	cart *cartridge.Cartridge, disasmOpts options.Disassembler,
+	fileWriterConstructor disasm.FileWriterConstructor) (*disasm.Disasm, error) {
 
 	switch system {
 	case arch.NES:
@@ -224,8 +228,8 @@ func (p *Pipeline) createDisassemblerForSystem(system arch.System, paramConverte
 }
 
 // runDisassembly executes the disassembly process.
-func (p *Pipeline) runDisassembly(ctx context.Context, dis *disasm.Disasm, writer io.Writer,
-	opts options.Disassembler, outputPath string) (*program.Program, error) {
+func (p *Pipeline) runDisassembly(ctx context.Context, dis *disasm.Disasm, writer io.Writer, opts options.Disassembler,
+	outputPath string) (*program.Program, error) {
 
 	newBankWriter := func(bankName string) (io.WriteCloser, error) {
 		if !opts.SplitBanks {

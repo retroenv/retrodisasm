@@ -31,7 +31,9 @@ type FileWriter struct {
 
 // New creates a new file writer.
 // nolint: ireturn
-func New(app *program.Program, options options.Disassembler, mainWriter io.Writer, newBankWriter assembler.NewBankWriter) writer.AssemblerWriter {
+func New(app *program.Program, options options.Disassembler, mainWriter io.Writer,
+	newBankWriter assembler.NewBankWriter) writer.AssemblerWriter {
+
 	opts := writer.Options{
 		LiteralCrossSegmentBranches: true,
 		OffsetComments:              options.OffsetComments,
@@ -46,6 +48,8 @@ func New(app *program.Program, options options.Disassembler, mainWriter io.Write
 }
 
 // Write writes the assembly file content including header, footer, code and data.
+//
+//nolint:funlen // The required multiline output records make the cohesive writer exceed the limit.
 func (f FileWriter) Write() error {
 	control1, control2 := cartridge.ControlBytes(f.app.Battery, byte(f.app.Mirror), f.app.Mapper, len(f.app.Trainer) > 0)
 
@@ -65,19 +69,41 @@ func (f FileWriter) Write() error {
 			lineWrite(cpuSelector),
 			segmentWrite{name: "HEADER"},
 			lineWrite(iNESHeader),
-			headerByteWrite{value: byte(f.app.PrgSize() / 16384), comment: "Number of 16KB PRG-ROM banks"},
-			headerByteWrite{value: byte(len(f.app.CHR) / 8192), comment: "Number of 8KB CHR-ROM banks"},
-			headerByteWrite{value: control1, comment: "Control bits 1"},
-			headerByteWrite{value: control2, comment: "Control bits 2"},
-			headerByteWrite{value: ramByte, comment: "Number of 8KB PRG-RAM banks"},
-			headerByteWrite{value: f.app.VideoFormat, comment: "Video format NTSC/PAL"},
+			headerByteWrite{
+				value:   byte(f.app.PrgSize() / 16384),
+				comment: "Number of 16KB PRG-ROM banks",
+			},
+			headerByteWrite{
+				value:   byte(len(f.app.CHR) / 8192),
+				comment: "Number of 8KB CHR-ROM banks",
+			},
+			headerByteWrite{
+				value:   control1,
+				comment: "Control bits 1",
+			},
+			headerByteWrite{
+				value:   control2,
+				comment: "Control bits 2",
+			},
+			headerByteWrite{
+				value:   ramByte,
+				comment: "Number of 8KB PRG-RAM banks",
+			},
+			headerByteWrite{
+				value:   f.app.VideoFormat,
+				comment: "Video format NTSC/PAL",
+			},
 		}
 	}
 
 	isMultiBank := len(f.app.PRG) > 1
 	for i, bank := range f.app.PRG {
 		writes = append(writes,
-			prgBankWrite{bank: bank, isMultiBank: isMultiBank, firstBank: i == 0},
+			prgBankWrite{
+				bank:        bank,
+				isMultiBank: isMultiBank,
+				firstBank:   i == 0,
+			},
 		)
 	}
 

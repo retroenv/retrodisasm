@@ -23,7 +23,9 @@ import (
 )
 
 // ProcessFile handles the complete file processing workflow.
-func ProcessFile(ctx context.Context, logger *log.Logger, opts options.Program, disasmOptions options.Disassembler) error {
+func ProcessFile(ctx context.Context, logger *log.Logger, opts options.Program,
+	disasmOptions options.Disassembler) error {
+
 	writer, err := createWriter(opts)
 	if err != nil {
 		return fmt.Errorf("creating writer: %w", err)

@@ -70,9 +70,16 @@ func TestProcessFileExportsCHR(t *testing.T) {
 	assert.NoError(t, os.WriteFile(inputFilename, rom, 0o644))
 
 	opts := options.Program{
-		Parameters: options.Parameters{Input: inputFilename, Output: outputFilename},
-		Flags:      options.Flags{Assembler: "ca65", System: arch.NES.String(), Quiet: true},
-		ExportCHR:  true,
+		Parameters: options.Parameters{
+			Input:  inputFilename,
+			Output: outputFilename,
+		},
+		Flags: options.Flags{
+			Assembler: "ca65",
+			System:    arch.NES.String(),
+			Quiet:     true,
+		},
+		ExportCHR: true,
 	}
 	disasmOpts := options.NewDisassembler(opts.Assembler, opts.System)
 	assert.NoError(t, ProcessFile(context.Background(), log.NewTestLogger(t), opts, disasmOpts))
@@ -95,8 +102,8 @@ func createTestCode() []byte {
 	}
 }
 
-func runSegmentTest(t *testing.T, testCode []byte, binary,
-	expectHeader, expectTiles, expectVectors, expectCodeSegment bool) {
+func runSegmentTest(t *testing.T, testCode []byte, binary, expectHeader, expectTiles, expectVectors,
+	expectCodeSegment bool) {
 
 	t.Helper()
 
@@ -117,7 +124,12 @@ func runSegmentTest(t *testing.T, testCode []byte, binary,
 
 	programOpts := options.Program{
 		Parameters: options.Parameters{Input: "test.nes"}, // Filename only used for logging
-		Flags:      options.Flags{Assembler: "ca65", Binary: binary, System: arch.NES.String(), Quiet: true},
+		Flags: options.Flags{
+			Assembler: "ca65",
+			Binary:    binary,
+			System:    arch.NES.String(),
+			Quiet:     true,
+		},
 	}
 
 	disasmOpts := options.NewDisassembler(programOpts.Assembler, programOpts.System)

@@ -56,7 +56,8 @@ func newMockDisasm() *mockDisasm {
 	}
 }
 
-func (m *mockDisasm) AddAddressToParse(address, context, from uint16, currentInstruction instruction.Instruction, isABranchDestination bool) {
+func (m *mockDisasm) AddAddressToParse(address, context, from uint16, currentInstruction instruction.Instruction,
+	isABranchDestination bool) {
 }
 
 func (m *mockDisasm) ProgramCounter() uint16 {

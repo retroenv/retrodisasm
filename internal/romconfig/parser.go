@@ -132,7 +132,10 @@ func (pr *parser) parsePresentation(section, key, value string) error {
 				return fmt.Errorf("invalid group symbol %q", names[i])
 			}
 		}
-		pr.cfg.SymbolGroups = append(pr.cfg.SymbolGroups, SymbolGroup{Heading: key, Names: names})
+		pr.cfg.SymbolGroups = append(pr.cfg.SymbolGroups, SymbolGroup{
+			Heading: key,
+			Names:   names,
+		})
 		return nil
 	}
 	address, err := parseAddress(key)
@@ -251,7 +254,10 @@ func (pr *parser) parseRange(section, key, value string) error {
 	if end < start {
 		return errors.New("range end precedes start")
 	}
-	rng := Range{Start: start, End: end}
+	rng := Range{
+		Start: start,
+		End:   end,
+	}
 	for _, ranges := range [][]Range{pr.cfg.Code, pr.cfg.Data} {
 		for _, existing := range ranges {
 			if start <= existing.End && end >= existing.Start {

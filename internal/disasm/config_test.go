@@ -99,7 +99,11 @@ func TestConfigSymbolAliasesInferredLabel(t *testing.T) {
 	bank := program.NewPRGBank(1)
 	bank.BaseAddress = 0x8000
 	bank.Offsets[0].Label = "Reset"
-	app := &program.Program{PRG: []*program.PRGBank{bank}, Constants: map[string]uint16{}, Variables: map[string]uint16{}}
+	app := &program.Program{
+		PRG:       []*program.PRGBank{bank},
+		Constants: map[string]uint16{},
+		Variables: map[string]uint16{},
+	}
 
 	assert.NoError(t, dis.assignConfiguredSymbols(app))
 	assert.Equal(t, []string{"EntryAlias"}, bank.Offsets[0].Aliases)
@@ -157,7 +161,11 @@ func TestConfigSharedVectors(t *testing.T) {
 	dis := testProgram(t, opts, cart, []byte{0x60})
 	assert.NoError(t, dis.ApplyAnnotations(writeConfig(t, "[vectors]\nnmi=Entry\nreset=Entry\nirq=Entry")))
 	app, _ := processConfiguredDisasm(t, dis)
-	assert.Equal(t, program.Handlers{NMI: "Entry", Reset: "Entry", IRQ: "Entry"}, app.Handlers)
+	assert.Equal(t, program.Handlers{
+		NMI:   "Entry",
+		Reset: "Entry",
+		IRQ:   "Entry",
+	}, app.Handlers)
 }
 
 func TestConfigRejectsMirroredAnnotation(t *testing.T) {

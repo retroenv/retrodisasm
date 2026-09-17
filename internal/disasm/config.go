@@ -42,7 +42,11 @@ func (dis *Disasm) ApplyAnnotations(filename string) error {
 
 	dis.config = cfg
 	for address, name := range cfg.Constants {
-		dis.constants.Set(address, consts.Constant{Address: address, Read: name, Write: name})
+		dis.constants.Set(address, consts.Constant{
+			Address: address,
+			Read:    name,
+			Write:   name,
+		})
 	}
 	dis.vars.AssignNames(cfg.Variables)
 	for address, label := range cfg.Labels {
@@ -260,7 +264,10 @@ func (dis *Disasm) applyAnnotations() {
 
 func (dis *Disasm) assignConfiguredSymbols(app *program.Program) error {
 	for _, group := range dis.config.SymbolGroups {
-		app.SymbolGroups = append(app.SymbolGroups, program.SymbolGroup{Heading: group.Heading, Names: group.Names})
+		app.SymbolGroups = append(app.SymbolGroups, program.SymbolGroup{
+			Heading: group.Heading,
+			Names:   group.Names,
+		})
 	}
 	for _, name := range slices.Sorted(maps.Keys(dis.config.Symbols)) {
 		value := dis.config.Symbols[name]
@@ -406,7 +413,9 @@ func (dis *Disasm) referencedConfigNames() set.Set[string] {
 	return used
 }
 
-func (dis *Disasm) assignDataExpressions(address uint16, width int, layout romconfig.Data, symbols map[string]uint16) error {
+func (dis *Disasm) assignDataExpressions(address uint16, width int, layout romconfig.Data,
+	symbols map[string]uint16) error {
+
 	expressions := layout.Expressions
 	if layout.Count != 0 {
 		var err error

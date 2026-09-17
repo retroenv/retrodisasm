@@ -122,8 +122,8 @@ func (j *JumpEngine) GetFunctionTableReference(context uint16, dataReferences []
 
 // GetContextDataReferences parse all instructions of the function context until the jump
 // and returns data references that could point to the function table.
-func (j *JumpEngine) GetContextDataReferences(offsets []*offset.DisasmOffset,
-	addresses []uint16, codeBaseAddress uint16) ([]uint16, error) {
+func (j *JumpEngine) GetContextDataReferences(offsets []*offset.DisasmOffset, addresses []uint16,
+	codeBaseAddress uint16) ([]uint16, error) {
 
 	var dataReferences []uint16
 
@@ -153,7 +153,9 @@ func (j *JumpEngine) GetContextDataReferences(offsets []*offset.DisasmOffset,
 // JumpContextInfo builds the list of instructions of the current function context.
 // in some ROMs the jump engine can be part of a label inside a larger function,
 // the jump engine detection will use the last instructions before the jmp.
-func (j *JumpEngine) JumpContextInfo(jumpAddress uint16, offsetInfo *offset.DisasmOffset) ([]*offset.DisasmOffset, []uint16) {
+func (j *JumpEngine) JumpContextInfo(jumpAddress uint16,
+	offsetInfo *offset.DisasmOffset) ([]*offset.DisasmOffset, []uint16) {
+
 	var offsets []*offset.DisasmOffset
 	var addresses []uint16
 
@@ -276,7 +278,9 @@ func (j *JumpEngine) handleJumpEngineCaller(caller, codeBaseAddress uint16) erro
 
 // processJumpEngineEntry processes a potential function reference in a jump engine table.
 // It returns whether the entry was a valid function reference address and has been added for processing.
-func (j *JumpEngine) processJumpEngineEntry(address uint16, jumpEngine *jumpEngineCaller, codeBaseAddress uint16) (bool, error) {
+func (j *JumpEngine) processJumpEngineEntry(address uint16, jumpEngine *jumpEngineCaller,
+	codeBaseAddress uint16) (bool, error) {
+
 	if jumpEngine.terminated {
 		return false, nil
 	}

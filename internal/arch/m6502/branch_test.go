@@ -152,7 +152,8 @@ func (m *mockDisasm) ReadMemory(address uint16) (byte, error) {
 	return m.rom[offset], nil
 }
 
-func (m *mockDisasm) AddAddressToParse(address, context, from uint16, currentInstruction instruction.Instruction, isABranchDestination bool) {
+func (m *mockDisasm) AddAddressToParse(address, context, from uint16, currentInstruction instruction.Instruction,
+	isABranchDestination bool) {
 }
 
 func (m *mockDisasm) Cart() *cartridge.Cartridge {

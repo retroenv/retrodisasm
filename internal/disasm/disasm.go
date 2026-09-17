@@ -96,8 +96,8 @@ type Disasm struct {
 
 // New creates a new disassembler that uses the passed architecture to implement system
 // specific disassembly logic.
-func New(logger *log.Logger, ar architecture, cart *cartridge.Cartridge,
-	options options.Disassembler, fileWriterConstructor FileWriterConstructor) (*Disasm, error) {
+func New(logger *log.Logger, ar architecture, cart *cartridge.Cartridge, options options.Disassembler,
+	fileWriterConstructor FileWriterConstructor) (*Disasm, error) {
 
 	dis := &Disasm{
 		arch:                        ar,
@@ -132,7 +132,9 @@ func New(logger *log.Logger, ar architecture, cart *cartridge.Cartridge,
 }
 
 // Process disassembles the cartridge.
-func (dis *Disasm) Process(ctx context.Context, mainWriter io.Writer, newBankWriter assembler.NewBankWriter) (*program.Program, error) {
+func (dis *Disasm) Process(ctx context.Context, mainWriter io.Writer,
+	newBankWriter assembler.NewBankWriter) (*program.Program, error) {
+
 	if err := dis.followExecutionFlow(ctx); err != nil {
 		return nil, err
 	}

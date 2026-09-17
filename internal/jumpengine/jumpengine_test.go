@@ -17,7 +17,10 @@ func TestProcessJumpEngineEntryRespectsConfigHints(t *testing.T) {
 			dis.Memory[0x8010], dis.Memory[0x8011] = 0x01, 0x80
 			mapper.OffsetInfo(address).CodeHint = hint
 			je := New(log.NewTestLogger(t), &mockArchitecture{})
-			je.InjectDependencies(Dependencies{Disasm: dis, Mapper: mapper})
+			je.InjectDependencies(Dependencies{
+				Disasm: dis,
+				Mapper: mapper,
+			})
 			caller := &jumpEngineCaller{}
 
 			found, err := je.processJumpEngineEntry(0x8010, caller, 0x8000)
@@ -37,7 +40,10 @@ func TestProcessJumpEngineEntryStopsAtCompositeCodeOffset(t *testing.T) {
 	dis.Memory[0x8011] = 0x80
 	mapper.OffsetInfo(0x8011).SetType(program.CodeOffset | program.CallDestination)
 	je := New(logger, &mockArchitecture{})
-	je.InjectDependencies(Dependencies{Disasm: dis, Mapper: mapper})
+	je.InjectDependencies(Dependencies{
+		Disasm: dis,
+		Mapper: mapper,
+	})
 	caller := &jumpEngineCaller{}
 
 	found, err := je.processJumpEngineEntry(0x8010, caller, 0x8000)

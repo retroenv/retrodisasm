@@ -23,7 +23,10 @@ func TestManager(t *testing.T) {
 
 	t.Run("set and get item", func(t *testing.T) {
 		mgr := New[testItem]()
-		item := testItem{name: "TEST", value: 0x1234}
+		item := testItem{
+			name:  "TEST",
+			value: 0x1234,
+		}
 
 		mgr.Set(0x8000, item)
 
@@ -44,14 +47,23 @@ func TestManager(t *testing.T) {
 		mgr := New[testItem]()
 
 		assert.False(t, mgr.Has(0x8000))
-		mgr.Set(0x8000, testItem{name: "TEST", value: 0x1234})
+		mgr.Set(0x8000, testItem{
+			name:  "TEST",
+			value: 0x1234,
+		})
 		assert.True(t, mgr.Has(0x8000))
 	})
 
 	t.Run("items returns map for iteration", func(t *testing.T) {
 		mgr := New[testItem]()
-		mgr.Set(0x8000, testItem{name: "A", value: 0x1111})
-		mgr.Set(0x8001, testItem{name: "B", value: 0x2222})
+		mgr.Set(0x8000, testItem{
+			name:  "A",
+			value: 0x1111,
+		})
+		mgr.Set(0x8001, testItem{
+			name:  "B",
+			value: 0x2222,
+		})
 
 		items := mgr.Items()
 		assert.Len(t, items, 2)
@@ -64,18 +76,33 @@ func TestManager(t *testing.T) {
 
 		assert.Equal(t, 0, mgr.Len())
 
-		mgr.Set(0x8000, testItem{name: "A", value: 0x1111})
+		mgr.Set(0x8000, testItem{
+			name:  "A",
+			value: 0x1111,
+		})
 		assert.Equal(t, 1, mgr.Len())
 
-		mgr.Set(0x8001, testItem{name: "B", value: 0x2222})
+		mgr.Set(0x8001, testItem{
+			name:  "B",
+			value: 0x2222,
+		})
 		assert.Equal(t, 2, mgr.Len())
 	})
 
 	t.Run("sorted by uint16 key", func(t *testing.T) {
 		mgr := New[testItem]()
-		mgr.Set(0x8002, testItem{name: "C", value: 0x3333})
-		mgr.Set(0x8000, testItem{name: "A", value: 0x1111})
-		mgr.Set(0x8001, testItem{name: "B", value: 0x2222})
+		mgr.Set(0x8002, testItem{
+			name:  "C",
+			value: 0x3333,
+		})
+		mgr.Set(0x8000, testItem{
+			name:  "A",
+			value: 0x1111,
+		})
+		mgr.Set(0x8001, testItem{
+			name:  "B",
+			value: 0x2222,
+		})
 
 		sorted := mgr.SortedByUint16(func(t testItem) uint16 { return t.value })
 
@@ -106,6 +133,7 @@ func TestManager(t *testing.T) {
 	})
 }
 
+//nolint:funlen // The subtests document the complete bank API behavior together.
 func TestBank(t *testing.T) {
 	t.Run("add banks", func(t *testing.T) {
 		mgr := New[testItem]()
@@ -125,8 +153,14 @@ func TestBank(t *testing.T) {
 		bank0 := mgr.Bank(0)
 		bank1 := mgr.Bank(1)
 
-		bank0.Set(0x8000, testItem{name: "BANK0", value: 0x0000})
-		bank1.Set(0x8000, testItem{name: "BANK1", value: 0x0001})
+		bank0.Set(0x8000, testItem{
+			name:  "BANK0",
+			value: 0x0000,
+		})
+		bank1.Set(0x8000, testItem{
+			name:  "BANK1",
+			value: 0x0001,
+		})
 
 		got0, _ := bank0.Get(0x8000)
 		got1, _ := bank1.Get(0x8000)
@@ -139,7 +173,10 @@ func TestBank(t *testing.T) {
 		mgr.AddBank()
 		bank := mgr.Bank(0)
 
-		item := testItem{name: "TEST", value: 0x1234}
+		item := testItem{
+			name:  "TEST",
+			value: 0x1234,
+		}
 		bank.Set(0x8000, item)
 
 		got, ok := bank.Get(0x8000)
@@ -157,7 +194,10 @@ func TestBank(t *testing.T) {
 		bank0 := mgr.Bank(0)
 		bank1 := mgr.Bank(1)
 
-		bank0.Set(0x8000, testItem{name: "BANK0", value: 0x0000})
+		bank0.Set(0x8000, testItem{
+			name:  "BANK0",
+			value: 0x0000,
+		})
 		bank0.Used().Add(0x8000)
 
 		assert.True(t, bank0.Has(0x8000))

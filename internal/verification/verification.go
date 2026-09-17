@@ -20,8 +20,8 @@ import (
 )
 
 // VerifyOutput verifies that the output file recreates the exact input file.
-func VerifyOutput(ctx context.Context, logger *log.Logger, options opts.Program,
-	cart *cartridge.Cartridge, app *program.Program) error {
+func VerifyOutput(ctx context.Context, logger *log.Logger, options opts.Program, cart *cartridge.Cartridge,
+	app *program.Program) error {
 
 	if options.Output == "" || options.Output == opts.OutputStdout {
 		return errors.New("can not verify stdout output")
@@ -72,8 +72,8 @@ func VerifyOutput(ctx context.Context, logger *log.Logger, options opts.Program,
 	return nil
 }
 
-func assembleFile(ctx context.Context, options opts.Program, cart *cartridge.Cartridge, app *program.Program,
-	filePart, outputFile string) error {
+func assembleFile(ctx context.Context, options opts.Program, cart *cartridge.Cartridge, app *program.Program, filePart,
+	outputFile string) error {
 
 	switch options.Assembler {
 	case assembler.Asm6:

@@ -10,8 +10,8 @@ import (
 )
 
 // AddAddressToParse adds an address to the list to be processed if the address has not been processed yet.
-func (dis *Disasm) AddAddressToParse(address, context, from uint16,
-	currentInstruction instruction.Instruction, isABranchDestination bool) {
+func (dis *Disasm) AddAddressToParse(address, context, from uint16, currentInstruction instruction.Instruction,
+	isABranchDestination bool) {
 
 	if !dis.isValidCodeAddress(address) {
 		return

@@ -35,7 +35,10 @@ func TestMarkIndexedReferenceAsDataClaimsUnownedByte(t *testing.T) {
 }
 
 func TestInitializeOffsetInfoPreservesFunctionReference(t *testing.T) {
-	dis := &mockDisasm{pc: 0x8000, rom: []byte{0xa9, 0x01}}
+	dis := &mockDisasm{
+		pc:  0x8000,
+		rom: []byte{0xa9, 0x01},
+	}
 	arch := &Arch6502{dis: dis}
 	offsetInfo := &offset.DisasmOffset{Offset: program.Offset{
 		Data: []byte{0x25, 0x81},

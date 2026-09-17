@@ -16,7 +16,9 @@ type mockDisasm struct {
 	opts           options.Disassembler
 }
 
-func (m *mockDisasm) AddAddressToParse(address, context, from uint16, currentInstruction instruction.Instruction, isABranchDestination bool) {
+func (m *mockDisasm) AddAddressToParse(address, context, from uint16, currentInstruction instruction.Instruction,
+	isABranchDestination bool) {
+
 	m.addedAddresses = append(m.addedAddresses, address)
 }
 
