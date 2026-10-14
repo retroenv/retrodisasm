@@ -182,6 +182,7 @@ func checkBranchingParam(address uint16, opcode instruction.Opcode) (bool, bool)
 	switch {
 	case name == cpu6502.JmpName && addressing == cpu6502.IndirectAddressing:
 		return true, false
+
 	case name == cpu6502.JmpName || name == cpu6502.JsrName:
 		if addressing == cpu6502.AbsoluteAddressing && address < nes.CodeBaseAddress {
 			return true, true

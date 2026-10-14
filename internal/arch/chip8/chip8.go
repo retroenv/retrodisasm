@@ -86,6 +86,7 @@ func (c *Chip8) AddressingParam(param any) (uint16, bool) {
 	switch p := param.(type) {
 	case uint16:
 		return p, true
+
 	case int:
 		// Validate address range for CHIP-8 (12-bit addresses)
 		if p >= 0 && p <= MaxAddress {
@@ -319,6 +320,7 @@ func (c *Chip8) formatCompareInstruction(opcode uint16) string {
 	case 0x3000, 0x4000:
 		// SE/SNE Vx, byte
 		return fmt.Sprintf("V%X, $%02X", x, opcode&0x00FF)
+
 	case 0x5000, 0x9000:
 		// SE/SNE Vx, Vy
 		y := extractRegisterY(opcode)
@@ -333,9 +335,11 @@ func (c *Chip8) formatLoadInstruction(opcode uint16) string {
 	switch opcode & 0xF000 {
 	case 0x6000:
 		return fmt.Sprintf("V%X, $%02X", x, opcode&0x00FF)
+
 	case 0x8000:
 		y := extractRegisterY(opcode)
 		return fmt.Sprintf("V%X, V%X", x, y)
+
 	case 0xA000:
 		return fmt.Sprintf("I, $%03X", opcode&0x0FFF)
 	}

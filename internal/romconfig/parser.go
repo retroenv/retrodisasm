@@ -335,13 +335,17 @@ func parseConfig(input *config.Config) (*Config, error) {
 	}
 	pr := parser{
 		cfg: &Config{
-			Vectors:   make(map[Vector]VectorValue),
-			Constants: make(map[uint16]string), Variables: make(map[uint16]string),
-			Labels: make(map[uint16]string), Comments: make(map[uint16]string),
+			Vectors:        make(map[Vector]VectorValue),
+			Constants:      make(map[uint16]string),
+			Variables:      make(map[uint16]string),
+			Labels:         make(map[uint16]string),
+			Comments:       make(map[uint16]string),
 			Symbols:        make(map[string]uint16),
-			CommentsBefore: make(map[uint16]string), BlankLines: make(map[uint16]int),
-			Operands: make(map[uint16]string),
-			Bytes:    make(map[uint16]Data), Words: make(map[uint16]Data),
+			CommentsBefore: make(map[uint16]string),
+			BlankLines:     make(map[uint16]int),
+			Operands:       make(map[uint16]string),
+			Bytes:          make(map[uint16]Data),
+			Words:          make(map[uint16]Data),
 		},
 		names: make(map[string]uint16),
 	}

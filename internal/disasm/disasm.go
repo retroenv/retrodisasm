@@ -26,8 +26,8 @@ import (
 	"github.com/retroenv/retrogolib/set"
 )
 
-type FileWriterConstructor func(app *program.Program, options options.Disassembler,
-	mainWriter io.Writer, newBankWriter assembler.NewBankWriter) writer.AssemblerWriter
+type FileWriterConstructor func(app *program.Program, options options.Disassembler, mainWriter io.Writer,
+	newBankWriter assembler.NewBankWriter) writer.AssemblerWriter
 
 // architecture defines the minimal interface needed from the architecture.
 type architecture interface {
@@ -289,6 +289,7 @@ func (dis *Disasm) initializeComponents(logger *log.Logger, ar architecture, car
 			Vars:       v,
 			Consts:     dis.constants,
 		})
+
 	case *chip8.Chip8:
 		a.InjectDependencies(chip8.Dependencies{
 			Disasm: dis,

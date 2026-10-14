@@ -96,9 +96,11 @@ func normalizeCHRArguments(args []string) ([]string, bool) {
 		case arg == "-chr" || arg == "--chr":
 			chrArguments = append(chrArguments, arg+"=")
 			exportCHR = true
+
 		case strings.HasPrefix(arg, "-chr=") || strings.HasPrefix(arg, "--chr="):
 			chrArguments = append(chrArguments, arg)
 			exportCHR = true
+
 		default:
 			normalized = append(normalized, arg)
 		}

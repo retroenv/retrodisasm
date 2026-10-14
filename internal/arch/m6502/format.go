@@ -47,6 +47,7 @@ func (ar *Arch6502) formatConfiguredOperand(mode cpu6502.AddressingMode, express
 		return "#" + expression, nil
 	case cpu6502.RelativeAddressing:
 		return expression, nil
+
 	default:
 		result, err := parameter.String(ar.converter, mode, expression)
 		if err != nil {

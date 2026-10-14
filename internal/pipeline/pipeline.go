@@ -215,6 +215,7 @@ func (p *Pipeline) createDisassemblerForSystem(system arch.System, paramConverte
 			return nil, fmt.Errorf("creating m6502 disassembler: %w", err)
 		}
 		return dis, nil
+
 	case arch.CHIP8System:
 		archImpl := chip8.New()
 		dis, err := disasm.New(p.logger, archImpl, cart, disasmOpts, fileWriterConstructor)
@@ -222,6 +223,7 @@ func (p *Pipeline) createDisassemblerForSystem(system arch.System, paramConverte
 			return nil, fmt.Errorf("creating chip8 disassembler: %w", err)
 		}
 		return dis, nil
+
 	default:
 		return nil, fmt.Errorf("unsupported system '%s'", system)
 	}
