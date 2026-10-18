@@ -2,6 +2,7 @@ package m6502
 
 import (
 	"github.com/retroenv/retrodisasm/internal/offset"
+	"github.com/retroenv/retrodisasm/internal/program"
 	"github.com/retroenv/retrogolib/arch/cpu/cpu6502"
 	"github.com/retroenv/retrogolib/log"
 )
@@ -64,5 +65,22 @@ func (ar *Arch6502) DetectComplementaryBranchSequence(address uint16, offsetInfo
 		log.Hex("second_address", nextAddress),
 		log.String("second_branch", nextOpcode.Instruction.Name))
 
+	return true
+}
+
+func (ar *Arch6502) preserveUnmappedBranch(address uint16, info *offset.DisasmOffset) bool {
+	if info.Opcode.Addressing() != int(cpu6502.RelativeAddressing) || len(info.Data) != 2 {
+		return false
+	}
+	target := uint16(int(address) + 2 + int(int8(info.Data[1])))
+	if target >= ar.codeBaseAddress && target < ar.LastCodeAddress() && ar.mapper.OffsetInfo(target) != nil {
+		return false
+	}
+	// Relocatable assemblers cannot resolve a relative branch to an absolute
+	// address outside the labeled code region. Keep the encoded displacement.
+	info.Comment = info.Code
+	info.Code = ""
+	info.SetType(program.CodeAsData)
+	ar.dis.ChangeAddressRangeToCodeAsData(address, info.Data)
 	return true
 }
