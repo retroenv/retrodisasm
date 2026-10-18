@@ -50,18 +50,13 @@ func (c *Consts) ReplaceParameter(address uint16, opcode instruction.Opcode, par
 		return "", false
 	}
 
-	// split parameter string in case of x/y indexing, only the first part will be replaced by a const name
-	paramParts := strings.Split(paramAsString, ",")
-
 	if constantInfo.Read != "" && opcode.ReadsMemory() {
 		c.MarkUsed(address)
-		paramParts[0] = constantInfo.Read
-		return strings.Join(paramParts, ","), true
+		return replaceAddressLiteral(paramAsString, constantInfo.Read), true
 	}
 	if constantInfo.Write != "" && opcode.WritesMemory() {
 		c.MarkUsed(address)
-		paramParts[0] = constantInfo.Write
-		return strings.Join(paramParts, ","), true
+		return replaceAddressLiteral(paramAsString, constantInfo.Write), true
 	}
 
 	return paramAsString, true
@@ -119,4 +114,18 @@ func (c *Consts) AssignBankConstants(bankID int, prgBank *program.PRGBank) {
 
 type architecture interface {
 	Constants() (map[uint16]Constant, error)
+}
+
+func replaceAddressLiteral(operand, name string) string {
+	// Named constants retain their known address size without ca65's override.
+	operand = strings.TrimPrefix(operand, "a:")
+	start := strings.IndexByte(operand, '$')
+	if start < 0 {
+		return operand
+	}
+	end := start + 1
+	for end < len(operand) && strings.ContainsRune("0123456789abcdefABCDEF", rune(operand[end])) {
+		end++
+	}
+	return operand[:start] + name + operand[end:]
 }
