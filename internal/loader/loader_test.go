@@ -10,6 +10,17 @@ import (
 	"github.com/retroenv/retrogolib/assert"
 )
 
+func TestLoadRejectsLostSubmapper(t *testing.T) {
+	// Nonzero submapper identity must not be discarded before layout selection.
+	rom := make([]byte, 16+0x8000)
+	copy(rom, []byte{'N', 'E', 'S', 0x1a, 2, 0, 0x20, 0x08, 0x10})
+	_, err := New().LoadFromBytes(rom, false, arch.NES)
+	assert.ErrorContains(t, err, "unsupported NES submapper 1")
+	rom[8] = 0
+	_, err = New().LoadFromBytes(rom, false, arch.NES)
+	assert.NoError(t, err)
+}
+
 //nolint:funlen,cyclop // test functions can be long and complex
 func TestLoad(t *testing.T) {
 	t.Run("load binary file", func(t *testing.T) {

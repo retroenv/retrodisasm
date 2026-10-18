@@ -179,6 +179,9 @@ retrodisasm -z -o output.asm input.nes
 
 retrodisasm has experimental support for NES mappers with banking. The tool attempts to trace execution flow across bank switches and generate appropriate assembly output.
 
+Nonzero NES 2.0 submappers are rejected because the cartridge metadata cannot
+preserve submapper identity.
+
 ## Known Limitations
 
 * Mapper support is experimental and may not handle all banking scenarios

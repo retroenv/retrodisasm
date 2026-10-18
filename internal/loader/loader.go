@@ -2,6 +2,7 @@
 package loader
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io"
@@ -65,8 +66,16 @@ func (l *Loader) loadFromReader(reader io.Reader, binary bool, system arch.Syste
 	switch {
 	case binary, system == arch.CHIP8System:
 		cart, err = cartridge.LoadBuffer(reader)
+
 	default:
-		cart, err = cartridge.LoadFile(reader)
+		buffer := bufio.NewReader(reader)
+		header, _ := buffer.Peek(16)
+		// The cartridge library does not retain NES 2.0 submapper identity.
+		// Reject it before it can be silently interpreted as submapper zero.
+		if len(header) == 16 && header[7]&0x0c == 0x08 && header[8]>>4 != 0 {
+			return nil, fmt.Errorf("unsupported NES submapper %d: cartridge metadata cannot preserve it", header[8]>>4)
+		}
+		cart, err = cartridge.LoadFile(buffer)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("loading cartridge: %w", err)

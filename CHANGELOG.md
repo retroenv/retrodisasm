@@ -11,6 +11,7 @@ Added:
 
 Changed:
 
+* reject nonzero NES submappers because cartridge metadata cannot preserve them
 * require Go 1.25 or newer when installing from source
 
 Fixed:
