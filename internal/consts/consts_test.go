@@ -297,3 +297,26 @@ func TestAssignBankConstants(t *testing.T) {
 		assert.Equal(t, uint16(0x2000), prgBank.Constants["PPU_CTRL"])
 	})
 }
+
+func TestReplaceParameterPreservesAddressingSyntax(t *testing.T) {
+	// Replacing the entire operand changed JMP ($2002) into JMP PPU_STATUS,
+	// silently changing opcode $6C to $4C when reassembled.
+	manager, err := New(&mockArch{constants: map[uint16]Constant{
+		0x2002: {
+			Address: 0x2002,
+			Read:    "PPU_STATUS",
+		},
+	}})
+	assert.NoError(t, err)
+	for _, test := range []struct{ input, want string }{
+		{"($2002)", "(PPU_STATUS)"},
+		{"[$2002]", "[PPU_STATUS]"},
+		{"a:$2002,X", "PPU_STATUS,X"},
+		{"($2002,X)", "(PPU_STATUS,X)"},
+		{"[$2002],Y", "[PPU_STATUS],Y"},
+	} {
+		got, ok := manager.ReplaceParameter(0x2002, &mockOpcode{reads: true}, test.input)
+		assert.True(t, ok)
+		assert.Equal(t, test.want, got)
+	}
+}
