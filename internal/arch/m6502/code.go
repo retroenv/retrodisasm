@@ -10,6 +10,9 @@ import (
 // has multiple opcodes for the same addressing mode which can result in different
 // bytes being assembled and make the resulting ROM not matching the original.
 func (ar *Arch6502) HandleDisambiguousInstructions(address uint16, offsetInfo *offset.DisasmOffset) bool {
+	if ar.preserveUnmappedBranch(address, offsetInfo) {
+		return true
+	}
 	instruction := offsetInfo.Opcode.Instruction()
 	if !instruction.Unofficial() || address >= cpu6502.InterruptVectorStartAddress {
 		return false

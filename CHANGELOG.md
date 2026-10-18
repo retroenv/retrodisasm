@@ -17,6 +17,7 @@ Fixed:
 
 * fix 6502 BIT trick disassembly for masked function entry points and preserve symbolic memory references
 * preserve indirect addressing when replacing hardware register addresses with names
+* preserve relative branch bytes when the target is outside the disassembled code
 
 ## [v0.4.0] - 2026-09-01
 
