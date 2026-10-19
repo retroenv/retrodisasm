@@ -20,6 +20,7 @@ import (
 	"github.com/retroenv/retrodisasm/internal/romconfig"
 	"github.com/retroenv/retrodisasm/internal/vars"
 	"github.com/retroenv/retrodisasm/internal/writer"
+	"github.com/retroenv/retrogolib/arch"
 	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
 	"github.com/retroenv/retrogolib/arch/system/nes/codedatalog"
 	"github.com/retroenv/retrogolib/log"
@@ -314,6 +315,13 @@ func (dis *Disasm) initializeComponents(logger *log.Logger, ar architecture, car
 // the chosen assembler output instance to generate the asm file.
 func (dis *Disasm) convertToProgram() (*program.Program, error) {
 	app := program.New(dis.cart)
+	if dis.options.System == arch.NES {
+		header, err := dis.cart.HeaderBytes()
+		if err != nil {
+			return nil, fmt.Errorf("encoding NES header: %w", err)
+		}
+		app.NESHeader = header
+	}
 	app.CodeBaseAddress = dis.codeBaseAddress
 	app.VectorsStartAddress = dis.vectorsStartAddress
 	app.Handlers = dis.handlers

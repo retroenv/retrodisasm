@@ -10,6 +10,22 @@ import (
 	"github.com/retroenv/retrogolib/assert"
 )
 
+func TestLoadPreservesSubmapper(t *testing.T) {
+	rom := make([]byte, 16+0x8000)
+	copy(rom, []byte{'N', 'E', 'S', 0x1a, 2, 0, 0x20, 0x08, 0x10})
+	cart, err := New().LoadFromBytes(rom, false, arch.NES)
+	assert.NoError(t, err)
+	assert.Equal(t, uint16(2), cart.Mapper)
+	assert.NotNil(t, cart.NES2)
+	assert.Equal(t, byte(1), cart.NES2.Submapper)
+
+	rom[8] = 0
+	cart, err = New().LoadFromBytes(rom, false, arch.NES)
+	assert.NoError(t, err)
+	assert.NotNil(t, cart.NES2)
+	assert.Equal(t, byte(0), cart.NES2.Submapper)
+}
+
 //nolint:funlen,cyclop // test functions can be long and complex
 func TestLoad(t *testing.T) {
 	t.Run("load binary file", func(t *testing.T) {

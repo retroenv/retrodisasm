@@ -19,7 +19,7 @@ import (
 	"github.com/retroenv/retrogolib/log"
 )
 
-// VerifyOutput verifies that the output file recreates the exact input file.
+// VerifyOutput checks that the output preserves the input cartridge data and metadata.
 func VerifyOutput(ctx context.Context, logger *log.Logger, options opts.Program, cart *cartridge.Cartridge,
 	app *program.Program) error {
 
@@ -162,6 +162,12 @@ func compareCartridgeDetails(logger *log.Logger, input, output []byte) error {
 	if cart1.Mapper != cart2.Mapper {
 		return fmt.Errorf("mapper mismatch, expected %d but got %d", cart1.Mapper, cart2.Mapper)
 	}
+	if !sameNES2Metadata(cart1.NES2, cart2.NES2) {
+		return fmt.Errorf("NES 2.0 header metadata mismatch: input % x, output % x", input[:16], output[:16])
+	}
+	if cart1.VideoFormat != cart2.VideoFormat {
+		return fmt.Errorf("video format mismatch, expected %d but got %d", cart1.VideoFormat, cart2.VideoFormat)
+	}
 	if cart1.Mirror != cart2.Mirror {
 		return fmt.Errorf("mirror mismatch, expected %d but got %d", cart1.Mirror, cart2.Mirror)
 	}
@@ -169,4 +175,22 @@ func compareCartridgeDetails(logger *log.Logger, input, output []byte) error {
 		return fmt.Errorf("battery mismatch, expected %d but got %d", cart1.Battery, cart2.Battery)
 	}
 	return nil
+}
+
+func sameNES2Metadata(left, right *cartridge.NES2Metadata) bool {
+	leftEmpty := isEmptyNES2Metadata(left)
+	rightEmpty := isEmptyNES2Metadata(right)
+	if leftEmpty || rightEmpty {
+		return leftEmpty && rightEmpty
+	}
+	return left.Submapper == right.Submapper && left.RAMSizes == right.RAMSizes &&
+		left.ConsoleType == right.ConsoleType && left.ConsoleData == right.ConsoleData &&
+		left.ExpansionDevice == right.ExpansionDevice && left.MiscROMCount == right.MiscROMCount &&
+		bytes.Equal(left.MiscROM, right.MiscROM)
+}
+
+func isEmptyNES2Metadata(metadata *cartridge.NES2Metadata) bool {
+	return metadata == nil || metadata.Submapper == 0 && metadata.RAMSizes == (cartridge.RAMSizes{}) &&
+		metadata.ConsoleType == 0 && metadata.ConsoleData == 0 && metadata.ExpansionDevice == 0 &&
+		metadata.MiscROMCount == 0 && len(metadata.MiscROM) == 0
 }

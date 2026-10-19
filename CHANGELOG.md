@@ -11,6 +11,7 @@ Added:
 
 Changed:
 
+* preserve NES 2.0 submapper metadata in ca65, asm6, and retroasm output
 * require Go 1.25 or newer when installing from source
 
 Fixed:

@@ -1,6 +1,7 @@
 package nesasm
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -46,6 +47,9 @@ func New(app *program.Program, options options.Disassembler, mainWriter io.Write
 
 // Write writes the assembly file content including header, footer, code and data.
 func (f FileWriter) Write() error {
+	if !f.options.CodeOnly && f.app.NESHeader[7]&0x0c == 0x08 {
+		return errors.New("nesasm cannot write NES 2.0 headers; use ca65, asm6, or retroasm")
+	}
 	var writes []any // nolint:prealloc
 
 	if !f.options.CodeOnly {

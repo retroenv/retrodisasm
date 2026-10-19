@@ -9,7 +9,6 @@ import (
 	"github.com/retroenv/retrodisasm/internal/options"
 	"github.com/retroenv/retrodisasm/internal/program"
 	"github.com/retroenv/retrodisasm/internal/writer"
-	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
 )
 
 var cpuSelector = `.setcpu "6502x"` // allow unofficial opcodes
@@ -51,48 +50,39 @@ func New(app *program.Program, options options.Disassembler, mainWriter io.Write
 //
 //nolint:funlen // The required multiline output records make the cohesive writer exceed the limit.
 func (f FileWriter) Write() error {
-	control1, control2 := cartridge.ControlBytes(f.app.Battery, byte(f.app.Mirror), f.app.Mapper, len(f.app.Trainer) > 0)
+	header := f.app.NESHeader
 
-	// iNES 2.0: mapper numbers > 0xFF require extended header encoding.
-	ramByte := f.app.RAM
-	if f.app.Mapper > 0xFF {
-		control2 = (control2 &^ 0x0C) | 0x08
-		ramByte = byte((f.app.Mapper >> 8) & 0x0F)
-	}
-
-	var writes []any // nolint:prealloc
+	writes := make([]any, 0, 17)
 
 	if !f.options.CodeOnly {
-		writes = []any{
+		writes = append(writes,
 			lineWrite("; NES ROM Disassembly"),
 			customWrite(f.writer.WriteCommentHeader),
 			lineWrite(cpuSelector),
 			segmentWrite{name: "HEADER"},
 			lineWrite(iNESHeader),
 			headerByteWrite{
-				value:   byte(f.app.PrgSize() / 16384),
+				value:   header[4],
 				comment: "Number of 16KB PRG-ROM banks",
 			},
 			headerByteWrite{
-				value:   byte(len(f.app.CHR) / 8192),
+				value:   header[5],
 				comment: "Number of 8KB CHR-ROM banks",
 			},
 			headerByteWrite{
-				value:   control1,
+				value:   header[6],
 				comment: "Control bits 1",
 			},
 			headerByteWrite{
-				value:   control2,
+				value:   header[7],
 				comment: "Control bits 2",
 			},
-			headerByteWrite{
-				value:   ramByte,
-				comment: "Number of 8KB PRG-RAM banks",
-			},
-			headerByteWrite{
-				value:   f.app.VideoFormat,
-				comment: "Video format NTSC/PAL",
-			},
+		)
+		for index, value := range header[8:] {
+			writes = append(writes, headerByteWrite{
+				value:   value,
+				comment: fmt.Sprintf("NES header byte %d", index+8),
+			})
 		}
 	}
 

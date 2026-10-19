@@ -8,7 +8,6 @@ import (
 	"github.com/retroenv/retrodisasm/internal/assembler"
 	"github.com/retroenv/retrodisasm/internal/program"
 	"github.com/retroenv/retrodisasm/internal/writer"
-	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
 )
 
 const (
@@ -50,14 +49,7 @@ func (w *FileWriter) writeHeader() error {
 		return fmt.Errorf("writing comment header: %w", err)
 	}
 
-	control1, control2 := cartridge.ControlBytes(w.app.Battery, byte(w.app.Mirror), w.app.Mapper, len(w.app.Trainer) > 0)
-
-	// iNES 2.0: mapper numbers > 0xFF require extended header encoding.
-	ramByte := w.app.RAM
-	if w.app.Mapper > 0xFF {
-		control2 = (control2 &^ 0x0C) | 0x08
-		ramByte = byte((w.app.Mapper >> 8) & 0x0F)
-	}
+	header := w.app.NESHeader
 
 	if _, err := fmt.Fprintf(w.mainWriter, "%-30s ; %s\n", ".byte \"NES\", $1a", "Magic string that always begins an iNES header"); err != nil {
 		return fmt.Errorf("writing magic string: %w", err)
@@ -67,22 +59,25 @@ func (w *FileWriter) writeHeader() error {
 		value   byte
 		comment string
 	}{
-		{byte(w.app.PrgSize() / 16384), "Number of 16KB PRG-ROM banks"},
-		{byte(len(w.app.CHR) / 8192), "Number of 8KB CHR-ROM banks"},
-		{control1, "Control bits 1"},
-		{control2, "Control bits 2"},
-		{ramByte, "Number of 8KB PRG-RAM banks"},
-		{w.app.VideoFormat, "Video format NTSC/PAL"},
+		{header[4], "Number of 16KB PRG-ROM banks"},
+		{header[5], "Number of 8KB CHR-ROM banks"},
+		{header[6], "Control bits 1"},
+		{header[7], "Control bits 2"},
+	}
+	for index, value := range header[8:] {
+		headerWrites = append(headerWrites, struct {
+			value   byte
+			comment string
+		}{
+			value:   value,
+			comment: fmt.Sprintf("NES header byte %d", index+8),
+		})
 	}
 
 	for _, hw := range headerWrites {
 		if _, err := fmt.Fprintf(w.mainWriter, headerByte, hw.value, "", hw.comment); err != nil {
 			return fmt.Errorf("writing header byte: %w", err)
 		}
-	}
-
-	if _, err := fmt.Fprintf(w.mainWriter, "%-30s ; %s\n", ".dsb 6", "Padding to fill 16 BYTE iNES Header"); err != nil {
-		return fmt.Errorf("writing padding: %w", err)
 	}
 
 	return nil
