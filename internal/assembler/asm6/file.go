@@ -167,6 +167,18 @@ func (f FileWriter) writeBank(w prgBankWrite) error {
 	if err := bankW.ProcessPRG(w.bank, endIndex); err != nil {
 		return fmt.Errorf("writing PRG: %w", err)
 	}
+	return f.writeBankFooter(bankWriteCloser, w)
+}
+
+func (f FileWriter) writeBankFooter(bankWriteCloser io.Writer, w prgBankWrite) error {
+	if !w.bank.HasVectors {
+		if !f.options.CodeOnly {
+			if _, err := fmt.Fprintf(bankWriteCloser, "\n.pad $%04X\n", int(w.bank.BaseAddress)+len(w.bank.Offsets)); err != nil {
+				return fmt.Errorf("writing bank padding: %w", err)
+			}
+		}
+		return nil
+	}
 
 	vectorsAddr := w.bank.BaseAddress + uint16(len(w.bank.Offsets)) - 6
 

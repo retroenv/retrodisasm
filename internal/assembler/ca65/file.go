@@ -194,7 +194,6 @@ func (f FileWriter) writePRGBank(t prgBankWrite) error {
 		return fmt.Errorf("writing PRG: %w", err)
 	}
 
-	// For multi-bank ROMs, write vectors at end of each bank
 	if t.isMultiBank && !f.options.CodeOnly {
 		if err := f.writeBankVectorsTo(bankWriteCloser, t.bank, endIndex); err != nil {
 			return err
@@ -267,11 +266,13 @@ func (f FileWriter) writeCHR() error {
 }
 
 // writeBankVectorsTo writes vectors at the end of a bank for multi-bank ROMs.
-// Each bank has its own NMI, Reset, and IRQ vectors stored in the last 6 bytes.
 func (f FileWriter) writeBankVectorsTo(w io.Writer, bank *program.PRGBank, endIndex int) error {
 	// Multi-bank vectors must always sit in the last 6 bytes of the bank.
 	// Pad with explicit zeros so vectors are not emitted immediately after code.
-	vectorStartIndex := len(bank.Offsets) - 6
+	vectorStartIndex := len(bank.Offsets)
+	if bank.HasVectors {
+		vectorStartIndex -= 6
+	}
 	padding := vectorStartIndex - endIndex
 	if padding < 0 {
 		return fmt.Errorf("bank data overlaps vectors: end_index=%d vector_start_index=%d", endIndex, vectorStartIndex)
@@ -280,6 +281,9 @@ func (f FileWriter) writeBankVectorsTo(w io.Writer, bank *program.PRGBank, endIn
 		if _, err := fmt.Fprintf(w, "\n.res %d, $00\n", padding); err != nil {
 			return fmt.Errorf("writing vector padding: %w", err)
 		}
+	}
+	if !bank.HasVectors {
+		return nil
 	}
 
 	// Vectors are: [0]=NMI, [1]=Reset, [2]=IRQ

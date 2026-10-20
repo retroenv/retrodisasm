@@ -103,7 +103,7 @@ func (w *FileWriter) writeBank(bank *program.PRGBank, firstBank, lastBank bool) 
 		}
 	}
 
-	bankW := writer.New(w.app, bankWriteCloser, writer.Options{
+	bankW := w.writer.ForOutput(bankWriteCloser, writer.Options{
 		OffsetComments: w.options.OffsetComments,
 	})
 
@@ -124,22 +124,30 @@ func (w *FileWriter) writeBank(bank *program.PRGBank, firstBank, lastBank bool) 
 		return fmt.Errorf("writing PRG: %w", err)
 	}
 
-	if !w.options.CodeOnly {
-		vectorsAddr := bank.BaseAddress + uint16(len(bank.Offsets)) - 6
-		if lastBank {
-			if err := writeVectorsTo(bankWriteCloser, vectorsAddr, w.app.Handlers.NMI, w.app.Handlers.Reset, w.app.Handlers.IRQ); err != nil {
-				return fmt.Errorf("writing vectors: %w", err)
-			}
-		} else {
-			nmi := fmt.Sprintf("$%04X", bank.Vectors[0])
-			reset := fmt.Sprintf("$%04X", bank.Vectors[1])
-			irq := fmt.Sprintf("$%04X", bank.Vectors[2])
-			if err := writeVectorsTo(bankWriteCloser, vectorsAddr, nmi, reset, irq); err != nil {
-				return fmt.Errorf("writing vectors: %w", err)
-			}
+	return w.writeBankVectors(bankWriteCloser, bank, lastBank, endIndex)
+}
+
+func (w *FileWriter) writeBankVectors(output io.Writer, bank *program.PRGBank, lastBank bool, endIndex int) error {
+	if w.options.CodeOnly {
+		return nil
+	}
+	if !bank.HasVectors {
+		if _, err := fmt.Fprintf(output, "\n.dsb %d\n", len(bank.Offsets)-endIndex); err != nil {
+			return fmt.Errorf("writing bank padding: %w", err)
 		}
+		return nil
 	}
 
+	nmi := fmt.Sprintf("$%04X", bank.Vectors[0])
+	reset := fmt.Sprintf("$%04X", bank.Vectors[1])
+	irq := fmt.Sprintf("$%04X", bank.Vectors[2])
+	if lastBank {
+		nmi, reset, irq = assembler.VectorReferences(bank, w.app.Handlers)
+	}
+	vectorsAddr := bank.BaseAddress + uint16(len(bank.Offsets)) - 6
+	if err := writeVectorsTo(output, vectorsAddr, nmi, reset, irq); err != nil {
+		return fmt.Errorf("writing vectors: %w", err)
+	}
 	return nil
 }
 

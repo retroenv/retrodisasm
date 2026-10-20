@@ -40,6 +40,8 @@ func (m *Mapper) SetProgramBanks(app *program.Program) error {
 		// Banked PRG segments share the CPU window base even though assemblers
 		// emit each bank into a separate output region.
 		prgBank.BaseAddress = m.codeBaseAddress
+		// Every current bank layout ends at the interrupt vectors.
+		prgBank.HasVectors = true
 
 		for i := range len(bnk.offsets) {
 			offsetInfo := bnk.offsets[i]

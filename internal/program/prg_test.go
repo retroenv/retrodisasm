@@ -52,3 +52,18 @@ func TestLastNonZeroBytePreservesPresentation(t *testing.T) {
 		assert.Equal(t, 9, bank.LastNonZeroByte(options.Disassembler{}))
 	}
 }
+
+func TestLastNonZeroByteReservesOnlyActualVectors(t *testing.T) {
+	// Ordinary bank tails must not disappear because the constructor assumed
+	// every bank ends in interrupt vectors.
+	bank := NewPRGBank(16)
+	assert.False(t, bank.HasVectors)
+	bank.Offsets[15] = Offset{
+		Data: []byte{0x42},
+		Type: DataOffset,
+	}
+	assert.Equal(t, 16, bank.LastNonZeroByte(options.Disassembler{}))
+	bank.HasVectors = true
+	assert.Equal(t, 10, bank.LastNonZeroByte(options.Disassembler{}))
+	assert.Equal(t, 16, bank.LastNonZeroByte(options.Disassembler{Binary: true}))
+}

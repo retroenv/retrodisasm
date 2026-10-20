@@ -8,9 +8,13 @@ import (
 type PRGBank struct {
 	Name        string
 	BaseAddress uint16
+	// ID and ROMOffset identify physical storage independently of the CPU origin.
+	ID        int
+	ROMOffset int
 
-	Offsets []Offset
-	Vectors [3]uint16
+	Offsets    []Offset
+	Vectors    [3]uint16
+	HasVectors bool
 
 	Constants map[string]uint16
 	Variables map[string]uint16
@@ -27,10 +31,9 @@ func NewPRGBank(size int) *PRGBank {
 
 // LastNonZeroByte searches for the last byte in PRG that is not zero.
 func (bank PRGBank) LastNonZeroByte(options options.Disassembler) int {
-	// In binary mode, don't reserve space for vectors since raw binaries don't have them
-	vectorSpace := 6
-	if options.Binary {
-		vectorSpace = 0
+	vectorSpace := 0
+	if bank.HasVectors && !options.Binary {
+		vectorSpace = 6
 	}
 
 	endIndex := len(bank.Offsets) - vectorSpace
@@ -42,12 +45,7 @@ func (bank PRGBank) LastNonZeroByte(options options.Disassembler) int {
 		return endIndex
 	}
 
-	start := len(bank.Offsets) - 1 - vectorSpace
-	if start < 0 {
-		start = len(bank.Offsets) - 1
-	}
-
-	for i := start; i >= 0; i-- {
+	for i := endIndex - 1; i >= 0; i-- {
 		offset := bank.Offsets[i]
 		// Skip zero bytes that are not code instructions and have no label
 		// BRK instruction (0x00) should be included if it's marked as CodeOffset

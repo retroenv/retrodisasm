@@ -143,9 +143,8 @@ func (f FileWriter) writePRGBank(t prgBankWrite) error {
 		return fmt.Errorf("writing PRG: %w", err)
 	}
 
-	// For multi-bank ROMs, write vectors at end of each bank
 	if t.isMultiBank && !f.options.CodeOnly {
-		if err := f.writeBankVectorsTo(bankWriteCloser, t.bank, t.vectorBank); err != nil {
+		if err := f.writeBankVectorsTo(bankWriteCloser, t.bank, t.vectorBank, endIndex); err != nil {
 			return err
 		}
 	}
@@ -236,7 +235,18 @@ func (f FileWriter) writeVectors(bankNumber int) func() error {
 }
 
 // writeBankVectorsTo writes vectors at the end of a bank for multi-bank ROMs.
-func (f FileWriter) writeBankVectorsTo(w io.Writer, bank *program.PRGBank, bankNumber int) error {
+func (f FileWriter) writeBankVectorsTo(w io.Writer, bank *program.PRGBank, bankNumber, endIndex int) error {
+	if !bank.HasVectors {
+		if endIndex < len(bank.Offsets) {
+			if err := writeBankSelector(bankNumber, int(bank.BaseAddress)+len(bank.Offsets)-1)(w); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintln(w, " .db $00"); err != nil {
+				return fmt.Errorf("writing bank padding: %w", err)
+			}
+		}
+		return nil
+	}
 	// Trailing zeroes can omit the callback that would otherwise select the
 	// final 8 KiB PRG bank before the vectors are written.
 	if err := writeBankSelector(bankNumber, -1)(w); err != nil {
