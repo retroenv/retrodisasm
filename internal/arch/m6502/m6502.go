@@ -131,9 +131,6 @@ func (ar *Arch6502) ProcessOffset(address uint16, offsetInfo *offset.DisasmOffse
 			}
 			return false, err
 		}
-		if ar.truncateInstructionAtMappedBankBoundary(address, offsetInfo) {
-			return true, nil
-		}
 		offsetInfo.Code = fmt.Sprintf("%s %s", name, params)
 	}
 
@@ -172,6 +169,9 @@ func (ar *Arch6502) ProcessOffset(address uint16, offsetInfo *offset.DisasmOffse
 		}
 	}
 
+	// Follow CPU control flow using the full encoding before splitting output
+	// records at physical storage boundaries.
+	ar.truncateInstructionAtMappedBankBoundary(address, offsetInfo)
 	return true, nil
 }
 
@@ -191,10 +191,10 @@ func (ar *Arch6502) BankWindowSize(_ *cartridge.Cartridge) int {
 	return 0x2000 // Multi-bank mode for NES ROMs
 }
 
-func (ar *Arch6502) truncateInstructionAtMappedBankBoundary(address uint16, offsetInfo *offset.DisasmOffset) bool {
+func (ar *Arch6502) truncateInstructionAtMappedBankBoundary(address uint16, offsetInfo *offset.DisasmOffset) {
 	ownedBytes := ar.instructionBytesInMappedBank(address, len(offsetInfo.Data))
 	if ownedBytes == len(offsetInfo.Data) {
-		return false
+		return
 	}
 
 	// A CPU instruction may cross from a switchable window into a fixed bank,
@@ -202,7 +202,6 @@ func (ar *Arch6502) truncateInstructionAtMappedBankBoundary(address uint16, offs
 	offsetInfo.Data = offsetInfo.Data[:ownedBytes]
 	offsetInfo.SetType(program.CodeAsData)
 	ar.dis.ChangeAddressRangeToCodeAsData(address, offsetInfo.Data)
-	return true
 }
 
 func (ar *Arch6502) instructionBytesInMappedBank(address uint16, length int) int {

@@ -17,6 +17,7 @@ Changed:
 Fixed:
 
 * fix 6502 BIT trick disassembly for masked function entry points and preserve symbolic memory references
+* fix tracing instructions that cross a switchable bank boundary
 * preserve indirect addressing when replacing hardware register addresses with names
 * preserve relative branch bytes when the target is outside the disassembled code
 
