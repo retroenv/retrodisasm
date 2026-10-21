@@ -295,9 +295,7 @@ func (dis *Disasm) applyConfiguredOperands() error {
 	if dis.config == nil || len(dis.config.Operands) == 0 {
 		return nil
 	}
-	formatter, ok := dis.arch.(interface {
-		ApplyOperand(uint16, *offset.DisasmOffset, string, uint16) error
-	})
+	formatter, ok := dis.arch.(operandApplier)
 	if !ok {
 		return errors.New("operand hints are not supported by this architecture")
 	}

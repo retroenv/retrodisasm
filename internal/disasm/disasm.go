@@ -30,6 +30,16 @@ import (
 type FileWriterConstructor func(app *program.Program, options options.Disassembler, mainWriter io.Writer,
 	newBankWriter assembler.NewBankWriter) writer.AssemblerWriter
 
+// codeBaseAddressSetter is implemented by architectures that depend on the code base address.
+type codeBaseAddressSetter interface {
+	SetCodeBaseAddress(address uint16)
+}
+
+// operandApplier is implemented by architectures that support configured operand hints.
+type operandApplier interface {
+	ApplyOperand(address uint16, offsetInfo *offset.DisasmOffset, expression string, value uint16) error
+}
+
 // architecture defines the minimal interface needed from the architecture.
 type architecture interface {
 	// AddressingParam returns the address of the param if it references an address.
@@ -200,7 +210,7 @@ func (dis *Disasm) SetCodeBaseAddress(address uint16) {
 	dis.mapper.SetCodeBaseAddress(address)
 
 	// Set code base address in architecture if it supports it (e.g., m6502)
-	if setter, ok := dis.arch.(interface{ SetCodeBaseAddress(uint16) }); ok {
+	if setter, ok := dis.arch.(codeBaseAddressSetter); ok {
 		setter.SetCodeBaseAddress(address)
 	}
 
