@@ -191,7 +191,12 @@ func (ar *Arch6502) calculateCodeBaseAddress(resetHandler uint16) {
 		return
 	}
 
-	halfPrg := len(cart.PRG) % 0x8000
+	// Only a single 16 KiB ROM is mirrored. An odd number of banked 16 KiB
+	// segments still has a switchable window starting at $8000.
+	var halfPrg int
+	if len(cart.PRG) == 0x4000 {
+		halfPrg = 0x4000
+	}
 	codeBaseAddress := uint16(0x8000 + halfPrg)
 	vectorsStartAddress := uint16(cpu6502.InterruptVectorStartAddress)
 

@@ -11,13 +11,14 @@ import (
 	"github.com/retroenv/retrogolib/assert"
 )
 
-func TestTraceInstructionAcrossBankBoundary(t *testing.T) {
+func TestTraceInstructionAcrossUNROMBoundary(t *testing.T) {
 	// Splitting a physical output record must not stop CPU execution at the
 	// bank boundary or treat the operand in the next bank as an opcode.
 	cart := cartridge.New()
-	cart.PRG = make([]byte, 2*0x8000)
+	cart.Mapper = 2
+	cart.PRG = make([]byte, 3*0x4000)
 	cart.PRG[0x3fff] = 0xa9
-	copy(cart.PRG[0xc000:], []byte{0x42, 0xa9, 0x37, 0x60})
+	copy(cart.PRG[0x8000:], []byte{0x42, 0xa9, 0x37, 0x60})
 	copy(cart.PRG[len(cart.PRG)-4:], []byte{0xff, 0xbf, 0, 0})
 	dis := testProgram(t, options.NewDisassembler(assembler.Ca65, "nes"), cart, nil)
 	app, err := dis.Process(t.Context(), io.Discard, func(_ string) (io.WriteCloser, error) {
@@ -26,6 +27,6 @@ func TestTraceInstructionAcrossBankBoundary(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, app.PRG[0].Offsets[0x3fff].IsType(program.CodeAsData))
 	assert.Equal(t, []byte{0xa9}, app.PRG[0].Offsets[0x3fff].Data)
-	assert.Equal(t, "lda #$37", app.PRG[1].Offsets[0x4001].Code)
-	assert.Equal(t, "rts", app.PRG[1].Offsets[0x4003].Code)
+	assert.Equal(t, "lda #$37", app.PRG[2].Offsets[1].Code)
+	assert.Equal(t, "rts", app.PRG[2].Offsets[3].Code)
 }

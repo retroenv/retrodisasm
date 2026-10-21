@@ -2,6 +2,7 @@ package mapper
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/retroenv/retrodisasm/internal/offset"
@@ -10,10 +11,21 @@ import (
 
 // ClassifyRemainingAsData marks all unowned bytes as data.
 func (m *Mapper) ClassifyRemainingAsData() {
-	for _, bnk := range m.banks {
+	for _, bnk := range slices.Concat(m.banks, m.views) {
+		// Only one mapping is analyzed. Banks outside it remain data so that
+		// the output still contains every physical ROM byte.
+		bnk.initializeOffsets()
 		// Empty code offsets represent operand bytes only while an owning encoding covers them.
 		owned := make([]bool, len(bnk.offsets))
 		for i, offsetInfo := range bnk.offsets {
+			// A function reference can span two physical banks. Each bank must
+			// own only its stored bytes, even when the CPU reads one word.
+			if remaining := len(bnk.offsets) - i; len(offsetInfo.Data) > remaining {
+				offsetInfo.Data = offsetInfo.Data[:remaining]
+				offsetInfo.ClearType(program.CodeOffset | program.FunctionReference | program.ExpressionData)
+				offsetInfo.SetType(program.CodeAsData | program.DataOffset)
+				offsetInfo.Code = ""
+			}
 			for j := 1; j < len(offsetInfo.Data) && i+j < len(owned); j++ {
 				owned[i+j] = true
 			}
@@ -35,17 +47,20 @@ func (m *Mapper) ClassifyRemainingAsData() {
 // It processes all mapper banks, creates corresponding program banks, and populates them
 // with offset information, variables, and constants.
 func (m *Mapper) SetProgramBanks(app *program.Program) error {
-	for bnkIndex, bnk := range m.banks {
-		prgBank := program.NewPRGBank(len(bnk.offsets))
-		// Banked PRG segments share the CPU window base even though assemblers
-		// emit each bank into a separate output region.
+	for _, bnk := range slices.Concat(m.banks, m.views) {
+		size := len(bnk.offsets)
+		prgBank := program.NewPRGBank(size)
+		prgBank.ID = bnk.id
+		prgBank.ROMOffset = bnk.romOffset
 		prgBank.BaseAddress = m.codeBaseAddress
-		// Every current bank layout ends at the interrupt vectors.
-		prgBank.HasVectors = true
+		if bnk.baseAddress != 0 {
+			prgBank.BaseAddress = bnk.baseAddress
+		}
+		prgBank.HasVectors = bnk.hasVectors
 
-		for i := range len(bnk.offsets) {
+		for i := range size {
 			offsetInfo := bnk.offsets[i]
-			programOffsetInfo, err := m.getProgramOffset(m.codeBaseAddress+uint16(i), offsetInfo)
+			programOffsetInfo, err := m.getProgramOffset(prgBank.BaseAddress+uint16(i), offsetInfo)
 			if err != nil {
 				return err
 			}
@@ -53,10 +68,10 @@ func (m *Mapper) SetProgramBanks(app *program.Program) error {
 			prgBank.Offsets[i] = programOffsetInfo
 		}
 
-		m.consts.AssignBankConstants(bnkIndex, prgBank)
-		m.vars.AssignBankVariables(bnkIndex, prgBank)
+		m.consts.AssignBankConstants(bnk.id, prgBank)
+		m.vars.AssignBankVariables(bnk.id, prgBank)
 
-		setBankName(prgBank, bnkIndex, len(m.banks))
+		setBankName(prgBank, bnk.id, len(m.banks))
 		setBankVectors(bnk, prgBank)
 
 		app.PRG = append(app.PRG, prgBank)

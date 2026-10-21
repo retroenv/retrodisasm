@@ -89,15 +89,41 @@ func TestApplyCodeDataLog_BoundsCheck(t *testing.T) {
 	// Create CDL flags larger than the bank
 	prgFlags := make([]codedatalog.PrgFlag, 0x100)
 	for i := range prgFlags {
-		prgFlags[i] = codedatalog.Code
+		prgFlags[i] = codedatalog.Code | codedatalog.SubEntryPoint
 	}
 
 	// Should not panic and should stop at bank boundary
 	mapper.ApplyCodeDataLog(prgFlags)
 
-	// Current behavior: processes until index > len(offsets)
-	// With 0x10 (16) offsets, processes indices 0-16 (17 addresses)
-	assert.Len(t, mockDis.addedAddresses, 0x11)
+	// A flag immediately after the final offset must not enqueue or index it.
+	assert.Len(t, mockDis.addedAddresses, 0x10)
+}
+
+func TestApplyCodeDataLogUNROMBanks(t *testing.T) {
+	// Physical CDL offsets must resolve to the mapped 16 KiB bank, including
+	// the fixed bank. An unmapped bank must not be mistaken for its neighbor.
+	cart := &cartridge.Cartridge{
+		Mapper: 2,
+		PRG:    make([]byte, 8*0x4000),
+	}
+	mp, err := New(&mockArchitecture{bankWindowSize: 0x2000}, cart)
+	assert.NoError(t, err)
+	mp.SetCodeBaseAddress(0x8000)
+	dis := &mockDisasm{}
+	mp.InjectDependencies(Dependencies{Disasm: dis})
+	flags := make([]codedatalog.PrgFlag, len(cart.PRG))
+	for _, index := range []int{0, 0x4000, 7 * 0x4000, len(flags) - 1} {
+		flags[index] = codedatalog.Code | codedatalog.SubEntryPoint
+	}
+	mp.ApplyCodeDataLog(flags)
+	assert.Equal(t, []uint16{0x8000, 0xc000, 0xffff}, dis.addedAddresses)
+	assert.Empty(t, mp.banks[1].offsets)
+	assert.True(t, mp.banks[7].offsets[0].IsType(program.CallDestination))
+	assert.NoError(t, mp.SelectState(1))
+	dis.addedAddresses = nil
+	mp.ApplyCodeDataLog(flags)
+	assert.True(t, mp.banks[1].offsets[0].IsType(program.CallDestination))
+	assert.Equal(t, []uint16{0x8000, 0xc000, 0xffff}, dis.addedAddresses)
 }
 
 func TestApplyCodeDataLog_Empty(t *testing.T) {

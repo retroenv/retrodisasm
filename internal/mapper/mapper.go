@@ -10,7 +10,10 @@ import (
 
 // Mapper manages memory banking and address mapping for ROM disassembly.
 type Mapper struct {
-	banks []*bank
+	banks  []*bank
+	layout model
+	state  Snapshot
+	views  []*bank
 
 	addressShifts   int
 	bankWindowSize  int
@@ -38,6 +41,9 @@ func New(ar architecture, cart *cartridge.Cartridge) (*Mapper, error) {
 // SetCodeBaseAddress sets the code base address for single-bank systems.
 func (m *Mapper) SetCodeBaseAddress(address uint16) {
 	m.codeBaseAddress = address
+	if len(m.banks) == 1 {
+		m.banks[0].baseAddress = address
+	}
 }
 
 func (m *Mapper) MappedBank(address uint16) offset.MappedBank {
@@ -118,6 +124,19 @@ func (m *Mapper) OffsetInfo(address uint16) *offset.DisasmOffset {
 	return offsetInfo
 }
 
+func (m *Mapper) initializeBanks(prg []byte, bankSize int) {
+	for i := 0; i < len(prg); {
+		size := min(len(prg)-i, bankSize)
+
+		b := prg[i : i+size]
+		bnk := newBank(b)
+		bnk.romOffset = i
+		bnk.id = len(m.banks)
+		m.banks = append(m.banks, bnk)
+		i += size
+	}
+}
+
 // populateBankMappings creates the bank mappings for multi-bank systems
 func (m *Mapper) populateBankMappings(bankWindowSize int) error {
 	bankNumber := 0
@@ -139,16 +158,6 @@ func (m *Mapper) populateBankMappings(bankWindowSize int) error {
 	return nil
 }
 
-// configureDefaultBankMapping sets up default bank mappings for NES systems
-func (m *Mapper) configureDefaultBankMapping() {
-	if m.bankWindowSize == 0x2000 {
-		m.setMappedBank(0x8000, m.banksMapped[0])
-		m.setMappedBank(0xa000, m.banksMapped[1])
-		m.setMappedBank(0xc000, m.banksMapped[len(m.banksMapped)-2])
-		m.setMappedBank(0xe000, m.banksMapped[len(m.banksMapped)-1])
-	}
-}
-
 func (m *Mapper) setMappedBank(address uint16, bank mappedBank) {
 	var bankWindow uint16
 	if m.bankWindowSize == 0 {
@@ -164,6 +173,8 @@ func (m *Mapper) setMappedBank(address uint16, bank mappedBank) {
 // createSingleBankMapper creates a mapper for single bank systems (e.g., CHIP-8)
 func createSingleBankMapper(cart *cartridge.Cartridge) (*Mapper, error) {
 	bnk := newBank(cart.PRG)
+	bnk.initializeOffsets()
+	bnk.mapped = true
 
 	return &Mapper{
 		banks: []*bank{bnk},
@@ -176,23 +187,34 @@ func createSingleBankMapper(cart *cartridge.Cartridge) (*Mapper, error) {
 // createMultiBankMapper creates a mapper for multi-bank systems (e.g., NES)
 func createMultiBankMapper(cart *cartridge.Cartridge, bankWindowSize int) (*Mapper, error) {
 	prgSize := len(cart.PRG)
+	ly, err := nesLayout(cart)
+	if err != nil {
+		return nil, err
+	}
 	mappedBanks := prgSize / bankWindowSize
 	mappedWindows := 0x10000 / bankWindowSize
 
 	m := &Mapper{
+		layout:         ly,
 		addressShifts:  16 - log2(mappedWindows),
 		bankWindowSize: bankWindowSize,
 		banksMapped:    make([]mappedBank, mappedBanks),
 		mapped:         make([]mappedBank, mappedWindows),
 	}
 
-	m.initializeBanks(cart.PRG)
+	m.initializeBanks(cart.PRG, ly.BankSize())
+	for _, bnk := range m.banks {
+		bnk.baseAddress = ly.Origin(bnk.id)
+		bnk.hasVectors = int(bnk.baseAddress)+len(bnk.prg) == 0x10000
+	}
 
 	if err := m.populateBankMappings(bankWindowSize); err != nil {
 		return nil, err
 	}
 
-	m.configureDefaultBankMapping()
+	if err := m.SelectState(0); err != nil {
+		return nil, err
+	}
 
 	return m, nil
 }

@@ -119,7 +119,8 @@ func TestInitializeDependencyBanks_SingleBank(t *testing.T) {
 func TestInitializeDependencyBanks_MultiBanks(t *testing.T) {
 	// Create large cartridge to generate multiple banks
 	cart := &cartridge.Cartridge{
-		PRG: make([]byte, 0x10000), // 64KB = 2 banks of 32KB each
+		PRG:    make([]byte, 0x10000), // 64KB = 2 banks of 32KB each
+		Mapper: 7,
 	}
 	arch := &mockArchitecture{bankWindowSize: 0x4000}
 

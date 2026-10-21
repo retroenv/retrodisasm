@@ -14,19 +14,19 @@ const (
 
 var _ offset.MappedBank = mappedBank{}
 
-func (m *Mapper) initializeBanks(prg []byte) {
-	for i := 0; i < len(prg); {
-		size := min(len(prg)-i, 0x8000)
-
-		b := prg[i : i+size]
-		bnk := newBank(b)
-		m.banks = append(m.banks, bnk)
-		i += size
-	}
+type storage struct {
+	prg       []byte
+	romOffset int
+	id        int
 }
 
+// bank is an analysis view over immutable physical ROM storage.
 type bank struct {
-	prg []byte
+	*storage
+
+	baseAddress uint16
+	hasVectors  bool
+	mapped      bool
 
 	offsets []*offset.DisasmOffset
 }
@@ -39,13 +39,20 @@ type mappedBank struct {
 
 func newBank(prg []byte) *bank {
 	b := &bank{
-		prg:     prg,
-		offsets: make([]*offset.DisasmOffset, len(prg)),
-	}
-	for i := range b.offsets {
-		b.offsets[i] = &offset.DisasmOffset{}
+		storage: &storage{prg: prg},
 	}
 	return b
+}
+
+func (bnk *bank) initializeOffsets() {
+	if bnk.offsets != nil {
+		return
+	}
+	bnk.offsets = make([]*offset.DisasmOffset, len(bnk.prg))
+	storage := make([]offset.DisasmOffset, len(bnk.prg))
+	for i := range bnk.offsets {
+		bnk.offsets[i] = &storage[i]
+	}
 }
 
 func (m mappedBank) OffsetInfo(index uint16) *offset.DisasmOffset {
@@ -60,7 +67,7 @@ func (m mappedBank) ID() int {
 
 func setBankVectors(bnk *bank, prgBank *program.PRGBank) {
 	// Skip vector extraction for small binaries (less than 6 bytes)
-	if len(bnk.prg) < 6 {
+	if !bnk.hasVectors || len(bnk.prg) < 6 {
 		return
 	}
 

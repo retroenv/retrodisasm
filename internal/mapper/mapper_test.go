@@ -47,6 +47,36 @@ func TestNew_MultiBank(t *testing.T) {
 	assert.Equal(t, 0x4000, mapper.bankWindowSize)
 }
 
+func TestNewUNROMBankLayout(t *testing.T) {
+	// Issue #102: UNROM needs separate 16 KiB banks, with the last bank at $C000.
+	cart := &cartridge.Cartridge{
+		Mapper: 2,
+		PRG:    make([]byte, 8*0x4000),
+	}
+	for i := range 8 {
+		cart.PRG[i*0x4000] = byte(i)
+	}
+
+	mp, err := New(&mockArchitecture{bankWindowSize: 0x2000}, cart)
+	assert.NoError(t, err)
+	assert.Len(t, mp.banks, 8)
+	assert.Equal(t, byte(0), mp.ReadMemory(0x8000))
+	assert.Equal(t, byte(7), mp.ReadMemory(0xc000))
+	assert.Equal(t, 7, mp.MappedBank(0xc000).ID())
+	assert.Equal(t, 7, mp.MappedBank(0xffff).ID())
+}
+
+func TestNewUNROMRejectsIncompleteBanks(t *testing.T) {
+	for _, size := range []int{0, 0x4000, 0x8001, 0xa000} {
+		cart := &cartridge.Cartridge{
+			Mapper: 2,
+			PRG:    make([]byte, size),
+		}
+		_, err := New(&mockArchitecture{bankWindowSize: 0x2000}, cart)
+		assert.ErrorContains(t, err, "invalid UNROM PRG size")
+	}
+}
+
 func TestSetCodeBaseAddress(t *testing.T) {
 	cart := &cartridge.Cartridge{
 		PRG: make([]byte, 0x1000),

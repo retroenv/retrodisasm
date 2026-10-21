@@ -19,6 +19,12 @@ import (
 	"github.com/retroenv/retrogolib/set"
 )
 
+// addressResolver maps a CPU address to its physical ROM offset.
+type addressResolver interface {
+	// Resolve returns the physical ROM offset of a CPU address.
+	Resolve(address uint16) (int, bool)
+}
+
 // disasm defines the minimal interface needed from the disassembler.
 type disasm interface {
 	// AddAddressToParse adds an address to the list to be processed.
@@ -206,9 +212,20 @@ func (ar *Arch6502) truncateInstructionAtMappedBankBoundary(address uint16, offs
 
 func (ar *Arch6502) instructionBytesInMappedBank(address uint16, length int) int {
 	startBank := ar.mapper.MappedBank(address)
+	resolver, hasResolver := ar.mapper.(addressResolver)
+	var physicalStart int
+	if hasResolver {
+		physicalStart, _ = resolver.Resolve(address)
+	}
 	for i := 1; i < length; i++ {
 		if ar.mapper.MappedBank(address+uint16(i)).ID() != startBank.ID() {
 			return i
+		}
+		if hasResolver {
+			physical, ok := resolver.Resolve(address + uint16(i))
+			if !ok || physical != physicalStart+i {
+				return i
+			}
 		}
 	}
 	return length

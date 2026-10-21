@@ -12,12 +12,17 @@ Added:
 Changed:
 
 * preserve NES 2.0 submapper metadata in ca65, asm6, and retroasm output
+* reject unsupported NES mapper layouts instead of guessing their PRG mapping
 * require Go 1.25 or newer when installing from source
 
 Fixed:
 
 * fix 6502 BIT trick disassembly for masked function entry points and preserve symbolic memory references
+* fix AxROM disassembly mixing code from different PRG banks
+* fix code/data log flags being applied to the wrong PRG bank or past the end of the ROM
+* fix interrupt vectors being written for banks that do not contain them
 * fix tracing instructions that cross a switchable bank boundary
+* fix UNROM and UOROM bank layout, using 16 KiB banks with the last bank fixed at $C000
 * preserve indirect addressing when replacing hardware register addresses with names
 * preserve relative branch bytes when the target is outside the disassembled code
 

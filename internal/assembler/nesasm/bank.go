@@ -19,6 +19,9 @@ func addPrgBankSelectors(codeBaseAddress int, prg []*program.PRGBank) int {
 
 	for _, bank := range prg {
 		index := 0
+		if bank.BaseAddress != 0 {
+			bankAddress = int(bank.BaseAddress)
+		}
 
 		for {
 			if bankSwitch { // if switch was carried over after last bank was filled

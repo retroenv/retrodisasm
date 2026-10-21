@@ -76,7 +76,8 @@ func TestClassifyRemainingAsData(t *testing.T) {
 
 	t.Run("handles multiple banks", func(t *testing.T) {
 		cart := &cartridge.Cartridge{
-			PRG: make([]byte, 0x10000), // Large enough for 2 banks
+			PRG:    make([]byte, 0x10000), // Two complete AxROM banks.
+			Mapper: 7,
 		}
 		arch := &mockArchitecture{bankWindowSize: 0x4000}
 
@@ -85,6 +86,8 @@ func TestClassifyRemainingAsData(t *testing.T) {
 
 		mapper.banks[0].offsets[0].Data = []byte{0xea}
 		mapper.banks[0].offsets[0].SetType(program.CodeOffset)
+		mapper.ClassifyRemainingAsData()
+		assert.NoError(t, mapper.SelectState(1))
 		mapper.banks[1].offsets[0].Data = []byte{0xea}
 		mapper.banks[1].offsets[0].SetType(program.CodeOffset)
 
@@ -142,7 +145,8 @@ func TestSetProgramBanks_SingleBank(t *testing.T) {
 
 func TestSetProgramBanks_MultiBanks(t *testing.T) {
 	cart := &cartridge.Cartridge{
-		PRG: make([]byte, 0x10000), // Large enough for 2 banks
+		PRG:    make([]byte, 0x10000), // Two complete AxROM banks.
+		Mapper: 7,
 	}
 	arch := &mockArchitecture{bankWindowSize: 0x4000}
 

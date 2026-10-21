@@ -3,8 +3,10 @@ package m6502
 import (
 	"testing"
 
+	"github.com/retroenv/retrodisasm/internal/mapper"
 	"github.com/retroenv/retrodisasm/internal/offset"
 	"github.com/retroenv/retrodisasm/internal/program"
+	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
 	"github.com/retroenv/retrogolib/assert"
 )
 
@@ -64,6 +66,22 @@ func TestInstructionBytesInMappedBankStopsAtWindowChange(t *testing.T) {
 	length := arch.instructionBytesInMappedBank(0xbfff, 3)
 
 	assert.Equal(t, 1, length)
+}
+
+func TestInstructionBytesInMappedBankStopsAtMirroredBoundary(t *testing.T) {
+	// Mapping the fixed UNROM bank twice keeps its ID but wraps the physical
+	// ROM offset at $C000. An instruction must not own bytes past that wrap.
+	ar := &Arch6502{}
+	mem, err := mapper.New(ar, &cartridge.Cartridge{
+		Mapper: 2,
+		PRG:    make([]byte, 0x8000),
+	})
+	assert.NoError(t, err)
+	assert.NoError(t, mem.SelectState(1))
+	ar.mapper = mem
+	assert.Equal(t, mem.MappedBank(0xbfff).ID(), mem.MappedBank(0xc000).ID())
+	assert.Equal(t, 1, ar.instructionBytesInMappedBank(0xbfff, 3))
+	assert.Equal(t, 3, ar.instructionBytesInMappedBank(0x9fff, 3))
 }
 
 type mockMappedBank struct {
