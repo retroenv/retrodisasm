@@ -135,6 +135,13 @@ func (ar *Arch6502) replaceParamByAlias(address uint16, opcode instruction.Opcod
 	if ok {
 		return changedParamAsString
 	}
+	// A mapper register shares a CPU address with ROM but writing it does not
+	// reference the stored instruction or its operands as data.
+	if opcode.WritesMemory() || opcode.ReadWritesMemory() {
+		if mem, ok := ar.mapper.(registerChecker); ok && mem.IsRegister(addressReference) {
+			return paramAsString
+		}
+	}
 
 	ar.vars.AddReference(addressReference, address, opcode, forceVariableUsage)
 

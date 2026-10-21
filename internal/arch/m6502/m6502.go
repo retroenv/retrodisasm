@@ -25,6 +25,12 @@ type addressResolver interface {
 	Resolve(address uint16) (int, bool)
 }
 
+// registerChecker reports whether a CPU address is a mapper register.
+type registerChecker interface {
+	// IsRegister returns true if the address is a mapper register.
+	IsRegister(address uint16) bool
+}
+
 // disasm defines the minimal interface needed from the disassembler.
 type disasm interface {
 	// AddAddressToParse adds an address to the list to be processed.
