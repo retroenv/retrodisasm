@@ -2,12 +2,14 @@
 package m6502
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
 	"github.com/retroenv/retrodisasm/internal/consts"
 	"github.com/retroenv/retrodisasm/internal/instruction"
 	"github.com/retroenv/retrodisasm/internal/jumpengine"
+	"github.com/retroenv/retrodisasm/internal/mapper"
 	"github.com/retroenv/retrodisasm/internal/offset"
 	"github.com/retroenv/retrodisasm/internal/options"
 	"github.com/retroenv/retrodisasm/internal/program"
@@ -89,6 +91,13 @@ func New(logger *log.Logger, converter parameter.Converter) *Arch6502 {
 		logger:                         logger,
 		complementaryBranchSecondAddrs: set.New[uint16](),
 	}
+}
+
+// NewTrace creates an independent analysis with the same architecture settings.
+func (ar *Arch6502) NewTrace() *Arch6502 {
+	next := New(ar.logger, ar.converter)
+	next.options = ar.options
+	return next
 }
 
 // InjectDependencies sets the required dependencies for this architecture.
@@ -201,6 +210,37 @@ func (ar *Arch6502) BankWindowSize(_ *cartridge.Cartridge) int {
 		return 0 // Single-bank mode for binary files
 	}
 	return 0x2000 // Multi-bank mode for NES ROMs
+}
+
+// ExploreMappings follows register writes on direct control-flow paths. Mapping
+// combinations are discovered on demand, and equal CPU views share one trace.
+func (ar *Arch6502) ExploreMappings(ctx context.Context, mem *mapper.Mapper,
+	hints mapper.ExplorationHints) (mapper.Exploration, error) {
+
+	ex := &mappingExplorer{
+		mem:              mem,
+		hints:            hints,
+		stopAtUnofficial: ar.options.StopAtUnofficial,
+		seen:             make(map[flowLocation]registers),
+		traces:           make(map[mapper.Mapping]*mappingTrace),
+	}
+
+	for state := range mem.Seeds() {
+		ex.trace(state)
+	}
+
+	// Seed mappings always get a trace, only discovered mappings count toward the limit.
+	ex.mappingLimit = len(ex.traces) + mappingDiscoveryLimit
+
+	for state := range mem.Seeds() {
+		ex.seedInterruptVectors(state)
+	}
+
+	if err := ex.explore(ctx); err != nil {
+		return mapper.Exploration{}, err
+	}
+
+	return ex.results(), nil
 }
 
 func (ar *Arch6502) truncateInstructionAtMappedBankBoundary(address uint16, offsetInfo *offset.DisasmOffset) {

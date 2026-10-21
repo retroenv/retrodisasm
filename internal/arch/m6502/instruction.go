@@ -2,6 +2,7 @@ package m6502
 
 import (
 	"github.com/retroenv/retrodisasm/internal/instruction"
+	"github.com/retroenv/retrodisasm/internal/program"
 	"github.com/retroenv/retrogolib/arch/cpu/cpu6502"
 )
 
@@ -35,4 +36,10 @@ func (i Instruction) Unofficial() bool {
 func isUnofficialInstruction(ins *cpu6502.Instruction) bool {
 	// KIL is unofficial even when older retrogolib opcode metadata omits the flag.
 	return ins.Unofficial || ins.Name == cpu6502.KilName
+}
+
+// stopAtUnofficialInstruction reports whether tracing must stop at an unofficial
+// instruction that no branch or code hint points to.
+func stopAtUnofficialInstruction(ins *cpu6502.Instruction, branchDestination bool, hint program.OffsetType) bool {
+	return isUnofficialInstruction(ins) && !branchDestination && hint != program.CodeOffset
 }
