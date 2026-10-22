@@ -12,6 +12,33 @@ import (
 	"github.com/retroenv/retrogolib/assert"
 )
 
+func TestExploreMMC1SerialWrites(t *testing.T) {
+	cart := &cartridge.Cartridge{
+		Mapper: 1,
+		PRG:    make([]byte, 4*0x4000),
+	}
+	copy(cart.PRG[3*0x4000:], []byte{
+		0xa9, 2, 0x8d, 0, 0xe0, 0x4a, 0x8d, 0, 0xe0,
+		0x4a, 0x8d, 0, 0xe0, 0x4a, 0x8d, 0, 0xe0,
+		0x4a, 0x8d, 0, 0xe0, 0x4c, 0, 0x80,
+	})
+	copy(cart.PRG[len(cart.PRG)-4:], []byte{0, 0xc0, 0, 0})
+	ar := &Arch6502{}
+	mem, err := mapper.New(ar, cart)
+	assert.NoError(t, err)
+	result, err := ar.ExploreMappings(t.Context(), mem, mapper.ExplorationHints{})
+	assert.NoError(t, err)
+	// Serial latch states with unchanged windows must not duplicate traces.
+	assert.Len(t, result.Traces, 4)
+	found := false
+	for _, trace := range result.Traces {
+		if mem.Mapping(trace.State)[4] == 2*0x4000 {
+			found = slices.Contains(trace.Entries, 0xc015)
+		}
+	}
+	assert.True(t, found)
+}
+
 func TestExploreUnknownBankWrite(t *testing.T) {
 	cart := &cartridge.Cartridge{
 		Mapper: 2,

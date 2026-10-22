@@ -272,6 +272,96 @@ func boundaryJumpTableCartridge(id uint16) *cartridge.Cartridge {
 	return cart
 }
 
+func TestMMCMappingOutput(t *testing.T) {
+	for _, format := range []string{"ca65", "asm6", "nesasm", "retroasm"} {
+		for _, split := range []bool{false, true} {
+			t.Run(format+"/"+strconv.FormatBool(split), func(t *testing.T) {
+				for _, id := range []uint16{1} {
+					t.Run(strconv.Itoa(int(id)), func(t *testing.T) {
+						cart := mmcCartridge(id)
+						app, opts, source := disassembleBanked(t, cart, format, split)
+						assert.Len(t, cart.PRG, app.PrgSize())
+						assert.Equal(t, "lda #$42", app.PRG[2].Offsets[0].Code)
+						if !split {
+							assert.Contains(t, source, "lda #$42")
+						}
+						t.Run("reassembly", func(t *testing.T) {
+							verifyBankedOutput(t, format, opts, cart, app)
+						})
+					})
+				}
+			})
+		}
+	}
+}
+
+func mmcCartridge(id uint16) *cartridge.Cartridge {
+	cart := cartridge.New()
+	cart.Mapper = id
+	cart.PRG = make([]byte, 0x10000)
+	cart.CHR = nil
+	copy(cart.PRG[0xc000:], []byte{
+		0xa9, 2, 0x8d, 0, 0xe0, 0x4a, 0x8d, 0, 0xe0,
+		0x4a, 0x8d, 0, 0xe0, 0x4a, 0x8d, 0, 0xe0,
+		0x4a, 0x8d, 0, 0xe0, 0x20, 0, 0x80, 0x40,
+	})
+	copy(cart.PRG[0x8000:], []byte{0xa9, 0x42, 0x60})
+	copy(cart.PRG[len(cart.PRG)-4:], []byte{0, 0xc0, 0, 0})
+	return cart
+}
+
+func TestMMC1ModeChangeOutput(t *testing.T) {
+	// Changing mode can move the selected bank from $8000 to $C000 or pair
+	// two 16 KiB physical banks into one 32 KiB window. Preserve ROM order.
+	for _, mode := range []byte{0, 8} {
+		for _, format := range []string{"ca65", "asm6", "nesasm"} {
+			t.Run(format+"/"+strconv.Itoa(int(mode)), func(t *testing.T) {
+				cart := mmcCartridge(1)
+				code := append(serialWriteCode(0xe000, 2), serialWriteCode(0x8000, mode)...)
+				copy(cart.PRG[0xc000:], code)
+				for _, origin := range []int{0x8000, 0xc000} {
+					copy(cart.PRG[origin+len(code):], []byte{0xa9, 0x5a, 0x60})
+				}
+				app, opts, _ := disassembleBanked(t, cart, format, false)
+				assert.Equal(t, uint16(0x8000), app.PRG[2].BaseAddress)
+				assert.Equal(t, uint16(0xc000), app.PRG[3].BaseAddress)
+				t.Run("reassembly", func(t *testing.T) {
+					verifyBankedOutput(t, format, opts, cart, app)
+				})
+			})
+		}
+	}
+}
+
+func serialWriteCode(address uint16, value byte) []byte {
+	code := []byte{0xa9, value}
+	for i := range 5 {
+		if i != 0 {
+			code = append(code, 0x4a)
+		}
+		code = append(code, 0x8d, byte(address), byte(address>>8))
+	}
+	return code
+}
+
+func TestMMC1ChangingVectorTargets(t *testing.T) {
+	// Switching the vector bank can give one physical bank different IRQ
+	// entry points. Each target needs its own symbol after traces are merged.
+	for _, format := range []string{"ca65", "asm6", "nesasm"} {
+		t.Run(format, func(t *testing.T) {
+			cart := mmcCartridge(1)
+			code := append(serialWriteCode(0xe000, 2), serialWriteCode(0x8000, 8)...)
+			copy(cart.PRG[0xc000:], code)
+			copy(cart.PRG, []byte{0x40, 0x40})
+			copy(cart.PRG[0xbffa:], []byte{0, 0, 0, 0, 1, 0x80})
+			copy(cart.PRG[0xfffe:], []byte{0, 0x80})
+			app, opts, _ := disassembleBanked(t, cart, format, false)
+			assert.NotEqual(t, app.PRG[0].Offsets[0].Label, app.PRG[0].Offsets[1].Label)
+			verifyBankedOutput(t, format, opts, cart, app)
+		})
+	}
+}
+
 func TestRelativeBranchOutsideCode(t *testing.T) {
 	// Numeric branches into RAM or the vector table cannot be assembled in
 	// relocatable ca65 segments. Preserve their original relative encoding.

@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 Added:
 
 * add `-annotations` support for labels, variables, comments, code/data ranges, and ROM checksum validation
+* add experimental MMC1 PRG bank switching analysis
 * add symbolic operands, byte/word tables, custom spacing, standalone comments, and grouped definitions to annotation files
 * add disassembly of all UNROM and AxROM banks by following mapper register writes, including banks with identical interrupt vector addresses
 
@@ -23,6 +24,7 @@ Fixed:
 * fix AxROM disassembly mixing code from different PRG banks
 * fix code/data log flags being applied to the wrong PRG bank or past the end of the ROM
 * fix interrupt vectors being written for banks that do not contain them
+* fix duplicate interrupt-handler labels when mapper writes change vector targets
 * fix tracing instructions that cross a switchable bank boundary
 * fix UNROM and UOROM bank layout, using 16 KiB banks with the last bank fixed at $C000
 * preserve indirect addressing when replacing hardware register addresses with names
