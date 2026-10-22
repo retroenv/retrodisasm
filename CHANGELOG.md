@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 Added:
 
 * add `-annotations` support for labels, variables, comments, code/data ranges, and ROM checksum validation
-* add experimental MMC1 PRG bank switching analysis
+* add experimental MMC1 and MMC3 PRG bank switching analysis
 * add symbolic operands, byte/word tables, custom spacing, standalone comments, and grouped definitions to annotation files
 * add disassembly of all UNROM and AxROM banks by following mapper register writes, including banks with identical interrupt vector addresses
 

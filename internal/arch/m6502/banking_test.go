@@ -9,8 +9,42 @@ import (
 	"github.com/retroenv/retrodisasm/internal/program"
 	"github.com/retroenv/retrogolib/arch/cpu/cpu6502"
 	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
+	"github.com/retroenv/retrogolib/arch/system/nes/codedatalog"
 	"github.com/retroenv/retrogolib/assert"
 )
+
+func TestExploreMMC3RequestedCombination(t *testing.T) {
+	// R6=2 and R7=3 is absent from the linear seed set. Only writes on the
+	// executed path should discover this combination, including after RTS.
+	cart := &cartridge.Cartridge{
+		Mapper: 4,
+		PRG:    make([]byte, 8*0x2000),
+	}
+	copy(cart.PRG[7*0x2000:], []byte{
+		0x20, 0x10, 0xe0, // jsr $e010
+		0x4c, 0, 0xa0, // jmp $a000 in the newly selected R7 bank
+	})
+	copy(cart.PRG[7*0x2000+0x10:], []byte{
+		0xa9, 6, 0x8d, 0, 0x80, 0xa9, 2, 0x8d, 1, 0x80,
+		0xa9, 7, 0x8d, 0, 0x80, 0xa9, 3, 0x8d, 1, 0x80, 0x60,
+	})
+	copy(cart.PRG[len(cart.PRG)-4:], []byte{0, 0xe0, 0, 0})
+	ar := &Arch6502{}
+	mem, err := mapper.New(ar, cart)
+	assert.NoError(t, err)
+	result, err := ar.ExploreMappings(t.Context(), mem, mapper.ExplorationHints{})
+	assert.NoError(t, err)
+	found := false
+	for _, trace := range result.Traces {
+		key := mem.Mapping(trace.State)
+		if key[4] == 2*0x2000 && key[5] == 3*0x2000 {
+			found = true
+			assert.True(t, slices.Contains(trace.Entries, 0xe003))
+			assert.True(t, slices.Contains(trace.Entries, 0xe024))
+		}
+	}
+	assert.True(t, found)
+}
 
 func TestExploreMMC1SerialWrites(t *testing.T) {
 	cart := &cartridge.Cartridge{
@@ -34,6 +68,42 @@ func TestExploreMMC1SerialWrites(t *testing.T) {
 	for _, trace := range result.Traces {
 		if mem.Mapping(trace.State)[4] == 2*0x4000 {
 			found = slices.Contains(trace.Entries, 0xc015)
+		}
+	}
+	assert.True(t, found)
+}
+
+func TestExploreCDLRootsKeepKnownRegisters(t *testing.T) {
+	// Starting every instruction with unknown registers creates false mapper
+	// writes and exhausts the discovery limit. Keep one root per code path.
+	cart := &cartridge.Cartridge{
+		Mapper: 4,
+		PRG:    make([]byte, 0x10000),
+	}
+	cart.PRG[0xe000] = 0x40
+	copy(cart.PRG[0xfffc:], []byte{0, 0xe0})
+	code := []byte{
+		0xa9, 6, 0x8d, 0, 0x80, 0xa9, 2, 0x8d, 1, 0x80,
+		0xa9, 7, 0x8d, 0, 0x80, 0xa9, 3, 0x8d, 1, 0x80, 0x40,
+	}
+	copy(cart.PRG[0xe100:], code)
+	flags := make([]codedatalog.PrgFlag, len(cart.PRG))
+	for i := range code {
+		flags[0xe100+i] = codedatalog.Code
+	}
+	ar := &Arch6502{}
+	mem, err := mapper.New(ar, cart)
+	assert.NoError(t, err)
+	result, err := ar.ExploreMappings(t.Context(), mem, mapper.ExplorationHints{
+		CodeDataLog: flags,
+	})
+	assert.NoError(t, err)
+	assert.False(t, result.Limited)
+	found := false
+	for _, trace := range result.Traces {
+		key := mem.Mapping(trace.State)
+		if key[4] == 2*0x2000 && key[5] == 3*0x2000 {
+			found = slices.Contains(trace.Entries, 0xe114)
 		}
 	}
 	assert.True(t, found)

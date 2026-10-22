@@ -2,12 +2,16 @@ package disasm
 
 import (
 	"bytes"
+	"fmt"
+	"io"
+	"strconv"
 	"testing"
 
 	"github.com/retroenv/retrodisasm/internal/assembler"
 	"github.com/retroenv/retrodisasm/internal/options"
 	"github.com/retroenv/retrodisasm/internal/program"
 	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
+	"github.com/retroenv/retrogolib/arch/system/nes/codedatalog"
 	"github.com/retroenv/retrogolib/assert"
 )
 
@@ -57,6 +61,77 @@ func TestMappingTraceStopsAtUnofficial(t *testing.T) {
 			assert.NoError(t, err)
 			continuation := app.PRG[3].Offsets[len(test.prefix)+7]
 			assert.Equal(t, test.wantCode, continuation.IsType(program.CodeOffset))
+		})
+	}
+}
+
+func TestMappingHintsDiscoverMMC3Mode(t *testing.T) {
+	// Code outside the vector paths must discover the same bank switch as a
+	// vector entry. Operands must not become independent exploration roots.
+	for _, source := range []string{"vector", "annotation", "annotation after return", "cdl"} {
+		t.Run(source, func(t *testing.T) {
+			cart := &cartridge.Cartridge{
+				Mapper: 4,
+				PRG:    make([]byte, 0x10000),
+			}
+			cart.PRG[0xe000] = 0x40
+			copy(cart.PRG[0xfffc:], []byte{0, 0xe0})
+			entry := 0xe100
+			if source == "annotation after return" {
+				cart.PRG[entry] = 0x60
+				entry++
+			}
+			copy(cart.PRG[entry:], []byte{0xa9, 0x46, 0x8d, 0, 0x80, 0x4c, 0, 0xc1})
+			copy(cart.PRG[0x100:], []byte{0xa9, 0x42, 0x60})
+			opts := options.NewDisassembler(assembler.Ca65, "nes")
+			switch source {
+			case "vector":
+				copy(cart.PRG[0xfffc:], []byte{0, 0xe1})
+
+			case "cdl":
+				flags := make([]byte, len(cart.PRG))
+				for i := range 8 {
+					flags[entry+i] = byte(codedatalog.Code)
+				}
+				opts.CodeDataLog = io.NopCloser(bytes.NewReader(flags))
+			}
+			dis := testProgram(t, opts, cart, nil)
+			if source == "annotation" || source == "annotation after return" {
+				config := fmt.Sprintf("[code]\n$E100=$%04X", entry+7)
+				assert.NoError(t, dis.ApplyAnnotations(writeConfig(t, config)))
+			}
+			app, err := dis.analyzeMappings(t.Context())
+			assert.NoError(t, err)
+			target := app.PRG[0].Offsets[0x100]
+			assert.True(t, target.IsType(program.CodeOffset|program.CodeAsData))
+			assert.Equal(t, byte(0xa9), target.Data[0])
+		})
+	}
+}
+
+func TestMappingTraceRetainsRAMStoreContinuation(t *testing.T) {
+	// The same indexed store can write RAM or a mapper register. A mapping
+	// stop from one path must not remove the other path's continuation.
+	for _, stopAtUnofficial := range []bool{false, true} {
+		t.Run(strconv.FormatBool(stopAtUnofficial), func(t *testing.T) {
+			cart := &cartridge.Cartridge{
+				Mapper: 4,
+				PRG:    make([]byte, 0x10000),
+			}
+			copy(cart.PRG[0xe000:], []byte{
+				0xa9, 0x46, 0xa2, 0,
+				0x24, 0, 0xd0, 2, 0xa2, 1,
+				0x9d, 0xff, 0x7f, 0x4c, 0, 0x80,
+			})
+			copy(cart.PRG[0xfffc:], []byte{0, 0xe0})
+			copy(cart.PRG, []byte{0xa9, 0x42, 0x60})
+			opts := options.NewDisassembler(assembler.Ca65, "nes")
+			opts.StopAtUnofficial = stopAtUnofficial
+			dis := testProgram(t, opts, cart, nil)
+			app, err := dis.analyzeMappings(t.Context())
+			assert.NoError(t, err)
+			assert.Equal(t, "lda #$42", app.PRG[0].Offsets[0].Code)
+			assert.True(t, app.PRG[0].Offsets[0].IsType(program.CodeOffset))
 		})
 	}
 }

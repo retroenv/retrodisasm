@@ -48,8 +48,56 @@ func TestMMC1SerialLatchUsesFifthWriteAddress(t *testing.T) {
 	assertMapping(t, mem.NewTrace(state), [4]int{0xc000, 0xe000, 0xc000, 0xe000})
 }
 
+func TestMMC3IndependentWindows(t *testing.T) {
+	mem, err := New(&mockArchitecture{bankWindowSize: 0x2000}, &cartridge.Cartridge{
+		Mapper: 4,
+		PRG:    make([]byte, 0x10000),
+	})
+	assert.NoError(t, err)
+	state := mem.Snapshot()
+	for _, write := range [][2]uint16{{0x8000, 6}, {0x8001, 3}, {0x8000, 7}, {0x8001, 4}} {
+		var handled bool
+		state, handled = mem.Write(state, write[0], byte(write[1]))
+		assert.True(t, handled)
+	}
+	assertMapping(t, mem.NewTrace(state), [4]int{0x6000, 0x8000, 0xc000, 0xe000})
+	state, _ = mem.Write(state, 0x9ffe, 0x46)
+	assertMapping(t, mem.NewTrace(state), [4]int{0xc000, 0x8000, 0x6000, 0xe000})
+	state, _ = mem.Write(state, 0x9fff, 0xff)
+	assertMapping(t, mem.NewTrace(state), [4]int{0xc000, 0x8000, 0xe000, 0xe000})
+	unchanged, handled := mem.Write(state, 0x6000, 0)
+	assert.False(t, handled)
+	assert.Equal(t, state, unchanged)
+	assertMapping(t, mem, [4]int{0, 0x2000, 0xc000, 0xe000})
+}
+
+func TestMappingViewsHaveStablePhysicalStorage(t *testing.T) {
+	mem, err := New(&mockArchitecture{bankWindowSize: 0x2000}, &cartridge.Cartridge{
+		Mapper: 4,
+		PRG:    make([]byte, 0x10000),
+	})
+	assert.NoError(t, err)
+	state, _ := mem.Write(mem.Snapshot(), 0x8000, 0x46)
+	next := mem.NewTrace(state)
+	assert.Equal(t, mem.banks[0].storage, next.banks[0].storage)
+	assert.Equal(t, uint16(0x8000), next.banks[0].baseAddress)
+	assert.Equal(t, uint16(0xc000), next.banks[6].baseAddress)
+	assert.Equal(t, uint16(0xc000), next.mapped[6].bank.baseAddress)
+	assert.Equal(t, 0, next.mapped[6].bank.id)
+	assert.False(t, next.mapped[6].bank.hasVectors)
+	assert.True(t, next.mapped[7].bank.hasVectors)
+	assert.True(t, mem.OffsetInfo(0x8000) != next.OffsetInfo(0xc000))
+	assert.Equal(t, 16, mem.StateCount())
+	count := 0
+	for range mem.Seeds() {
+		count++
+		break
+	}
+	assert.Equal(t, 1, count)
+}
+
 func TestMMCRejectsUnmodeledBoardSizes(t *testing.T) {
-	for _, id := range []uint16{1} {
+	for _, id := range []uint16{1, 4} {
 		for _, size := range []int{0, 0x4000, 0xc000, 0x100000} {
 			_, err := New(&mockArchitecture{bankWindowSize: 0x2000}, &cartridge.Cartridge{
 				Mapper: id,

@@ -8,6 +8,7 @@ has no model.
 | Fixed | One fixed mapping of 16 or 32 KiB | Single trace; CHR switching does not change PRG addresses |
 | Fixed last bank | Switchable 16 KiB at `$8000`, last bank fixed at `$C000` | Each bank is traced with the fixed bank |
 | Switchable 32 KiB | Switchable 32 KiB at `$8000-$FFFF` | Each bank is traced with its own vectors |
+| Independent 8 KiB windows | Two selected 8 KiB windows and two fixed banks, with a swap mode for `$8000` and `$C000` | Follows the bank-select and bank-data writes; seeds cover each selectable bank without enumerating every pair; 32-512 KiB PRG |
 | Serial-register banking | 16 KiB switching with either end fixed, or paired 32 KiB | Follows the serial control and PRG register writes; standard boards with 32-256 KiB PRG |
 
 For banked mappers, retrodisasm follows direct control flow and known register

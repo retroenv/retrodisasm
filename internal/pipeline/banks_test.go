@@ -37,7 +37,7 @@ func TestUNROMBankOutput(t *testing.T) {
 func TestJumpTableAcrossPhysicalBanks(t *testing.T) {
 	// A pointer across physical banks must retain both bytes and its target.
 	// It must not create a record that extends past either output bank.
-	for _, id := range []uint16{2} {
+	for _, id := range []uint16{2, 4} {
 		for _, format := range []string{"ca65", "asm6", "nesasm", "retroasm"} {
 			for _, split := range []bool{false, true} {
 				name := strconv.Itoa(int(id)) + "/" + format + "/" + strconv.FormatBool(split)
@@ -258,6 +258,9 @@ func boundaryJumpTableCartridge(id uint16) *cartridge.Cartridge {
 	cart.PRG = make([]byte, 0x10000)
 	cart.CHR = nil
 	bankSize, fixedAddress, highByte := 0x4000, uint16(0xc000), 0xc000
+	if id == 4 {
+		bankSize, fixedAddress, highByte = 0x2000, 0xe000, 0x2000
+	}
 	table := uint16(0x8000 + bankSize - 1)
 	copy(cart.PRG, []byte{
 		0xa5, 0, 0x0a, 0xaa,
@@ -276,7 +279,7 @@ func TestMMCMappingOutput(t *testing.T) {
 	for _, format := range []string{"ca65", "asm6", "nesasm", "retroasm"} {
 		for _, split := range []bool{false, true} {
 			t.Run(format+"/"+strconv.FormatBool(split), func(t *testing.T) {
-				for _, id := range []uint16{1} {
+				for _, id := range []uint16{1, 4} {
 					t.Run(strconv.Itoa(int(id)), func(t *testing.T) {
 						cart := mmcCartridge(id)
 						app, opts, source := disassembleBanked(t, cart, format, split)
@@ -300,13 +303,24 @@ func mmcCartridge(id uint16) *cartridge.Cartridge {
 	cart.Mapper = id
 	cart.PRG = make([]byte, 0x10000)
 	cart.CHR = nil
-	copy(cart.PRG[0xc000:], []byte{
-		0xa9, 2, 0x8d, 0, 0xe0, 0x4a, 0x8d, 0, 0xe0,
-		0x4a, 0x8d, 0, 0xe0, 0x4a, 0x8d, 0, 0xe0,
-		0x4a, 0x8d, 0, 0xe0, 0x20, 0, 0x80, 0x40,
-	})
-	copy(cart.PRG[0x8000:], []byte{0xa9, 0x42, 0x60})
-	copy(cart.PRG[len(cart.PRG)-4:], []byte{0, 0xc0, 0, 0})
+	if id == 1 {
+		copy(cart.PRG[0xc000:], []byte{
+			0xa9, 2, 0x8d, 0, 0xe0, 0x4a, 0x8d, 0, 0xe0,
+			0x4a, 0x8d, 0, 0xe0, 0x4a, 0x8d, 0, 0xe0,
+			0x4a, 0x8d, 0, 0xe0, 0x20, 0, 0x80, 0x40,
+		})
+		copy(cart.PRG[0x8000:], []byte{0xa9, 0x42, 0x60})
+		copy(cart.PRG[len(cart.PRG)-4:], []byte{0, 0xc0, 0, 0})
+	} else {
+		copy(cart.PRG[0xe000:], []byte{
+			0xa9, 6, 0x8d, 0, 0x80, 0xa9, 2, 0x8d, 1, 0x80,
+			0xa9, 7, 0x8d, 0, 0x80, 0xa9, 3, 0x8d, 1, 0x80,
+			0x20, 0, 0x80, 0x4c, 0, 0xa0,
+		})
+		copy(cart.PRG[0x4000:], []byte{0xa9, 0x42, 0x60})
+		copy(cart.PRG[0x6000:], []byte{0xa9, 0x37, 0x40})
+		copy(cart.PRG[len(cart.PRG)-4:], []byte{0, 0xe0, 0, 0})
+	}
 	return cart
 }
 
