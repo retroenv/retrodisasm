@@ -66,9 +66,7 @@ func (dis *Disasm) analyzeMappings(ctx context.Context) (*program.Program, error
 	if dis.mapper.StateCount() == 1 {
 		return dis.analyze(ctx)
 	}
-	explorer, ok := dis.arch.(interface {
-		ExploreMappings(context.Context, *mapper.Mapper, mapper.ExplorationHints) (mapper.Exploration, error)
-	})
+	explorer, ok := dis.arch.(mappingExplorer)
 	if !ok || dis.newArchitecture == nil {
 		return nil, errors.New("architecture does not support mapping exploration")
 	}
@@ -165,6 +163,11 @@ func (dis *Disasm) mappingCodeHint(address uint16) program.OffsetType {
 	}
 
 	return program.UnknownOffset
+}
+
+// mappingExplorer is implemented by architectures that find the bank mappings to trace.
+type mappingExplorer interface {
+	ExploreMappings(context.Context, *mapper.Mapper, mapper.ExplorationHints) (mapper.Exploration, error)
 }
 
 // qualifyBankSymbols adds the physical bank and CPU address to every label, so
