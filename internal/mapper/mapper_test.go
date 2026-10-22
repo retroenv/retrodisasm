@@ -48,7 +48,7 @@ func TestNew_MultiBank(t *testing.T) {
 }
 
 func TestNewUNROMBankLayout(t *testing.T) {
-	// Issue #102: UNROM needs separate 16 KiB banks, with the last bank at $C000.
+	// UNROM needs separate 16 KiB banks, with the last bank at $C000.
 	cart := &cartridge.Cartridge{
 		Mapper: 2,
 		PRG:    make([]byte, 8*0x4000),

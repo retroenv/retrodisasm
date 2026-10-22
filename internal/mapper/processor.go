@@ -12,9 +12,9 @@ import (
 // ClassifyRemainingAsData marks all unowned bytes as data.
 func (m *Mapper) ClassifyRemainingAsData() {
 	for _, bnk := range slices.Concat(m.banks, m.views) {
-		// Only one mapping is analyzed. Banks outside it remain data so that
-		// the output still contains every physical ROM byte.
-		bnk.initializeOffsets()
+		if !bnk.mapped {
+			continue
+		}
 		// Empty code offsets represent operand bytes only while an owning encoding covers them.
 		owned := make([]bool, len(bnk.offsets))
 		for i, offsetInfo := range bnk.offsets {
@@ -48,7 +48,10 @@ func (m *Mapper) ClassifyRemainingAsData() {
 // with offset information, variables, and constants.
 func (m *Mapper) SetProgramBanks(app *program.Program) error {
 	for _, bnk := range slices.Concat(m.banks, m.views) {
-		size := len(bnk.offsets)
+		size := 0
+		if bnk.mapped {
+			size = len(bnk.offsets)
+		}
 		prgBank := program.NewPRGBank(size)
 		prgBank.ID = bnk.id
 		prgBank.ROMOffset = bnk.romOffset

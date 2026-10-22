@@ -18,7 +18,7 @@ import (
 
 // TestBinaryOptionSetsCodeOnly verifies that when Binary option is true,
 // CodeOnly is automatically set to true to prevent NES-specific segments
-// from being included in the output (fixes issue #82).
+// from being included in the output.
 func TestBinaryOptionSetsCodeOnly(t *testing.T) {
 	testCode := createTestCode()
 

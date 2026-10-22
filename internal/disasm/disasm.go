@@ -78,8 +78,10 @@ type Disasm struct {
 
 	pc uint16 // program counter
 
-	cart   *cartridge.Cartridge
-	config *romconfig.Config
+	cart *cartridge.Cartridge
+
+	config              *romconfig.Config
+	annotationsFilename string
 
 	fileWriterConstructor FileWriterConstructor
 	handlers              program.Handlers
@@ -94,7 +96,7 @@ type Disasm struct {
 	branchDestinations   set.Set[uint16] // set of all addresses that are branched to
 	unreachableAddresses set.Set[uint16] // set of addresses marked as unreachable (dead code)
 
-	// TODO handle bank switch
+	// Queues belong to one mapping state; each state has an independent Disasm.
 	offsetsToParse      []uint16
 	offsetsToParseAdded set.Set[uint16]
 	offsetsParsed       set.Set[uint16]
@@ -102,7 +104,11 @@ type Disasm struct {
 	functionReturnsToParse      []uint16
 	functionReturnsToParseAdded set.Set[uint16]
 
-	mapper *mapper.Mapper
+	// Mapping state, used to analyze each explored bank mapping independently.
+	mapper          *mapper.Mapper
+	newArchitecture func() architecture
+	mappingStops    set.Set[uint16]
+	cdlFlags        []codedatalog.PrgFlag
 }
 
 // New creates a new disassembler that uses the passed architecture to implement system
@@ -110,80 +116,16 @@ type Disasm struct {
 func New(logger *log.Logger, ar architecture, cart *cartridge.Cartridge, options options.Disassembler,
 	fileWriterConstructor FileWriterConstructor) (*Disasm, error) {
 
-	dis := &Disasm{
-		arch:                        ar,
-		logger:                      logger,
-		options:                     options,
-		cart:                        cart,
-		fileWriterConstructor:       fileWriterConstructor,
-		branchDestinations:          set.New[uint16](),
-		unreachableAddresses:        set.New[uint16](),
-		offsetsToParseAdded:         set.New[uint16](),
-		offsetsParsed:               set.New[uint16](),
-		functionReturnsToParseAdded: set.New[uint16](),
-	}
-
-	var err error
-	dis.constants, err = consts.New(ar)
-	if err != nil {
-		return nil, fmt.Errorf("creating constants: %w", err)
-	}
-
-	if err := dis.initializeComponents(logger, ar, cart); err != nil {
-		return nil, err
-	}
-
-	if options.CodeDataLog != nil {
-		if err = dis.loadCodeDataLog(); err != nil {
-			return nil, err
-		}
-	}
-
-	return dis, nil
+	return newWithMapper(logger, ar, cart, options, fileWriterConstructor, nil)
 }
 
-// Process disassembles the cartridge.
+// Process disassembles each supported mapping and emits physical ROM bytes once.
 func (dis *Disasm) Process(ctx context.Context, mainWriter io.Writer,
 	newBankWriter assembler.NewBankWriter) (*program.Program, error) {
 
-	if err := dis.followExecutionFlow(ctx); err != nil {
-		return nil, err
-	}
-	if err := dis.traceConfiguredCode(ctx); err != nil {
-		return nil, err
-	}
-
-	// Post-process architecture-specific patterns after all branch destinations are known
-	if err := dis.arch.PostProcessCode(); err != nil {
-		return nil, fmt.Errorf("post-processing code: %w", err)
-	}
-
-	dis.mapper.ClassifyRemainingAsData()
-	dis.applyAnnotations()
-	if err := dis.vars.Process(dis.codeBaseAddress); err != nil {
-		return nil, fmt.Errorf("processing variables: %w", err)
-	}
-	dis.constants.Process()
-	dis.processJumpDestinations()
-	if err := dis.applyConfiguredOperands(); err != nil {
-		return nil, err
-	}
-	if err := dis.applyConfiguredData(); err != nil {
-		return nil, err
-	}
-
-	app, err := dis.convertToProgram()
+	app, err := dis.analyzeMappings(ctx)
 	if err != nil {
 		return nil, err
-	}
-	if dis.config != nil {
-		if err := dis.assignConfiguredSymbols(app); err != nil {
-			return nil, err
-		}
-		dis.pruneUnusedConfigSymbols(app)
-		if err := validateConfiguredSymbols(app); err != nil {
-			return nil, err
-		}
 	}
 	fileWriter := dis.fileWriterConstructor(app, dis.options, mainWriter, newBankWriter)
 	if err = fileWriter.Write(); err != nil {
@@ -264,12 +206,18 @@ func (dis *Disasm) MarkAddressAsUnreachable(address uint16) {
 }
 
 // initializeComponents creates and wires up all the disassembler components.
-func (dis *Disasm) initializeComponents(logger *log.Logger, ar architecture, cart *cartridge.Cartridge) error {
+func (dis *Disasm) initializeComponents(logger *log.Logger, ar architecture, cart *cartridge.Cartridge,
+	mem *mapper.Mapper) error {
+
 	// Create all components with simple constructors
 	je := jumpengine.New(logger, ar)
-	m, err := mapper.New(ar, cart)
-	if err != nil {
-		return fmt.Errorf("creating mapper: %w", err)
+	m := mem
+	if m == nil {
+		var err error
+		m, err = mapper.New(ar, cart)
+		if err != nil {
+			return fmt.Errorf("creating mapper: %w", err)
+		}
 	}
 	v := vars.New(ar)
 
@@ -293,6 +241,7 @@ func (dis *Disasm) initializeComponents(logger *log.Logger, ar architecture, car
 	// Inject dependencies into architecture
 	switch a := ar.(type) {
 	case *m6502.Arch6502:
+		dis.newArchitecture = func() architecture { return a.NewTrace() }
 		a.InjectDependencies(m6502.Dependencies{
 			Disasm:     dis,
 			Mapper:     m,
@@ -358,5 +307,41 @@ func (dis *Disasm) loadCodeDataLog() error {
 	}
 
 	dis.mapper.ApplyCodeDataLog(prgFlags)
+	dis.cdlFlags = prgFlags
 	return nil
+}
+
+// newWithMapper creates a disassembler that uses the passed mapper, or a new one if it is nil.
+func newWithMapper(logger *log.Logger, ar architecture, cart *cartridge.Cartridge, options options.Disassembler,
+	fileWriterConstructor FileWriterConstructor, mem *mapper.Mapper) (*Disasm, error) {
+
+	dis := &Disasm{
+		arch:                        ar,
+		logger:                      logger,
+		options:                     options,
+		cart:                        cart,
+		fileWriterConstructor:       fileWriterConstructor,
+		branchDestinations:          set.New[uint16](),
+		unreachableAddresses:        set.New[uint16](),
+		offsetsToParseAdded:         set.New[uint16](),
+		offsetsParsed:               set.New[uint16](),
+		functionReturnsToParseAdded: set.New[uint16](),
+	}
+
+	var err error
+	dis.constants, err = consts.New(ar)
+	if err != nil {
+		return nil, fmt.Errorf("creating constants: %w", err)
+	}
+
+	if err := dis.initializeComponents(logger, ar, cart, mem); err != nil {
+		return nil, err
+	}
+
+	if options.CodeDataLog != nil {
+		if err = dis.loadCodeDataLog(); err != nil {
+			return nil, err
+		}
+	}
+	return dis, nil
 }

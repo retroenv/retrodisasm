@@ -8,10 +8,12 @@ Added:
 
 * add `-annotations` support for labels, variables, comments, code/data ranges, and ROM checksum validation
 * add symbolic operands, byte/word tables, custom spacing, standalone comments, and grouped definitions to annotation files
+* add disassembly of all UNROM and AxROM banks by following mapper register writes, including banks with identical interrupt vector addresses
 
 Changed:
 
 * preserve NES 2.0 submapper metadata in ca65, asm6, and retroasm output
+* suffix labels in banked ROMs with `_bankN_atXXXX` and keep the original bytes with a comment where bank mappings disagree
 * reject unsupported NES mapper layouts instead of guessing their PRG mapping
 * require Go 1.25 or newer when installing from source
 

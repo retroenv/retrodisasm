@@ -13,6 +13,9 @@ import (
 func (dis *Disasm) AddAddressToParse(address, context, from uint16, currentInstruction instruction.Instruction,
 	isABranchDestination bool) {
 
+	if currentInstruction != nil && !isABranchDestination && dis.mappingStops.Contains(from) {
+		return
+	}
 	if !dis.isValidCodeAddress(address) {
 		return
 	}

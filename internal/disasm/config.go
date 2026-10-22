@@ -55,6 +55,7 @@ func (dis *Disasm) ApplyAnnotations(filename string) error {
 	dis.assignConfigRanges(cfg.Code, program.CodeOffset)
 	dis.assignConfigRanges(cfg.Data, program.DataOffset)
 	dis.renameConfiguredHandlers()
+	dis.annotationsFilename = filename
 	return nil
 }
 
