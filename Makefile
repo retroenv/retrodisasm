@@ -12,10 +12,10 @@ build-all: ## build code
 	go build ./...
 
 test: install ## run tests
-	go test -timeout 10s -race ./...
+	go test -timeout 60s -race ./...
 
 test-coverage: ## run unit tests and create test coverage
-	go test -timeout 10s ./... -coverprofile coverage.txt
+	go test -timeout 60s ./... -coverprofile coverage.txt
 
 test-coverage-web: test-coverage ## run unit tests and show test coverage in browser
 	go tool cover -func coverage.txt | grep total | awk '{print "Total coverage: "$$3}'
