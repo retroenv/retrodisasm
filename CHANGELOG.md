@@ -4,29 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v0.4.1] - 2026-10-22
+
 Added:
 
 * add `-annotations` support for labels, variables, comments, code/data ranges, and ROM checksum validation
+* add disassembly of all UNROM and AxROM banks by following mapper register writes, including banks with identical interrupt vector addresses
 * add experimental MMC1 and MMC3 PRG bank switching analysis
 * add symbolic operands, byte/word tables, custom spacing, standalone comments, and grouped definitions to annotation files
-* add disassembly of all UNROM and AxROM banks by following mapper register writes, including banks with identical interrupt vector addresses
 
 Changed:
 
 * preserve NES 2.0 submapper metadata in ca65, asm6, and retroasm output
-* suffix labels in banked ROMs with `_bankN_atXXXX` and keep the original bytes with a comment where bank mappings disagree
 * reject unsupported NES mapper layouts instead of guessing their PRG mapping
 * require Go 1.25 or newer when installing from source
+* suffix labels in banked ROMs with `_bankN_atXXXX` and keep the original bytes with a comment where bank mappings disagree
 
 Fixed:
 
 * fix 6502 BIT trick disassembly for masked function entry points and preserve symbolic memory references
 * fix AxROM disassembly mixing code from different PRG banks
-* fix code/data log flags being applied to the wrong PRG bank or past the end of the ROM
-* fix interrupt vectors being written for banks that do not contain them
-* fix duplicate interrupt-handler labels when mapper writes change vector targets
-* fix tracing instructions that cross a switchable bank boundary
 * fix UNROM and UOROM bank layout, using 16 KiB banks with the last bank fixed at $C000
+* fix code/data log flags being applied to the wrong PRG bank or past the end of the ROM
+* fix duplicate interrupt-handler labels when mapper writes change vector targets
+* fix interrupt vectors being written for banks that do not contain them
+* fix tracing instructions that cross a switchable bank boundary
 * preserve indirect addressing when replacing hardware register addresses with names
 * preserve relative branch bytes when the target is outside the disassembled code
 
