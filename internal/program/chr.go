@@ -12,5 +12,6 @@ func (chr CHR) LastNonZeroByte() int {
 		}
 		return i + 1
 	}
+
 	return 0
 }

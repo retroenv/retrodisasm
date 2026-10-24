@@ -139,6 +139,7 @@ func (dis *Disasm) followExecutionFlow(ctx context.Context) error {
 
 		dis.changeAddressRangeToCode(address, offsetInfo.Data)
 	}
+
 	return nil
 }
 
@@ -164,6 +165,7 @@ func (dis *Disasm) checkInstructionOverlap(address uint16, offsetInfo *offset.Di
 		offsetInfo.Code = ""
 		offsetInfo.ClearType(program.CodeOffset)
 		offsetInfo.SetType(program.CodeAsData | program.DataOffset)
+
 		return
 	}
 }
@@ -250,6 +252,7 @@ func (dis *Disasm) addressToDisassemble() (int, error) {
 				continue
 			}
 			dis.functionReturnsToParseAdded.Remove(address)
+
 			return int(address), nil
 		}
 

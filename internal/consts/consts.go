@@ -92,6 +92,7 @@ func (c *Consts) SetToProgram(app *program.Program) {
 		if constantInfo.Read != "" {
 			app.Constants[constantInfo.Read] = address
 		}
+
 		if constantInfo.Write != "" {
 			app.Constants[constantInfo.Write] = address
 		}
@@ -106,6 +107,7 @@ func (c *Consts) AssignBankConstants(bankID int, prgBank *program.PRGBank) {
 		if constantInfo.Read != "" {
 			prgBank.Constants[constantInfo.Read] = address
 		}
+
 		if constantInfo.Write != "" {
 			prgBank.Constants[constantInfo.Write] = address
 		}
@@ -127,5 +129,6 @@ func replaceAddressLiteral(operand, name string) string {
 	for end < len(operand) && strings.ContainsRune("0123456789abcdefABCDEF", rune(operand[end])) {
 		end++
 	}
+
 	return operand[:start] + name + operand[end:]
 }

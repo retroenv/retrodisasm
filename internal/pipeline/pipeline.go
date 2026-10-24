@@ -167,6 +167,7 @@ func (p *Pipeline) createDisassembler(opts options.Program, disasmOpts options.D
 			return nil, fmt.Errorf("applying annotations: %w", err)
 		}
 	}
+
 	return dis, nil
 }
 
@@ -289,12 +290,14 @@ func chrFilenames(opts options.Program) (string, string, error) {
 		if base == "" || base == options.OutputStdout {
 			base = opts.Input
 		}
+
 		if base == "" {
 			return "", "", errors.New("cannot derive CHR-ROM filename without an input or output filename")
 		}
 		ext := filepath.Ext(base)
 		outputFilename = strings.TrimSuffix(base, ext) + ".chr"
 	}
+
 	chrPath, err := filepath.Abs(outputFilename)
 	if err != nil {
 		return "", "", fmt.Errorf("resolving CHR-ROM output path: %w", err)

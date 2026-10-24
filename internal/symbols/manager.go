@@ -101,9 +101,11 @@ func (m *Manager[T]) SortedByUint16(keyFunc func(T) uint16) []T {
 	for _, item := range m.items {
 		items = append(items, item)
 	}
+
 	sort.Slice(items, func(i, j int) bool {
 		return keyFunc(items[i]) < keyFunc(items[j])
 	})
+
 	return items
 }
 

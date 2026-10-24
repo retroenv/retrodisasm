@@ -157,7 +157,8 @@ func TestConfigGeneratedSymbolCollision(t *testing.T) {
 func TestConfigSharedVectors(t *testing.T) {
 	opts := options.NewDisassembler(assembler.Ca65, arch.NES.String())
 	cart := cartridge.New()
-	cart.PRG[0x7ffb], cart.PRG[0x7fff] = 0x80, 0x80
+	cart.PRG[0x7ffb] = 0x80
+	cart.PRG[0x7fff] = 0x80
 	dis := testProgram(t, opts, cart, []byte{0x60})
 	assert.NoError(t, dis.ApplyAnnotations(writeConfig(t, "[vectors]\nnmi=Entry\nreset=Entry\nirq=Entry")))
 	app, _ := processConfiguredDisasm(t, dis)

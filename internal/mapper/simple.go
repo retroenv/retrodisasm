@@ -53,6 +53,7 @@ func (sm simpleModel) Windows(state Snapshot) []window {
 		if sm.size == 0x4000 {
 			windows = append(windows, window{0xc000, sm.size, 0})
 		}
+
 		return windows
 	}
 }
@@ -64,5 +65,6 @@ func (sm simpleModel) Write(state Snapshot, address uint16, value byte) (Snapsho
 	if sm.mode == switchWhole {
 		value &= 7
 	}
+
 	return sm.Seed(int(value) % sm.SeedCount()), true
 }

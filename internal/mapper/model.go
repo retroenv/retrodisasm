@@ -67,6 +67,7 @@ func mmcLayout(cart *cartridge.Cartridge) (model, error) { //nolint:ireturn
 	if cart.Mapper == 4 {
 		limit = 0x80000
 	}
+
 	if size < 0x8000 || size > limit || size&(size-1) != 0 {
 		return nil, fmt.Errorf("invalid PRG size %d for mapper %d: expected a power of two from 32 to %d KiB", size, cart.Mapper, limit/1024)
 	}

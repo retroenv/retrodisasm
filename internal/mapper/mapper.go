@@ -55,7 +55,9 @@ func (m *Mapper) MappedBank(address uint16) offset.MappedBank {
 		// Multi-bank system
 		bankWindow = address >> m.addressShifts
 	}
+
 	mapped := m.mapped[bankWindow]
+
 	return mapped
 }
 
@@ -68,6 +70,7 @@ func (m *Mapper) MappedBankIndex(address uint16) uint16 {
 		// Multi-bank system - use modulo for bank window
 		index = int(address) % m.bankWindowSize
 	}
+
 	return uint16(index)
 }
 
@@ -88,6 +91,7 @@ func (m *Mapper) ReadMemory(address uint16) byte {
 	bnk := m.mapped[bankWindow]
 	pointer := bnk.dataStart + index
 	b := bnk.bank.prg[pointer]
+
 	return b
 }
 
@@ -100,6 +104,7 @@ func (m *Mapper) OffsetInfo(address uint16) *offset.DisasmOffset {
 		// Multi-bank system
 		bankWindow = address >> m.addressShifts
 	}
+
 	bnk := m.mapped[bankWindow]
 	if bnk.bank == nil {
 		return nil
@@ -113,6 +118,7 @@ func (m *Mapper) OffsetInfo(address uint16) *offset.DisasmOffset {
 		// Single-bank: subtract code base address to convert memory address to ROM offset
 		index = int(address) - int(m.codeBaseAddress)
 	}
+
 	pointer := bnk.dataStart + index
 
 	// Bounds check: ensure pointer is within the offsets array
@@ -121,6 +127,7 @@ func (m *Mapper) OffsetInfo(address uint16) *offset.DisasmOffset {
 	}
 
 	offsetInfo := bnk.bank.offsets[pointer]
+
 	return offsetInfo
 }
 
@@ -155,6 +162,7 @@ func (m *Mapper) populateBankMappings(bankWindowSize int) error {
 			bankNumber++
 		}
 	}
+
 	return nil
 }
 
@@ -167,6 +175,7 @@ func (m *Mapper) setMappedBank(address uint16, bank mappedBank) {
 		// Multi-bank system
 		bankWindow = address >> m.addressShifts
 	}
+
 	m.mapped[bankWindow] = bank
 }
 
@@ -225,5 +234,6 @@ func log2(i int) int {
 	for p = 1; p < i; p += p {
 		n++
 	}
+
 	return n
 }

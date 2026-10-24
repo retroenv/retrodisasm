@@ -48,14 +48,17 @@ func (dis *Disasm) ApplyAnnotations(filename string) error {
 			Write:   name,
 		})
 	}
+
 	dis.vars.AssignNames(cfg.Variables)
 	for address, label := range cfg.Labels {
 		dis.mapper.OffsetInfo(address).Label = label
 	}
+
 	dis.assignConfigRanges(cfg.Code, program.CodeOffset)
 	dis.assignConfigRanges(cfg.Data, program.DataOffset)
 	dis.renameConfiguredHandlers()
 	dis.annotationsFilename = filename
+
 	return nil
 }
 
@@ -90,6 +93,7 @@ func (dis *Disasm) resolveConfigVectors(cfg *romconfig.Config) error {
 		}
 		cfg.Labels[address] = value.Name
 	}
+
 	return nil
 }
 
@@ -101,11 +105,13 @@ func (dis *Disasm) validateConfigAddresses(cfg *romconfig.Config) error {
 			}
 		}
 	}
+
 	for address := range cfg.BlankLines {
 		if err := dis.validateAnnotationAddress(address); err != nil {
 			return err
 		}
 	}
+
 	for address := range cfg.Variables {
 		if address >= dis.codeBaseAddress {
 			return fmt.Errorf("variable $%04X is in ROM; use [labels]", address)
@@ -114,6 +120,7 @@ func (dis *Disasm) validateConfigAddresses(cfg *romconfig.Config) error {
 			return fmt.Errorf("$%04X is both a variable and a constant", address)
 		}
 	}
+
 	for _, ranges := range [][]romconfig.Range{cfg.Code, cfg.Data} {
 		for _, rng := range ranges {
 			for address := uint32(rng.Start); address <= uint32(rng.End); address++ {
@@ -123,6 +130,7 @@ func (dis *Disasm) validateConfigAddresses(cfg *romconfig.Config) error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -147,6 +155,7 @@ func (dis *Disasm) validateConfigNames(cfg *romconfig.Config) error {
 			names[key] = address
 		}
 	}
+
 	for address := uint32(dis.codeBaseAddress); address < uint32(dis.arch.LastCodeAddress()); address++ {
 		info := dis.mapper.OffsetInfo(uint16(address))
 		if info == nil || cfg.Labels[uint16(address)] != "" || info.Label == "" {
@@ -156,6 +165,7 @@ func (dis *Disasm) validateConfigNames(cfg *romconfig.Config) error {
 			return fmt.Errorf("symbol %q conflicts with existing label at $%04X", info.Label, address)
 		}
 	}
+
 	return nil
 }
 
@@ -216,6 +226,7 @@ func (dis *Disasm) traceConfiguredCode(ctx context.Context) error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -226,6 +237,7 @@ func (dis *Disasm) validateInstructionHints(address uint16, info *offset.DisasmO
 			return fmt.Errorf("instruction at $%04X overlaps configured data at $%04X", address, int(address)+i)
 		}
 	}
+
 	return nil
 }
 
@@ -240,21 +252,26 @@ func (dis *Disasm) applyAnnotations() {
 		dis.mapper.OffsetInfo(address).CommentBefore = comment
 		addresses.Add(address)
 	}
+
 	for address, count := range dis.config.BlankLines {
 		dis.mapper.OffsetInfo(address).BlankLines = &count
 		addresses.Add(address)
 	}
+
 	for address, comment := range dis.config.Comments {
 		info := dis.mapper.OffsetInfo(address)
 		if info.Comment != "" {
 			info.Comment += " | "
 		}
+
 		info.Comment += comment
 		addresses.Add(address)
 	}
+
 	for address := range dis.config.Labels {
 		addresses.Add(address)
 	}
+
 	for _, address := range set.Sorted(addresses) {
 		info := dis.mapper.OffsetInfo(address)
 		if len(info.Data) == 0 && info.IsType(program.CodeOffset|program.CodeAsData|program.FunctionReference) {
@@ -270,6 +287,7 @@ func (dis *Disasm) assignConfiguredSymbols(app *program.Program) error {
 			Names:   group.Names,
 		})
 	}
+
 	for _, name := range slices.Sorted(maps.Keys(dis.config.Symbols)) {
 		value := dis.config.Symbols[name]
 		if appendAliasAtAddress(app, value, name) {
@@ -289,6 +307,7 @@ func (dis *Disasm) assignConfiguredSymbols(app *program.Program) error {
 			app.PRG[0].Constants[name] = value
 		}
 	}
+
 	return nil
 }
 
@@ -311,6 +330,7 @@ func (dis *Disasm) applyConfiguredOperands() error {
 			return fmt.Errorf("applying operand: %w", err)
 		}
 	}
+
 	return nil
 }
 
@@ -321,6 +341,7 @@ func (dis *Disasm) configSymbols() map[string]uint16 {
 			symbols[name] = address
 		}
 	}
+
 	return symbols
 }
 
@@ -332,11 +353,13 @@ func (dis *Disasm) pruneUnusedConfigSymbols(app *program.Program) {
 	for name := range dis.config.Symbols {
 		used.Add(name)
 	}
+
 	for _, group := range dis.config.SymbolGroups {
 		for _, name := range group.Names {
 			used.Add(name)
 		}
 	}
+
 	for _, bank := range app.PRG {
 		for _, info := range bank.Offsets {
 			for _, name := range strings.FieldsFunc(info.Code, isSymbolSeparator) {
@@ -344,9 +367,11 @@ func (dis *Disasm) pruneUnusedConfigSymbols(app *program.Program) {
 			}
 		}
 	}
+
 	for _, aliases := range []map[string]uint16{app.Constants, app.Variables} {
 		deleteUnusedAliases(aliases, used)
 	}
+
 	for _, bank := range app.PRG {
 		deleteUnusedAliases(bank.Constants, used)
 		deleteUnusedAliases(bank.Variables, used)
@@ -372,6 +397,7 @@ func (dis *Disasm) applyConfiguredData() error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -400,6 +426,7 @@ func (dis *Disasm) referencedConfigNames() set.Set[string] {
 			used.Add(name)
 		}
 	}
+
 	for _, entries := range []map[uint16]romconfig.Data{dis.config.Bytes, dis.config.Words} {
 		for _, data := range entries {
 			for _, expression := range data.Expressions {
@@ -409,6 +436,7 @@ func (dis *Disasm) referencedConfigNames() set.Set[string] {
 			}
 		}
 	}
+
 	return used
 }
 
@@ -423,6 +451,7 @@ func (dis *Disasm) assignDataExpressions(address uint16, width int, layout romco
 			return err
 		}
 	}
+
 	data, err := encodeExpressions(width, expressions, symbols)
 	if err != nil {
 		return fmt.Errorf("data at $%04X: %w", address, err)
@@ -446,6 +475,7 @@ func (dis *Disasm) assignDataExpressionChunks(address uint16, width int, data []
 			expressions[offset/width:offset/width+chunkExpressions])
 		offset += chunkBytes
 	}
+
 	return nil
 }
 
@@ -457,16 +487,19 @@ func (dis *Disasm) assignDataExpressionChunk(address uint16, width int, data []b
 		info.Data = nil
 		info.SetType(program.ExpressionData)
 	}
+
 	info := dis.mapper.OffsetInfo(address)
 	info.Data = data
 	directive := ".byte "
 	if width == 2 {
 		directive = ".word "
 	}
+
 	formatted := make([]string, len(expressions))
 	for i, expression := range expressions {
 		formatted[i] = assembler.FormatExpression(dis.options.Assembler, expression)
 	}
+
 	info.Code = directive + strings.Join(formatted, ", ")
 }
 
@@ -478,6 +511,7 @@ func (dis *Disasm) mappedDataBytes(address uint16, maximum int) int {
 			return length
 		}
 	}
+
 	return maximum
 }
 
@@ -496,8 +530,10 @@ func (dis *Disasm) literalDataExpressions(address uint16, width, count int) ([]s
 			}
 			value |= uint16(dis.mapper.ReadMemory(addr)) << (8 * i)
 		}
+
 		expressions = append(expressions, fmt.Sprintf("$%0*x", width*2, value))
 	}
+
 	return expressions, nil
 }
 
@@ -521,6 +557,7 @@ func (dis *Disasm) validateDataExpressions(address uint16, data []byte) error {
 			return fmt.Errorf("symbolic data at $%04X does not match ROM byte", current)
 		}
 	}
+
 	return nil
 }
 
@@ -539,6 +576,7 @@ func encodeExpressions(width int, expressions []string, symbols map[string]uint1
 			data = append(data, byte(value>>8))
 		}
 	}
+
 	return data, nil
 }
 
@@ -562,6 +600,7 @@ func validateConfiguredSymbols(app *program.Program) error {
 			return fmt.Errorf("annotations produce duplicate assembly symbol %q", name)
 		}
 		names.Add(key)
+
 		return nil
 	}
 
@@ -572,6 +611,7 @@ func validateConfiguredSymbols(app *program.Program) error {
 			}
 		}
 	}
+
 	for _, bank := range app.PRG {
 		for _, info := range bank.Offsets {
 			for _, alias := range info.Aliases {
@@ -579,6 +619,7 @@ func validateConfiguredSymbols(app *program.Program) error {
 					return err
 				}
 			}
+
 			if info.Label != "" {
 				if err := register(info.Label); err != nil {
 					return err
@@ -586,6 +627,7 @@ func validateConfiguredSymbols(app *program.Program) error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -596,7 +638,9 @@ func appendAliasAtAddress(app *program.Program, address uint16, name string) boo
 			continue
 		}
 		bank.Offsets[index].Aliases = append(bank.Offsets[index].Aliases, name)
+
 		return true
 	}
+
 	return false
 }

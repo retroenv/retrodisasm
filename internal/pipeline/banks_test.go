@@ -257,9 +257,13 @@ func boundaryJumpTableCartridge(id uint16) *cartridge.Cartridge {
 	cart.Mapper = id
 	cart.PRG = make([]byte, 0x10000)
 	cart.CHR = nil
-	bankSize, fixedAddress, highByte := 0x4000, uint16(0xc000), 0xc000
+	bankSize := 0x4000
+	fixedAddress := uint16(0xc000)
+	highByte := 0xc000
 	if id == 4 {
-		bankSize, fixedAddress, highByte = 0x2000, 0xe000, 0x2000
+		bankSize = 0x2000
+		fixedAddress = 0xe000
+		highByte = 0x2000
 	}
 	table := uint16(0x8000 + bankSize - 1)
 	copy(cart.PRG, []byte{
@@ -268,7 +272,8 @@ func boundaryJumpTableCartridge(id uint16) *cartridge.Cartridge {
 		0xbd, byte(table + 1), byte((table + 1) >> 8), 0x8d, 1, 2,
 		0x6c, 0, 2,
 	})
-	cart.PRG[bankSize-1], cart.PRG[highByte] = 0, 0x81
+	cart.PRG[bankSize-1] = 0
+	cart.PRG[highByte] = 0x81
 	cart.PRG[0x100] = 0x40
 	copy(cart.PRG[len(cart.PRG)-bankSize+0x10:], []byte{0x20, 0, 0x80, 0x40})
 	copy(cart.PRG[len(cart.PRG)-4:], []byte{0x10, byte(fixedAddress >> 8)})

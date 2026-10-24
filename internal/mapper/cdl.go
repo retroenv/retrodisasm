@@ -22,6 +22,7 @@ func (m *Mapper) ApplyCodeDataLog(prgFlags []codedatalog.PrgFlag) {
 			if flags&codedatalog.SubEntryPoint != 0 {
 				bnk.offsets[index].SetType(program.CallDestination)
 			}
+
 			if flags&codedatalog.Code != 0 {
 				if address, ok := m.mappedAddress(bnk, index); ok {
 					m.dis.AddAddressToParse(address, 0, 0, nil, false)
@@ -46,5 +47,6 @@ func (m *Mapper) mappedAddress(bnk *bank, index int) (uint16, bool) {
 			return address, true
 		}
 	}
+
 	return 0, false
 }

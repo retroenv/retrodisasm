@@ -78,5 +78,6 @@ func GenerateMapperConfig(conf Config) (string, error) {
 	}
 
 	generated := buf.String()
+
 	return generated, nil
 }

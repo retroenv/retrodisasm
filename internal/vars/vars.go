@@ -92,6 +92,7 @@ func (v *Vars) AddReference(addressReference, usageAddress uint16, opcode instru
 		reads = opcode.ReadsMemory()
 		writes = opcode.WritesMemory()
 	}
+
 	if !reads && !writes && !forceVariableUsage {
 		return
 	}
@@ -115,6 +116,7 @@ func (v *Vars) AddReference(addressReference, usageAddress uint16, opcode instru
 	if reads {
 		varInfo.reads = true
 	}
+
 	if writes {
 		varInfo.writes = true
 	}
@@ -164,6 +166,7 @@ func (v *Vars) Process(codeBaseAddress uint16) error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -220,9 +223,11 @@ func (v *Vars) dataName(offsetInfo *offset.DisasmOffset, indexedUsage bool, addr
 	if addressAdjustment > 0 {
 		reference = fmt.Sprintf("%s+%d", reference, addressAdjustment)
 	}
+
 	if offsetInfo != nil && offsetInfo.Label == "" {
 		offsetInfo.Label = name
 	}
+
 	return name, reference
 }
 

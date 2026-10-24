@@ -33,6 +33,7 @@ func (d *Detector) Detect(opts options.Program) arch.System {
 			log.Stringer("system", system),
 			log.String("file", opts.Input))
 	}
+
 	return system
 }
 

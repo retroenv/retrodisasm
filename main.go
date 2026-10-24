@@ -33,6 +33,7 @@ func main() {
 		} else {
 			logger.Fatal(err.Error())
 		}
+
 		os.Exit(1)
 	}
 

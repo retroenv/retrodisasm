@@ -38,6 +38,7 @@ func (ar *Arch6502) ReadMemory(address uint16) (byte, error) {
 	default:
 		return 0, fmt.Errorf("invalid read from address #%04x", address)
 	}
+
 	return value, nil
 }
 
@@ -69,6 +70,7 @@ func paramReaderImmediate(dis disasm, address uint16) (any, []byte, error) {
 		return nil, nil, fmt.Errorf("reading memory at address %04x: %w", address+1, err)
 	}
 	opcodes := []byte{b}
+
 	return int(b), opcodes, nil
 }
 
@@ -107,6 +109,7 @@ func paramReaderZeroPage(dis disasm, address uint16) (any, []byte, error) {
 		return nil, nil, fmt.Errorf("reading memory at address %04x: %w", address+1, err)
 	}
 	opcodes := []byte{b}
+
 	return cpu6502.ZeroPage(b), opcodes, nil
 }
 
@@ -116,6 +119,7 @@ func paramReaderZeroPageX(dis disasm, address uint16) (any, []byte, error) {
 		return nil, nil, fmt.Errorf("reading memory at address %04x: %w", address+1, err)
 	}
 	opcodes := []byte{b}
+
 	return cpu6502.ZeroPageX(b), opcodes, nil
 }
 
@@ -125,6 +129,7 @@ func paramReaderZeroPageY(dis disasm, address uint16) (any, []byte, error) {
 		return nil, nil, fmt.Errorf("reading memory at address %04x: %w", address+1, err)
 	}
 	opcodes := []byte{b}
+
 	return cpu6502.ZeroPageY(b), opcodes, nil
 }
 
@@ -142,6 +147,7 @@ func paramReaderRelative(dis disasm, address uint16) (any, []byte, error) {
 	}
 
 	opcodes := []byte{byte(offset)}
+
 	return cpu6502.Absolute(address), opcodes, nil
 }
 
@@ -160,6 +166,7 @@ func paramReaderIndirectX(dis disasm, address uint16) (any, []byte, error) {
 		return nil, nil, fmt.Errorf("reading memory at address %04x: %w", address+1, err)
 	}
 	opcodes := []byte{b}
+
 	return cpu6502.IndirectX(b), opcodes, nil
 }
 
@@ -169,6 +176,7 @@ func paramReaderIndirectY(dis disasm, address uint16) (any, []byte, error) {
 		return nil, nil, fmt.Errorf("reading memory at address %04x: %w", address+1, err)
 	}
 	opcodes := []byte{b}
+
 	return cpu6502.IndirectY(b), opcodes, nil
 }
 
@@ -183,5 +191,6 @@ func paramReadWord(dis disasm, address uint16) (uint16, []byte, error) {
 	}
 	w := uint16(b2)<<uint16(8) | uint16(b1)
 	opcodes := []byte{b1, b2}
+
 	return w, opcodes, nil
 }

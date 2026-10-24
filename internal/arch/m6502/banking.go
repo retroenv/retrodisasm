@@ -172,9 +172,11 @@ func (ex *mappingExplorer) followWrite(loc, next flowLocation, regs registers, a
 		trace.entries.Add(next.pc)
 	}
 
-	start, end := 0, 256
+	start := 0
+	end := 256
 	if value.known {
-		start, end = int(value.value), int(value.value)+1
+		start = int(value.value)
+		end = int(value.value) + 1
 	}
 
 	seen := set.New[mapper.Snapshot]()

@@ -102,5 +102,6 @@ func (p Program) PrgSize() int {
 	for _, bnk := range p.PRG {
 		size += len(bnk.Offsets)
 	}
+
 	return size
 }

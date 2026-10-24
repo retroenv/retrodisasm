@@ -58,6 +58,7 @@ func (dis *Disasm) analyze(ctx context.Context) (*program.Program, error) {
 			return nil, err
 		}
 	}
+
 	return app, nil
 }
 
@@ -100,6 +101,7 @@ func (dis *Disasm) analyzeMappings(ctx context.Context) (*program.Program, error
 		for i, bank := range next.PRG {
 			mergeBankAnalysis(app.PRG[i], bank)
 		}
+
 		maps.Copy(app.Constants, next.Constants)
 		maps.Copy(app.Variables, next.Variables)
 	}
@@ -146,6 +148,7 @@ func (dis *Disasm) analyzeTrace(ctx context.Context, trace mapper.Trace, first b
 	}
 
 	mergeAlternateViews(app)
+
 	return app, nil
 }
 
@@ -199,6 +202,7 @@ func qualifyBankSymbols(app *program.Program) error {
 			for j, alias := range info.Aliases {
 				info.Aliases[j] = names[alias]
 			}
+
 			info.Code = rewriteSymbols(info.Code, names)
 		}
 	}
@@ -212,6 +216,7 @@ func qualifyBankSymbols(app *program.Program) error {
 			app.SymbolGroups[i].Names[j] = rewriteSymbols(name, names)
 		}
 	}
+
 	return nil
 }
 
@@ -229,13 +234,16 @@ func rewriteSymbols(expression string, names map[string]string) string {
 		for end < len(expression) && !isSymbolSeparator(rune(expression[end])) {
 			end++
 		}
+
 		token := expression[start:end]
 		if replacement, ok := names[token]; ok && (start == 0 || expression[start-1] != '$') {
 			token = replacement
 		}
+
 		out.WriteString(token)
 		start = end
 	}
+
 	return out.String()
 }
 
@@ -279,6 +287,7 @@ func mergeBankAnalysis(dst, src *program.PRGBank) {
 				if merged[i].Comment != "" {
 					merged[i].Comment += " | "
 				}
+
 				merged[i].Comment += "mapping-dependent interpretation"
 			}
 		}
@@ -290,7 +299,8 @@ func mergeBankAnalysis(dst, src *program.PRGBank) {
 
 // mappingConflicts reports for each offset if the two banks interpret it differently.
 func mappingConflicts(dst, src *program.PRGBank) []bool {
-	left, right := recordOwners(dst), recordOwners(src)
+	left := recordOwners(dst)
+	right := recordOwners(src)
 	conflicts := make([]bool, len(dst.Offsets))
 
 	for i, owner := range left {
@@ -298,11 +308,13 @@ func mappingConflicts(dst, src *program.PRGBank) []bool {
 		if src.BaseAddress != dst.BaseAddress && other >= 0 {
 			conflicts[i] = true
 		}
+
 		if owner < 0 || other < 0 {
 			continue
 		}
 
-		a, b := dst.Offsets[owner], src.Offsets[other]
+		a := dst.Offsets[owner]
+		b := src.Offsets[other]
 		if owner != other || len(a.Data) != len(b.Data) || a.Code != b.Code {
 			for j := min(owner, other); j < max(owner+len(a.Data), other+len(b.Data)); j++ {
 				conflicts[j] = true
@@ -340,6 +352,7 @@ func convertOriginLabels(bank *program.PRGBank) {
 				bank.Constants[name] = info.Address
 			}
 		}
+
 		info.Label = ""
 		info.Aliases = nil
 	}
@@ -459,6 +472,7 @@ func splitLabeledRecords(bank *program.PRGBank) {
 				record.Type = program.CodeAsData | program.DataOffset
 				record.Code = ""
 			}
+
 			break
 		}
 	}

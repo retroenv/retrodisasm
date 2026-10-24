@@ -72,6 +72,7 @@ func PrintBanner(logger *log.Logger, opts options.Program, version, commit, date
 		if len(commit) > 7 {
 			commit = commit[:7]
 		}
+
 		versionString += fmt.Sprintf(" (%s)", commit)
 	}
 

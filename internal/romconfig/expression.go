@@ -14,7 +14,8 @@ func Evaluate(expression string, symbols map[string]uint16) (uint16, error) {
 	expression = strings.ReplaceAll(strings.TrimSpace(expression), " ", "")
 	var selector byte
 	if len(expression) > 0 && (expression[0] == '<' || expression[0] == '>') {
-		selector, expression = expression[0], expression[1:]
+		selector = expression[0]
+		expression = expression[1:]
 	}
 
 	value, err := evaluateSum(expression, symbols)
@@ -30,11 +31,13 @@ func Evaluate(expression string, symbols map[string]uint16) (uint16, error) {
 	case '>':
 		value >>= 8
 	}
+
 	return uint16(value), nil
 }
 
 func evaluateSum(expression string, symbols map[string]uint16) (int, error) {
-	value, sign := 0, 1
+	value := 0
+	sign := 1
 	for {
 		token := expressionToken.FindString(expression)
 		if token == "" {
@@ -63,6 +66,7 @@ func evaluateSum(expression string, symbols map[string]uint16) (int, error) {
 		default:
 			return 0, fmt.Errorf("invalid operand operator %q", expression)
 		}
+
 		expression = expression[1:]
 	}
 }

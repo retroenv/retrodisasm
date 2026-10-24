@@ -191,6 +191,7 @@ func (dis *Disasm) ReadMemoryWord(address uint16) (uint16, error) {
 	}
 
 	high := uint16(b)
+
 	return (high << 8) | low, nil
 }
 
@@ -219,6 +220,7 @@ func (dis *Disasm) initializeComponents(logger *log.Logger, ar architecture, car
 			return fmt.Errorf("creating mapper: %w", err)
 		}
 	}
+
 	v := vars.New(ar)
 
 	// Inject dependencies using InjectDependencies with Dependencies structs
@@ -281,6 +283,7 @@ func (dis *Disasm) convertToProgram() (*program.Program, error) {
 		}
 		app.NESHeader = header
 	}
+
 	app.CodeBaseAddress = dis.codeBaseAddress
 	app.VectorsStartAddress = dis.vectorsStartAddress
 	app.Handlers = dis.handlers
@@ -308,6 +311,7 @@ func (dis *Disasm) loadCodeDataLog() error {
 
 	dis.mapper.ApplyCodeDataLog(prgFlags)
 	dis.cdlFlags = prgFlags
+
 	return nil
 }
 
@@ -343,5 +347,6 @@ func newWithMapper(logger *log.Logger, ar architecture, cart *cartridge.Cartridg
 			return nil, err
 		}
 	}
+
 	return dis, nil
 }

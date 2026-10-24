@@ -30,6 +30,7 @@ func (m *Mapper) SelectState(id StateID) error {
 	if m.layout != nil {
 		m.selectSnapshot(m.layout.Seed(int(id)))
 	}
+
 	return nil
 }
 
@@ -46,6 +47,7 @@ func (m *Mapper) Seeds() iter.Seq[Snapshot] {
 			if m.layout != nil {
 				state = m.layout.Seed(i)
 			}
+
 			if !yield(state) {
 				return
 			}
@@ -103,6 +105,7 @@ func (m *Mapper) ReadSnapshot(state Snapshot, address uint16) (byte, bool) {
 			return bnk.prg[physical-bnk.romOffset], true
 		}
 	}
+
 	return 0, false
 }
 
@@ -123,10 +126,12 @@ func (m *Mapper) NewTrace(state Snapshot) *Mapper {
 			hasVectors:  bnk.hasVectors,
 		})
 	}
+
 	for i, mapped := range m.banksMapped {
 		mapped.bank = next.banks[mapped.id]
 		next.banksMapped[i] = mapped
 	}
+
 	if m.layout == nil {
 		next.banks[0].initializeOffsets()
 		next.banks[0].mapped = true
@@ -134,6 +139,7 @@ func (m *Mapper) NewTrace(state Snapshot) *Mapper {
 	} else {
 		next.selectSnapshot(state)
 	}
+
 	return next
 }
 
@@ -157,6 +163,7 @@ func (m *Mapper) selectSnapshot(state Snapshot) {
 	for _, bnk := range m.banks {
 		bnk.mapped = false
 	}
+
 	for _, win := range m.layout.Windows(state) {
 		for off := 0; off < win.size; off += m.bankWindowSize {
 			mapped := m.banksMapped[(win.romOffset+off)/m.bankWindowSize]
@@ -164,6 +171,7 @@ func (m *Mapper) selectSnapshot(state Snapshot) {
 			if len(m.banks) > 1 && origin != mapped.bank.baseAddress {
 				mapped.bank = m.alternateView(mapped.bank, origin)
 			}
+
 			mapped.bank.initializeOffsets()
 			mapped.bank.mapped = true
 			m.setMappedBank(win.address+uint16(off), mapped)
@@ -177,11 +185,13 @@ func (m *Mapper) alternateView(physical *bank, origin uint16) *bank {
 			return view
 		}
 	}
+
 	view := &bank{
 		storage:     physical.storage,
 		baseAddress: origin,
 		hasVectors:  int(origin)+len(physical.prg) == 0x10000,
 	}
 	m.views = append(m.views, view)
+
 	return view
 }

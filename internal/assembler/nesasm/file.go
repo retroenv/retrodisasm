@@ -80,6 +80,7 @@ func (f FileWriter) Write() error {
 	if !isMultiBank {
 		writes = append(writes, customWrite(f.writeVectors(nextBank-1)))
 	}
+
 	writes = append(writes, customWrite(f.writeCHR(nextBank)))
 
 	for _, write := range writes {
@@ -118,6 +119,7 @@ func (f FileWriter) writePRGBank(t prgBankWrite) error {
 				return fmt.Errorf("writing newline: %w", err)
 			}
 		}
+
 		bankFile := bankFilename(f.options.OutputFilename, t.bank.Name)
 		if _, err := fmt.Fprintf(f.mainWriter, " .include \"%s\"\n", bankFile); err != nil {
 			return fmt.Errorf("writing include directive: %w", err)
@@ -148,6 +150,7 @@ func (f FileWriter) writePRGBank(t prgBankWrite) error {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -170,6 +173,7 @@ func (f FileWriter) writeROMHeader() error {
 			return fmt.Errorf("writing header: %w", err)
 		}
 	}
+
 	return nil
 }
 
@@ -245,6 +249,7 @@ func (f FileWriter) writeBankVectorsTo(w io.Writer, bank *program.PRGBank, bankN
 				return fmt.Errorf("writing bank padding: %w", err)
 			}
 		}
+
 		return nil
 	}
 	// Trailing zeroes can omit the callback that would otherwise select the

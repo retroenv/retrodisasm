@@ -42,5 +42,6 @@ func (ar *Arch6502) HandleDisambiguousInstructions(address uint16, offsetInfo *o
 	offsetInfo.Code = ""
 	offsetInfo.SetType(program.CodeAsData)
 	ar.dis.ChangeAddressRangeToCodeAsData(address, offsetInfo.Data)
+
 	return true
 }

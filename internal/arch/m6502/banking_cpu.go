@@ -193,12 +193,15 @@ func joinRegisters(left, right registers) registers {
 	if left.a != right.a {
 		left.a = knownByte{}
 	}
+
 	if left.x != right.x {
 		left.x = knownByte{}
 	}
+
 	if left.y != right.y {
 		left.y = knownByte{}
 	}
+
 	return left
 }
 
@@ -206,11 +209,14 @@ func normalizeRegisters(regs registers) registers {
 	if !regs.a.known {
 		regs.a.value = 0
 	}
+
 	if !regs.x.known {
 		regs.x.value = 0
 	}
+
 	if !regs.y.known {
 		regs.y.value = 0
 	}
+
 	return regs
 }

@@ -51,7 +51,8 @@ func TestSetPrgBankSelectorSplitsExpressionData(t *testing.T) {
 		Type: program.DataOffset | program.ExpressionData,
 		Code: ".word Entry",
 	}
-	bankAddress, bankNumber := 0xA000, 1
+	bankAddress := 0xA000
+	bankNumber := 1
 	setPrgBankSelector(prg, 1, &bankAddress, &bankNumber)
 	assert.False(t, prg[0].IsType(program.ExpressionData))
 	assert.False(t, prg[1].IsType(program.ExpressionData))

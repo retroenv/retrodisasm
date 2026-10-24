@@ -91,6 +91,7 @@ func (w Writer) ProcessPRG(bank *program.PRGBank, endIndex int) error {
 		}
 		i += adjustment
 	}
+
 	return nil
 }
 
@@ -140,11 +141,13 @@ func (w Writer) BundleAddressedDataWrites(data []byte, startAddress int) error {
 		} else {
 			_, err = fmt.Fprintln(w.writer, line)
 		}
+
 		if err != nil {
 			return fmt.Errorf("writing addressed data line: %w", err)
 		}
 
 		address += byteCount
+
 		return nil
 	}
 
@@ -168,6 +171,7 @@ func (w Writer) OutputAliasMap(aliases map[string]uint16) error {
 		}
 		toEmit = append(toEmit, name)
 	}
+
 	if len(toEmit) == 0 {
 		return nil
 	}
@@ -184,10 +188,12 @@ func (w Writer) OutputAliasMap(aliases map[string]uint16) error {
 			if i > 0 {
 				prefix = "\n"
 			}
+
 			if _, err := fmt.Fprintf(w.writer, "%s; %s\n", prefix, heading); err != nil {
 				return fmt.Errorf("writing symbol heading: %w", err)
 			}
 		}
+
 		address := aliases[name]
 		if _, err := fmt.Fprintf(w.writer, "%s = $%04X\n", name, address); err != nil {
 			return fmt.Errorf("writing alias: %w", err)
@@ -268,6 +274,7 @@ func (w Writer) writeExpressionData(offset program.Offset, remaining int) (int, 
 			offset.Comment = address + "  " + offset.Comment
 		}
 	}
+
 	lines, err := expressionLines(offset.Code, w.options.SymbolicLineLimit)
 	if err != nil {
 		return 0, err
@@ -279,6 +286,7 @@ func (w Writer) writeExpressionData(offset program.Offset, remaining int) (int, 
 		}
 		offset.Comment = ""
 	}
+
 	return len(offset.Data) - 1, nil
 }
 
@@ -302,19 +310,23 @@ func (w Writer) groupAliases(names []string) ([]string, map[string]string) {
 			}
 		}
 	}
+
 	for _, name := range names {
 		if remaining.Contains(name) {
 			if len(ordered) > 0 && len(headings) > 0 {
 				headings[name] = "Other definitions"
 			}
+
 			break
 		}
 	}
+
 	for _, name := range names {
 		if remaining.Contains(name) {
 			ordered = append(ordered, name)
 		}
 	}
+
 	return ordered, headings
 }
 
@@ -327,14 +339,17 @@ func (w Writer) writePresentation(index int, offset program.Offset, previousCode
 
 		count = 1
 	}
+
 	if offset.BlankLines != nil {
 		count = *offset.BlankLines
 	}
+
 	for range count {
 		if _, err := fmt.Fprintln(w.writer); err != nil {
 			return fmt.Errorf("writing line: %w", err)
 		}
 	}
+
 	if offset.CommentBefore != "" {
 		for _, line := range strings.Split(offset.CommentBefore, `\n`) {
 			if _, err := fmt.Fprintf(w.writer, "; %s\n", line); err != nil {
@@ -342,6 +357,7 @@ func (w Writer) writePresentation(index int, offset program.Offset, previousCode
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -359,6 +375,7 @@ func (w Writer) writeLabel(offset program.Offset) error {
 			return fmt.Errorf("writing label: %w", err)
 		}
 	}
+
 	return nil
 }
 
@@ -372,6 +389,7 @@ func (w Writer) writeCodeLine(offset program.Offset) error {
 			return fmt.Errorf("writing line: %w", err)
 		}
 	}
+
 	return nil
 }
 
@@ -401,11 +419,13 @@ func (w Writer) bundlePRGDataWrites(bank *program.PRGBank, startIndex, endIndex 
 		} else {
 			_, err = fmt.Fprintf(w.writer, "%-32s ; %s\n", line, offset.Comment)
 		}
+
 		if err != nil {
 			return fmt.Errorf("writing prg line: %w", err)
 		}
 
 		currentIndex += byteCount
+
 		return nil
 	}
 
@@ -434,11 +454,14 @@ func expressionLines(code string, limit int) ([]string, error) {
 			lines = append(lines, line)
 			line = prefix
 		}
+
 		if line != prefix {
 			line += ", "
 		}
+
 		line += expression
 	}
+
 	return append(lines, line), nil
 }
 
@@ -449,6 +472,7 @@ func isBranchOutsideSegment(offset program.Offset, bank *program.PRGBank) bool {
 
 	destination := uint16(int(offset.Address) + len(offset.Data) + int(int8(offset.Data[1])))
 	bankEnd := uint32(bank.BaseAddress) + uint32(len(bank.Offsets))
+
 	return destination < bank.BaseAddress || uint32(destination) >= bankEnd
 }
 

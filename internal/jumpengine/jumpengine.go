@@ -147,6 +147,7 @@ func (j *JumpEngine) GetContextDataReferences(offsets []*offset.DisasmOffset, ad
 			dataReferences = append(dataReferences, reference)
 		}
 	}
+
 	return dataReferences, nil
 }
 
@@ -202,6 +203,7 @@ func (j *JumpEngine) HandleJumpEngineCallers(context, codeBaseAddress uint16) er
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -222,6 +224,7 @@ func (j *JumpEngine) ScanForNewJumpEngineEntry(codeBaseAddress uint16) (bool, er
 				minEntries = i
 			}
 		}
+
 		if minEntries == -1 {
 			return false, nil
 		}
@@ -251,6 +254,7 @@ func (j *JumpEngine) ScanForNewJumpEngineEntry(codeBaseAddress uint16) (bool, er
 			i--
 		}
 	}
+
 	return false, nil
 }
 
@@ -273,6 +277,7 @@ func (j *JumpEngine) handleJumpEngineCaller(caller, codeBaseAddress uint16) erro
 	jumpEngine.tableStartAddress = address
 
 	_, err := j.processJumpEngineEntry(address, jumpEngine, codeBaseAddress)
+
 	return err
 }
 
@@ -329,5 +334,6 @@ func (j *JumpEngine) processJumpEngineEntry(address uint16, jumpEngine *jumpEngi
 	jumpEngine.entries++
 
 	j.dis.AddAddressToParse(destination, destination, address, nil, true)
+
 	return true, nil
 }

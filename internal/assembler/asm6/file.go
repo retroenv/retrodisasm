@@ -141,6 +141,7 @@ func (f FileWriter) writeBank(w prgBankWrite) error {
 				return fmt.Errorf("writing newline: %w", err)
 			}
 		}
+
 		bankFile := bankFilename(f.options.OutputFilename, w.bank.Name)
 		if _, err := fmt.Fprintf(f.mainWriter, ".include \"%s\"\n", bankFile); err != nil {
 			return fmt.Errorf("writing include directive: %w", err)
@@ -177,6 +178,7 @@ func (f FileWriter) writeBankFooter(bankWriteCloser io.Writer, w prgBankWrite) e
 				return fmt.Errorf("writing bank padding: %w", err)
 			}
 		}
+
 		return nil
 	}
 
@@ -195,6 +197,7 @@ func (f FileWriter) writeBankFooter(bankWriteCloser io.Writer, w prgBankWrite) e
 			return err
 		}
 	}
+
 	return nil
 }
 

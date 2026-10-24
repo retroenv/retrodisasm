@@ -78,11 +78,13 @@ func (pr *parser) validateGroups() error {
 	for name := range pr.cfg.Symbols {
 		definitions.Add(name)
 	}
+
 	for _, entries := range []map[uint16]string{pr.cfg.Constants, pr.cfg.Variables} {
 		for _, name := range entries {
 			definitions.Add(name)
 		}
 	}
+
 	for _, group := range pr.cfg.SymbolGroups {
 		for _, name := range group.Names {
 			if !definitions.Contains(name) {
@@ -94,6 +96,7 @@ func (pr *parser) validateGroups() error {
 			seen.Add(name)
 		}
 	}
+
 	return nil
 }
 
@@ -132,10 +135,12 @@ func (pr *parser) parsePresentation(section, key, value string) error {
 				return fmt.Errorf("invalid group symbol %q", names[i])
 			}
 		}
+
 		pr.cfg.SymbolGroups = append(pr.cfg.SymbolGroups, SymbolGroup{
 			Heading: key,
 			Names:   names,
 		})
+
 		return nil
 	}
 	address, err := parseAddress(key)
@@ -150,6 +155,7 @@ func (pr *parser) parsePresentation(section, key, value string) error {
 		return errors.New("blank-line count must be between 0 and 8")
 	}
 	pr.cfg.BlankLines[address] = count
+
 	return nil
 }
 
@@ -162,6 +168,7 @@ func (pr *parser) parseDataExpressions(section, key, value string) error {
 	if section == sectionWords {
 		entries = pr.cfg.Words
 	}
+
 	if _, ok := entries[address]; ok {
 		return fmt.Errorf("duplicate data expression at $%04X", address)
 	}
@@ -171,6 +178,7 @@ func (pr *parser) parseDataExpressions(section, key, value string) error {
 			return fmt.Errorf("invalid data element count %q", value)
 		}
 		entries[address] = Data{Count: count}
+
 		return nil
 	}
 	expressions := strings.Split(value, ",")
@@ -180,7 +188,9 @@ func (pr *parser) parseDataExpressions(section, key, value string) error {
 			return fmt.Errorf("empty data expression at $%04X", address)
 		}
 	}
+
 	entries[address] = Data{Expressions: expressions}
+
 	return nil
 }
 
@@ -197,6 +207,7 @@ func (pr *parser) parseSymbol(name, value string) error {
 	}
 	pr.names[strings.ToLower(name)] = address
 	pr.cfg.Symbols[name] = address
+
 	return nil
 }
 
@@ -215,6 +226,7 @@ func (pr *parser) parseChecksum(key, value string) error {
 	} else {
 		pr.cfg.CHRCRC32 = &crc
 	}
+
 	return nil
 }
 
@@ -230,6 +242,7 @@ func (pr *parser) parseVector(key, value string) error {
 	default:
 		return fmt.Errorf("unknown vector %q", key)
 	}
+
 	entry := VectorValue{Name: value}
 	if !validName(value) {
 		address, err := parseAddress(value)
@@ -238,7 +251,9 @@ func (pr *parser) parseVector(key, value string) error {
 		}
 		entry = VectorValue{Address: &address}
 	}
+
 	pr.cfg.Vectors[vector] = entry
+
 	return nil
 }
 
@@ -265,11 +280,13 @@ func (pr *parser) parseRange(section, key, value string) error {
 			}
 		}
 	}
+
 	if section == sectionCode {
 		pr.cfg.Code = append(pr.cfg.Code, rng)
 	} else {
 		pr.cfg.Data = append(pr.cfg.Data, rng)
 	}
+
 	return nil
 }
 
@@ -277,6 +294,7 @@ func (pr *parser) parseAnnotation(section, key, value string) error {
 	if section == sectionConstants || section == sectionVariables {
 		key, value = value, key
 	}
+
 	address, err := parseAddress(key)
 	if err != nil {
 		return err
@@ -286,6 +304,7 @@ func (pr *parser) parseAnnotation(section, key, value string) error {
 			return err
 		}
 	}
+
 	entries := pr.annotationEntries(section)
 	if entries == nil {
 		return fmt.Errorf("unknown section %q", section)
@@ -294,6 +313,7 @@ func (pr *parser) parseAnnotation(section, key, value string) error {
 		return fmt.Errorf("duplicate address $%04X in [%s]", address, section)
 	}
 	entries[address] = value
+
 	return nil
 }
 
@@ -324,6 +344,7 @@ func (pr *parser) registerName(name string, address uint16) error {
 		return fmt.Errorf("symbol %q already names $%04X", name, previous)
 	}
 	pr.names[strings.ToLower(name)] = address
+
 	return nil
 }
 
@@ -333,6 +354,7 @@ func parseConfig(input *config.Config) (*Config, error) {
 			return nil, fmt.Errorf("line %d: unknown section %q", section.Line, section.Name)
 		}
 	}
+
 	pr := parser{
 		cfg: &Config{
 			Vectors:        make(map[Vector]VectorValue),
@@ -355,6 +377,7 @@ func parseConfig(input *config.Config) (*Config, error) {
 			return nil, fmt.Errorf("line %d: %w", entry.Line, err)
 		}
 	}
+
 	if err := pr.validateGroups(); err != nil {
 		return nil, err
 	}

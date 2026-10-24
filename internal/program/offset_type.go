@@ -49,5 +49,6 @@ func (o *Offset) HexCodeComment() (string, error) {
 	}
 
 	comment := strings.TrimRight(buf.String(), " ")
+
 	return comment, nil
 }

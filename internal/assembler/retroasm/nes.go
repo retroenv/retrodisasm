@@ -97,6 +97,7 @@ func (w *FileWriter) writeBank(bank *program.PRGBank, firstBank, lastBank bool) 
 				return fmt.Errorf("writing newline: %w", err)
 			}
 		}
+
 		bankFile := bankFilename(w.options.OutputFilename, bank.Name)
 		if _, err := fmt.Fprintf(w.mainWriter, ".include \"%s\"\n", bankFile); err != nil {
 			return fmt.Errorf("writing include directive: %w", err)
@@ -144,6 +145,7 @@ func (w *FileWriter) writeBankVectors(output io.Writer, bank *program.PRGBank, l
 	if lastBank {
 		nmi, reset, irq = assembler.VectorReferences(bank, w.app.Handlers)
 	}
+
 	vectorsAddr := bank.BaseAddress + uint16(len(bank.Offsets)) - 6
 	if err := writeVectorsTo(output, vectorsAddr, nmi, reset, irq); err != nil {
 		return fmt.Errorf("writing vectors: %w", err)

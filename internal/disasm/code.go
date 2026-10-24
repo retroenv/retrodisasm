@@ -29,6 +29,7 @@ func (dis *Disasm) processJumpDestinations() {
 			default:
 				name = fmt.Sprintf(labelNaming, address)
 			}
+
 			offsetInfo.Label = name
 		}
 
@@ -74,9 +75,11 @@ func (dis *Disasm) splitInstructionAt(address uint16, reason string) {
 		if reason != "" {
 			comment = reason + ": " + comment
 		}
+
 		if offsetInfo.Comment != "" {
 			comment += " | " + offsetInfo.Comment
 		}
+
 		offsetInfo.Comment = comment
 		offsetInfo.Code = ""
 	}
@@ -96,6 +99,7 @@ func (dis *Disasm) changeAddressRangeToCode(address uint16, data []byte) {
 			offsetInfo.Data = nil
 			offsetInfo.ClearType(program.DataOffset)
 		}
+
 		offsetInfo.SetType(program.CodeOffset)
 	}
 }

@@ -131,6 +131,7 @@ func checkBufferEqual(logger *log.Logger, input, output []byte) error {
 				log.Hex("got", output[i]))
 		}
 	}
+
 	if diffs == 0 {
 		return nil
 	}

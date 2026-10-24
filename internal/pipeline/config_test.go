@@ -22,7 +22,8 @@ func TestExecuteWithAnnotations(t *testing.T) {
 	for _, format := range []string{"ca65", "asm6", "nesasm", "retroasm"} {
 		t.Run(format, func(t *testing.T) {
 			cart := cartridge.New()
-			cart.PRG[0], cart.PRG[0x7ffd] = 0x60, 0x80
+			cart.PRG[0] = 0x60
+			cart.PRG[0x7ffd] = 0x80
 			opts := options.Program{
 				Parameters: options.Parameters{Annotations: filename},
 				Flags: options.Flags{

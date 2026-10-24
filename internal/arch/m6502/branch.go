@@ -82,5 +82,6 @@ func (ar *Arch6502) preserveUnmappedBranch(address uint16, info *offset.DisasmOf
 	info.Code = ""
 	info.SetType(program.CodeAsData)
 	ar.dis.ChangeAddressRangeToCodeAsData(address, info.Data)
+
 	return true
 }

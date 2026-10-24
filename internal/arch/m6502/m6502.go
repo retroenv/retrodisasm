@@ -193,6 +193,7 @@ func (ar *Arch6502) ProcessOffset(address uint16, offsetInfo *offset.DisasmOffse
 	// Follow CPU control flow using the full encoding before splitting output
 	// records at physical storage boundaries.
 	ar.truncateInstructionAtMappedBankBoundary(address, offsetInfo)
+
 	return true, nil
 }
 
@@ -263,6 +264,7 @@ func (ar *Arch6502) instructionBytesInMappedBank(address uint16, length int) int
 	if hasResolver {
 		physicalStart, _ = resolver.Resolve(address)
 	}
+
 	for i := 1; i < length; i++ {
 		if ar.mapper.MappedBank(address+uint16(i)).ID() != startBank.ID() {
 			return i
@@ -274,5 +276,6 @@ func (ar *Arch6502) instructionBytesInMappedBank(address uint16, length int) int
 			}
 		}
 	}
+
 	return length
 }

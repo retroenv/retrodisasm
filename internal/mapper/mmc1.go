@@ -47,8 +47,10 @@ func (mm mmc1) Write(state Snapshot, address uint16, value byte) (Snapshot, bool
 		return state, false
 	}
 	if value&0x80 != 0 {
-		state.registers[mmc1Shift], state.registers[mmc1Count] = 0, 0
+		state.registers[mmc1Shift] = 0
+		state.registers[mmc1Count] = 0
 		state.registers[mmc1Control] |= 0x0c
+
 		return state, true
 	}
 	state.registers[mmc1Shift] |= (value & 1) << state.registers[mmc1Count]
@@ -60,7 +62,10 @@ func (mm mmc1) Write(state Snapshot, address uint16, value byte) (Snapshot, bool
 		case 0xe000:
 			state.registers[mmc1PRG] = state.registers[mmc1Shift] & byte(mm.size/0x4000-1)
 		}
-		state.registers[mmc1Shift], state.registers[mmc1Count] = 0, 0
+
+		state.registers[mmc1Shift] = 0
+		state.registers[mmc1Count] = 0
 	}
+
 	return state, true
 }

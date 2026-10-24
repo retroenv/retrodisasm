@@ -55,6 +55,7 @@ func (ar *Arch6502) initializeIrqHandlers() error {
 	ar.queueHandlersToParse(nmi, reset, irq)
 
 	ar.dis.SetHandlers(handlers)
+
 	return nil
 }
 
@@ -73,7 +74,9 @@ func (ar *Arch6502) initializeNMIHandler(handlers *program.Handlers) (uint16, er
 		offsetInfo.Label = "NMI"
 		offsetInfo.SetType(program.CallDestination)
 	}
+
 	handlers.NMI = "NMI"
+
 	return nmi, nil
 }
 
@@ -89,9 +92,11 @@ func (ar *Arch6502) initializeResetHandler(handlers *program.Handlers) (uint16, 
 		if offsetInfo.Label != "" {
 			handlers.NMI = resetLabel
 		}
+
 		offsetInfo.Label = resetLabel
 		offsetInfo.SetType(program.CallDestination)
 	}
+
 	return reset, nil
 }
 
@@ -113,8 +118,10 @@ func (ar *Arch6502) initializeIRQHandler(handlers *program.Handlers) (uint16, er
 		} else {
 			handlers.IRQ = offsetInfo.Label
 		}
+
 		offsetInfo.SetType(program.CallDestination)
 	}
+
 	return irq, nil
 }
 
@@ -122,6 +129,7 @@ func (ar *Arch6502) resolveSharedHandlers(handlers *program.Handlers, nmi, reset
 	if nmi == reset {
 		handlers.NMI = handlers.Reset
 	}
+
 	if irq == reset {
 		handlers.IRQ = handlers.Reset
 	}
@@ -131,9 +139,11 @@ func (ar *Arch6502) queueHandlersToParse(nmi, reset, irq uint16) {
 	if nmi != 0 {
 		ar.dis.AddAddressToParse(nmi, nmi, 0, nil, false)
 	}
+
 	if reset != 0 {
 		ar.dis.AddAddressToParse(reset, reset, 0, nil, false)
 	}
+
 	if irq != 0 {
 		ar.dis.AddAddressToParse(irq, irq, 0, nil, false)
 	}
@@ -165,6 +175,7 @@ func (ar *Arch6502) initializeBinaryMode(opts options.Disassembler, handlers pro
 	ar.dis.AddAddressToParse(reset, reset, 0, nil, false)
 
 	ar.dis.SetHandlers(handlers)
+
 	return nil
 }
 
@@ -197,6 +208,7 @@ func (ar *Arch6502) calculateCodeBaseAddress(resetHandler uint16) {
 	if len(cart.PRG) == 0x4000 {
 		halfPrg = 0x4000
 	}
+
 	codeBaseAddress := uint16(0x8000 + halfPrg)
 	vectorsStartAddress := uint16(cpu6502.InterruptVectorStartAddress)
 

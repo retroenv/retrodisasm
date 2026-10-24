@@ -45,5 +45,6 @@ func mergeConstantsMaps(destination map[uint16]consts.Constant, source map[uint1
 
 		destination[address] = translation
 	}
+
 	return nil
 }

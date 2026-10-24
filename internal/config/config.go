@@ -13,5 +13,6 @@ func CreateLogger(debug, quiet bool) *log.Logger {
 	} else if quiet {
 		cfg.Level = log.ErrorLevel
 	}
+
 	return log.NewWithConfig(cfg)
 }

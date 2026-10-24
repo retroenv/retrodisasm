@@ -80,6 +80,7 @@ func (cfg *Config) ValidateROM(prg, chr []byte) error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -88,12 +89,18 @@ func parseAddress(value string) (uint16, error) {
 	base := 10
 	switch {
 	case strings.HasPrefix(value, "$"):
-		base, value = 16, value[1:]
+		base = 16
+		value = value[1:]
+
 	case strings.HasPrefix(value, "%"):
-		base, value = 2, value[1:]
+		base = 2
+		value = value[1:]
+
 	case strings.HasPrefix(strings.ToLower(value), "0x"):
-		base, value = 16, value[2:]
+		base = 16
+		value = value[2:]
 	}
+
 	address, err := strconv.ParseUint(value, base, 16)
 	if err != nil {
 		return 0, fmt.Errorf("invalid address %q: %w", value, err)
@@ -112,5 +119,6 @@ func validName(name string) bool {
 			return false
 		}
 	}
+
 	return true
 }

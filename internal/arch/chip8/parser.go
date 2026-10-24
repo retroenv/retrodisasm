@@ -45,6 +45,7 @@ func (c *Chip8) initializeOffsetInfo(offsetInfo *offset.DisasmOffset) (bool, err
 			break
 		}
 	}
+
 	if opcode.Instruction == nil {
 		// Consider an unknown instruction as start of data
 		offsetInfo.SetType(program.DataOffset)
@@ -55,5 +56,6 @@ func (c *Chip8) initializeOffsetInfo(offsetInfo *offset.DisasmOffset) (bool, err
 		op: opcode,
 	}
 	offsetInfo.Opcode = opWrapper
+
 	return true, nil
 }

@@ -118,6 +118,7 @@ func (f FileWriter) Write() error {
 			return fmt.Errorf("writing vectors: %w", err)
 		}
 	}
+
 	return nil
 }
 
@@ -149,6 +150,7 @@ func (f FileWriter) processWrite(write any) error {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -199,6 +201,7 @@ func (f FileWriter) writePRGBank(t prgBankWrite) error {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -212,6 +215,7 @@ func (f FileWriter) writeIncludeDirective(t prgBankWrite) error {
 			return fmt.Errorf("writing newline: %w", err)
 		}
 	}
+
 	bankFile := bankFilename(f.options.OutputFilename, t.bank.Name)
 	if _, err := fmt.Fprintf(f.mainWriter, ".include \"%s\"\n", bankFile); err != nil {
 		return fmt.Errorf("writing include directive: %w", err)
@@ -273,6 +277,7 @@ func (f FileWriter) writeBankVectorsTo(w io.Writer, bank *program.PRGBank, endIn
 	if bank.HasVectors {
 		vectorStartIndex -= 6
 	}
+
 	padding := vectorStartIndex - endIndex
 	if padding < 0 {
 		return fmt.Errorf("bank data overlaps vectors: end_index=%d vector_start_index=%d", endIndex, vectorStartIndex)
@@ -282,6 +287,7 @@ func (f FileWriter) writeBankVectorsTo(w io.Writer, bank *program.PRGBank, endIn
 			return fmt.Errorf("writing vector padding: %w", err)
 		}
 	}
+
 	if !bank.HasVectors {
 		return nil
 	}

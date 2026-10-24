@@ -35,6 +35,7 @@ func (mm mmc3) Seed(index int) Snapshot {
 	} else {
 		state.registers[mmc3R7] = byte(index - count)
 	}
+
 	return state
 }
 
@@ -46,6 +47,7 @@ func (mm mmc3) Windows(state Snapshot) []window {
 	if state.registers[mmc3Select]&0x40 != 0 {
 		first, third = third, first
 	}
+
 	return []window{
 		{0x8000, 0x2000, first},
 		{0xa000, 0x2000, int(state.registers[mmc3R7]) * 0x2000},
@@ -71,5 +73,6 @@ func (mm mmc3) Write(state Snapshot, address uint16, value byte) (Snapshot, bool
 	default:
 		return state, false
 	}
+
 	return state, true
 }

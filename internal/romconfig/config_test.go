@@ -96,7 +96,8 @@ func TestParseAddress(t *testing.T) {
 }
 
 func TestValidateROM(t *testing.T) {
-	prg, chr := []byte{1, 2, 3}, []byte{4, 5}
+	prg := []byte{1, 2, 3}
+	chr := []byte{4, 5}
 	input := fmt.Sprintf("[rom]\nprg_crc32=%08X\nchr_crc32=%08X", crc32.ChecksumIEEE(prg), crc32.ChecksumIEEE(chr))
 	cfg, err := Parse(strings.NewReader(input))
 	assert.NoError(t, err)

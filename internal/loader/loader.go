@@ -68,6 +68,7 @@ func (l *Loader) loadFromReader(reader io.Reader, binary bool, system arch.Syste
 	default:
 		cart, err = cartridge.LoadFile(reader)
 	}
+
 	if err != nil {
 		return nil, fmt.Errorf("loading cartridge: %w", err)
 	}

@@ -99,6 +99,7 @@ func setPrgBankSelector(prg []program.Offset, index int, bankAddress, bankNumber
 			offsetInfo.ClearType(program.CodeOffset | program.FunctionReference | program.JumpTable | program.ExpressionData)
 			offsetInfo.SetType(program.CodeAsData | program.DataOffset)
 		}
+
 		offsetInfo = &prg[index]
 	}
 
@@ -110,6 +111,7 @@ func setPrgBankSelector(prg []program.Offset, index int, bankAddress, bankNumber
 	if *bankAddress >= 0x10000 {
 		*bankAddress = 0x8000
 	}
+
 	*bankNumber++
 }
 
@@ -124,6 +126,7 @@ func writeBankSelector(bankNumber, bankAddress int) func(writer io.Writer) error
 				return fmt.Errorf("writing segment: %w", err)
 			}
 		}
+
 		return nil
 	}
 }

@@ -155,6 +155,7 @@ func createDisasmOptions(opts options.Program) options.Disassembler {
 			// Parse as hex without prefix
 			baseAddr, err = strconv.ParseUint(opts.BaseAddress, 16, 16)
 		}
+
 		if err == nil && baseAddr <= 0xFFFF {
 			disasmOptions.BaseAddress = uint16(baseAddr)
 		}

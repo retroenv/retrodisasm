@@ -14,7 +14,8 @@ func TestProcessJumpEngineEntryRespectsConfigHints(t *testing.T) {
 		for _, address := range []uint16{0x8010, 0x8011} {
 			mapper := newMockMapper()
 			dis := newMockDisasm()
-			dis.Memory[0x8010], dis.Memory[0x8011] = 0x01, 0x80
+			dis.Memory[0x8010] = 0x01
+			dis.Memory[0x8011] = 0x80
 			mapper.OffsetInfo(address).CodeHint = hint
 			je := New(log.NewTestLogger(t), &mockArchitecture{})
 			je.InjectDependencies(Dependencies{

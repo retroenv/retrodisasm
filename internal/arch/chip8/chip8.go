@@ -93,6 +93,7 @@ func (c *Chip8) AddressingParam(param any) (uint16, bool) {
 			return uint16(p), true
 		}
 	}
+
 	return 0, false
 }
 
@@ -114,6 +115,7 @@ func (c *Chip8) Initialize() error {
 
 	// Start disassembly at CHIP-8 program start address (0x200)
 	c.dis.AddAddressToParse(ProgramStart, ProgramStart, 0, nil, false)
+
 	return nil
 }
 
@@ -156,6 +158,7 @@ func (c *Chip8) ProcessOffset(address uint16, offsetInfo *offset.DisasmOffset) (
 	}
 
 	c.handleControlFlow(address, offsetInfo, instruction, instr)
+
 	return true, nil
 }
 
@@ -216,6 +219,7 @@ func (c *Chip8) formatOffsetCode(offsetInfo *offset.DisasmOffset, instruction in
 			return
 		}
 	}
+
 	offsetInfo.Code = name
 }
 
@@ -235,6 +239,7 @@ func (c *Chip8) handleControlFlow(address uint16, offsetInfo *offset.DisasmOffse
 		if target, ok := c.extractTargetAddressInROM(offsetInfo.Data); ok {
 			c.dis.AddAddressToParse(target, offsetInfo.Context, address, instruction, true)
 		}
+
 		nextAddr := pc + uint16(len(offsetInfo.Data))
 		c.dis.AddAddressToParse(nextAddr, offsetInfo.Context, address, instruction, false)
 
@@ -294,6 +299,7 @@ func (c *Chip8) formatInstruction(name string, opcode uint16) string {
 	case chip8.SkpName, chip8.SknpName:
 		return c.formatSkipInstruction(opcode)
 	}
+
 	return ""
 }
 
@@ -326,6 +332,7 @@ func (c *Chip8) formatCompareInstruction(opcode uint16) string {
 		y := extractRegisterY(opcode)
 		return fmt.Sprintf("V%X, V%X", x, y)
 	}
+
 	return ""
 }
 
@@ -343,6 +350,7 @@ func (c *Chip8) formatLoadInstruction(opcode uint16) string {
 	case 0xA000:
 		return fmt.Sprintf("I, $%03X", opcode&0x0FFF)
 	}
+
 	return ""
 }
 
@@ -383,6 +391,7 @@ func (c *Chip8) formatDrawInstruction(opcode uint16) string {
 	x := extractRegisterX(opcode)
 	y := extractRegisterY(opcode)
 	n := opcode & 0x000F
+
 	return fmt.Sprintf("V%X, V%X, $%X", x, y, n)
 }
 

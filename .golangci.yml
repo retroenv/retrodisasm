@@ -54,7 +54,6 @@ linters:
     - usestdlibvars # detect the possibility to use variables/constants from the Go standard library
     - usetesting # Reports uses of functions with replacement inside the testing package
     - wastedassign # finds wasted assignment statements
-    - whitespace # detects leading and trailing whitespace
     - wrapcheck # Checks that errors returned from external packages are wrapped
 
   settings:
@@ -68,9 +67,6 @@ linters:
       rules:
         - name: var-naming
           disabled: true
-    whitespace:
-      multi-if: true # Enforces newlines (or comments) after every multi-line if statement
-      multi-func: true # Enforces newlines (or comments) after every multi-line function signature
 
   exclusions:
     rules:

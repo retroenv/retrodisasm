@@ -64,6 +64,7 @@ func (w *FileWriter) writeCHIP8Label(offset program.Offset) error {
 			return fmt.Errorf("writing label %s: %w", offset.Label, err)
 		}
 	}
+
 	return nil
 }
 
@@ -134,6 +135,7 @@ func (w *FileWriter) getCHIP8EndIndex(bank *program.PRGBank) int {
 				}
 			}
 		}
+
 		if offset.Label != "" || offset.Code != "" {
 			return i + 1
 		}

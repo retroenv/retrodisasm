@@ -26,6 +26,7 @@ func (m *Mapper) ClassifyRemainingAsData() {
 				offsetInfo.SetType(program.CodeAsData | program.DataOffset)
 				offsetInfo.Code = ""
 			}
+
 			for j := 1; j < len(offsetInfo.Data) && i+j < len(owned); j++ {
 				owned[i+j] = true
 			}
@@ -52,6 +53,7 @@ func (m *Mapper) SetProgramBanks(app *program.Program) error {
 		if bnk.mapped {
 			size = len(bnk.offsets)
 		}
+
 		prgBank := program.NewPRGBank(size)
 		prgBank.ID = bnk.id
 		prgBank.ROMOffset = bnk.romOffset
@@ -59,6 +61,7 @@ func (m *Mapper) SetProgramBanks(app *program.Program) error {
 		if bnk.baseAddress != 0 {
 			prgBank.BaseAddress = bnk.baseAddress
 		}
+
 		prgBank.HasVectors = bnk.hasVectors
 
 		for i := range size {
@@ -79,6 +82,7 @@ func (m *Mapper) SetProgramBanks(app *program.Program) error {
 
 		app.PRG = append(app.PRG, prgBank)
 	}
+
 	return nil
 }
 
@@ -133,6 +137,8 @@ func (m *Mapper) setComment(address uint16, programOffset *program.Offset) error
 	if programOffset.Comment != "" {
 		comments = append(comments, programOffset.Comment)
 	}
+
 	programOffset.Comment = strings.Join(comments, "  ")
+
 	return nil
 }

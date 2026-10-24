@@ -59,6 +59,7 @@ func (ar *Arch6502) initializeOffsetInfo(offsetInfo *offset.DisasmOffset) (bool,
 		op: opcode,
 	}
 	offsetInfo.Opcode = op
+
 	return true, nil
 }
 
@@ -176,6 +177,7 @@ func (ar *Arch6502) previousOffsetOwnsByte(address uint16) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -194,5 +196,6 @@ func checkBranchingParam(address uint16, opcode instruction.Opcode) (bool, bool)
 			return true, true
 		}
 	}
+
 	return false, false
 }

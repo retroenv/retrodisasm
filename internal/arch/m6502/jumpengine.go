@@ -50,6 +50,7 @@ func (ar *Arch6502) checkForJumpEngineJmp(jumpAddress uint16, offsetInfo *offset
 		return nil
 	}
 	offsetInfo.Comment = "jump engine detected"
+
 	return nil
 }
 

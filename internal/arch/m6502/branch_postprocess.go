@@ -24,12 +24,14 @@ func (ar *Arch6502) ProcessComplementaryBranches() {
 			if firstOffset.Comment != "" {
 				firstOffset.Comment += "; "
 			}
+
 			firstOffset.Comment += "unconditional branch pattern (complementary branches)"
 
 			secondOffset := ar.mapper.OffsetInfo(pair.SecondAddress)
 			if secondOffset.Comment != "" {
 				secondOffset.Comment += "; "
 			}
+
 			secondOffset.Comment += "reachable from other code despite complementary branch"
 		} else {
 			// The second branch is unreachable - mark it as dead code
@@ -45,6 +47,7 @@ func (ar *Arch6502) ProcessComplementaryBranches() {
 			if firstOffset.Comment != "" {
 				firstOffset.Comment += "; "
 			}
+
 			firstOffset.Comment += "unconditional branch pattern (complementary branches)"
 
 			// Mark the second branch as unreachable

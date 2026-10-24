@@ -36,5 +36,6 @@ func externalCommand(ctx context.Context, asmFile, outputFile string) (*exec.Cmd
 	}
 	cmd := exec.CommandContext(ctx, assemblerName, filepath.Base(asmFile), outputPath)
 	cmd.Dir = filepath.Dir(asmFile)
+
 	return cmd, nil
 }

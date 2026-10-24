@@ -37,6 +37,7 @@ func (m *Mapper) Mapping(state Snapshot) Mapping {
 	for i := range key {
 		key[i] = -1
 	}
+
 	if m.layout == nil {
 		return key
 	}
@@ -45,5 +46,6 @@ func (m *Mapper) Mapping(state Snapshot) Mapping {
 			key[(int(win.address)+i)/0x2000] = win.romOffset + i
 		}
 	}
+
 	return key
 }

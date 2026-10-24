@@ -25,9 +25,11 @@ func (ar *Arch6502) ApplyOperand(address uint16, info *offset.DisasmOffset, expr
 	if len(info.Data) == 3 {
 		expected |= uint16(info.Data[2]) << 8
 	}
+
 	if mode == cpu6502.RelativeAddressing {
 		expected = uint16(int(address) + 2 + int(int8(info.Data[1])))
 	}
+
 	if value != expected {
 		return fmt.Errorf("operand hint at $%04X evaluates to $%04X; ROM encodes $%04X", address, value, expected)
 	}
@@ -38,6 +40,7 @@ func (ar *Arch6502) ApplyOperand(address uint16, info *offset.DisasmOffset, expr
 	}
 	info.Code = info.Opcode.Instruction().Name() + " " + formatted
 	info.BranchingTo = ""
+
 	return nil
 }
 
