@@ -176,7 +176,8 @@ func (ar *Arch6502) ProcessOffset(address uint16, offsetInfo *offset.DisasmOffse
 	// If so, don't add the following address to parse (it's unreachable code)
 	isSecondComplementaryBranch := ar.complementaryBranchSecondAddrs.Contains(pc)
 
-	if _, ok := cpu6502.NotExecutingFollowingOpcodeInstructions[name]; ok {
+	// KIL halts the CPU. Older dependency metadata omits it from this set.
+	if _, ok := cpu6502.NotExecutingFollowingOpcodeInstructions[name]; ok || name == cpu6502.KilName {
 		if err := ar.checkForJumpEngineJmp(pc, offsetInfo); err != nil {
 			return false, err
 		}
