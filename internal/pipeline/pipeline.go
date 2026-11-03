@@ -23,6 +23,7 @@ import (
 	"github.com/retroenv/retrodisasm/internal/loader"
 	"github.com/retroenv/retrodisasm/internal/options"
 	"github.com/retroenv/retrodisasm/internal/program"
+	"github.com/retroenv/retrodisasm/internal/quality"
 	"github.com/retroenv/retrodisasm/internal/verification"
 	"github.com/retroenv/retrogolib/arch"
 	"github.com/retroenv/retrogolib/arch/system/nes/cartridge"
@@ -32,18 +33,22 @@ import (
 
 // Pipeline orchestrates the complete disassembly workflow.
 type Pipeline struct {
-	logger    *log.Logger
-	detector  *detector.Detector
-	loader    *loader.Loader
+	detector *detector.Detector
+	loader   *loader.Loader
+	logger   *log.Logger
+
+	report    io.Writer // receives the quality report
 	writeFile func(string, []byte, fs.FileMode) error
 }
 
 // New creates a new disassembly pipeline.
 func New(logger *log.Logger) *Pipeline {
 	return &Pipeline{
-		logger:    logger,
-		detector:  detector.New(logger),
-		loader:    loader.New(),
+		detector: detector.New(logger),
+		loader:   loader.New(),
+		logger:   logger,
+
+		report:    os.Stderr,
 		writeFile: os.WriteFile,
 	}
 }
@@ -114,6 +119,12 @@ func (p *Pipeline) ExecuteWithCartridge(ctx context.Context, cart *cartridge.Car
 	result, err := p.runDisassembly(ctx, dis, writer, disasmOpts, opts.Output)
 	if err != nil {
 		return nil, fmt.Errorf("disassembling: %w", err)
+	}
+
+	if opts.Quality && system == arch.NES {
+		if err := quality.Analyze(result).Write(p.report); err != nil {
+			return nil, fmt.Errorf("quality report: %w", err)
+		}
 	}
 
 	// Verify output (if requested)

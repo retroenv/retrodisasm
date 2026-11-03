@@ -31,13 +31,16 @@ type Parameters struct {
 
 // Flags contains behavior options.
 type Flags struct {
-	Assembler    string `flag:"a" usage:"assembler format: asm6, ca65, nesasm, retroasm" default:"ca65"`
-	System       string `flag:"s" usage:"target system: nes, chip8 (default: auto-detect)"`
-	Binary       bool   `flag:"binary" usage:"treat input as raw binary without header"`
-	BaseAddress  string `flag:"base" usage:"base address for -binary mode in hex (e.g. 0200, 8000)"`
-	AssembleTest bool   `flag:"verify" usage:"verify output by reassembling and comparing to input"`
-	Debug        bool   `flag:"debug" usage:"enable debug logging"`
-	Quiet        bool   `flag:"q" usage:"quiet mode"`
+	Assembler   string `flag:"a" usage:"assembler format: asm6, ca65, nesasm, retroasm" default:"ca65"`
+	System      string `flag:"s" usage:"target system: nes, chip8 (default: auto-detect)"`
+	Binary      bool   `flag:"binary" usage:"treat input as raw binary without header"`
+	BaseAddress string `flag:"base" usage:"base address for -binary mode in hex (e.g. 0200, 8000)"`
+
+	AssembleTest bool `flag:"verify" usage:"verify output by reassembling and comparing to input"`
+	Quality      bool `flag:"quality" usage:"print NES quality signals to stderr"`
+
+	Debug bool `flag:"debug" usage:"enable debug logging"`
+	Quiet bool `flag:"q" usage:"quiet mode"`
 }
 
 // OutputFlags contains output formatting options.

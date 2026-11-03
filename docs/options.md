@@ -136,6 +136,64 @@ Verification uses the assembler specified with `-a` flag (default: ca65).
 
 Note: Not compatible with `-output-unofficial`. Retroasm is not supported for verification.
 
+#### `-quality`
+
+Write NES quality signals to stderr, also in quiet mode. Heuristic signals
+do not prove an error.
+
+The report counts physical PRG ROM bytes and instruction starts. Aliases of
+one ROM location do not add duplicate bytes, instructions, or warnings. A byte
+that is code in one output view does not also count as data. A warning must
+apply to each code view of its physical location. For example, a target that
+one view resolves does not cause a `bad-target` warning for another view.
+The report counts the suspicious instructions, which often are data that
+the analysis decoded as code:
+
+* `brk`, `decimal` (`sed`), and `unofficial` instructions.
+* `unused-address`: an access to the unused CPU test or expansion area.
+  PPU register mirrors use the access rules of their base register.
+* `write-only-read` and `read-only-write`: a read of a write-only register,
+  or a write to the PPU status register. Memory instructions that read and
+  then write are checked for both access types.
+* `rom-write`: a write to ROM on a cartridge with mapper 0.
+* `bad-target`: a branch or jump in the bank to an address that is not the
+  start of an instruction.
+* `code-as-data`: an official instruction that the output writes as data
+  bytes. `bit` instructions are not part of this count.
+
+For an indexed absolute access, a hardware warning must apply to all 256
+possible index values. The check includes PPU mirrors and address wrap.
+The base address alone does not determine the effective address.
+
+The report also counts possible missed code. The scan checks inside data
+runs, including packed byte records and runs with initial padding. It caches
+suffix results and decodes each byte once, without a candidate length limit.
+A candidate must access hardware or call a subroutine, and end with a return
+or jump. It must contain at least 8 bytes and 4 instructions. A direct branch,
+jump, or call within the candidate must target an instruction start. If a
+transfer targets an operand, the scan rejects the prefix through that transfer
+and checks the suffix. Targets outside the candidate remain unknown; they can
+use other banks or RAM. The report shows up to 20 candidate locations, with
+their bank, CPU address, physical ROM offset, byte count, and instruction count.
+These are heuristic candidates.
+Aliases do not add duplicate candidate starts or bytes. A location that is
+code in another output view is excluded from the missed-code scan.
+
+Indirect jump checks include both pointer reads. They use the NES CPU page
+wrap rule and the existing hardware access warnings. For example,
+`JMP ($428E)` on a mapper without expansion registers has an `unused-address`
+warning. Such a jump also excludes a possible missed-code run. These warnings
+do not prove that an instruction is data.
+
+```bash
+retrodisasm -quality -o output.asm input.nes
+# quality: code 22798 bytes, data 9970 bytes, instructions 10703, suspicious 7 (0.07%), possible missed code 0 bytes in 0 runs
+# quality:   unofficial       6
+# quality:   code-as-data     1
+# quality:   bank 0 $F349 ROM $007349: code-as-data
+# quality:   bank 0 $F34A ROM $00734A: unofficial
+```
+
 ### Output Formatting
 
 #### `-nohexcomments`

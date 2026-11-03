@@ -18,6 +18,7 @@ reassemblable assembly source.
 * **Multiple systems** - Supports NES and CHIP-8 input with automatic detection
 * **Multiple assemblers** - Generates source for different assembler toolchains
 * **Batch verification** - Processes and verifies multiple ROMs in one command
+* **Quality report** - Counts instructions that look like data and data that looks like code
 * **Banked output** - Writes PRG banks inline or as separate assembly files
 * **CHR-ROM export** - Extracts graphics data into an included `.chr` file
 
