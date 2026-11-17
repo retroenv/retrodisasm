@@ -10,7 +10,9 @@ import (
 
 func TestParseFlags_AnnotationsAndLinkerConfig(t *testing.T) {
 	oldArgs := os.Args
-	t.Cleanup(func() { os.Args = oldArgs })
+	t.Cleanup(func() {
+		os.Args = oldArgs
+	})
 	os.Args = []string{"retrodisasm", "-annotations", "game.ini", "-c", "linker.cfg", "game.nes"}
 
 	opts, _, err := ParseFlags()
@@ -21,7 +23,9 @@ func TestParseFlags_AnnotationsAndLinkerConfig(t *testing.T) {
 
 func TestParseFlagsRejectsINI(t *testing.T) {
 	oldArgs := os.Args
-	t.Cleanup(func() { os.Args = oldArgs })
+	t.Cleanup(func() {
+		os.Args = oldArgs
+	})
 	os.Args = []string{"retrodisasm", "-ini", "game.ini", "game.nes"}
 
 	_, _, err := ParseFlags()
@@ -71,7 +75,9 @@ func TestParseFlags_DisasmOptions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			oldArgs := os.Args
-			t.Cleanup(func() { os.Args = oldArgs })
+			t.Cleanup(func() {
+				os.Args = oldArgs
+			})
 
 			os.Args = tt.args
 
@@ -129,7 +135,9 @@ func TestParseFlags_CHRExport(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			oldArgs := os.Args
-			t.Cleanup(func() { os.Args = oldArgs })
+			t.Cleanup(func() {
+				os.Args = oldArgs
+			})
 			os.Args = tt.args
 
 			opts, _, err := ParseFlags()

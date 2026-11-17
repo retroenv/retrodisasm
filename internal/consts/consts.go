@@ -66,7 +66,9 @@ func (c *Consts) ReplaceParameter(address uint16, opcode instruction.Opcode, par
 // for in which bank a constant is used, it will be added to all banks for now.
 // TODO fix constants to only output in used banks
 func (c *Consts) Process() {
-	constants := c.SortedByUint16(func(c Constant) uint16 { return c.Address })
+	constants := c.SortedByUint16(func(c Constant) uint16 {
+		return c.Address
+	})
 
 	for _, constInfo := range constants {
 		if !c.IsUsed(constInfo.Address) {

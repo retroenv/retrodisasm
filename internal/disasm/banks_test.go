@@ -200,7 +200,10 @@ func TestMergeMappingLabelInsideInstruction(t *testing.T) {
 }
 
 func TestRewriteBankSymbols(t *testing.T) {
-	names := map[string]string{"Entry": "Entry_bank1", "ABCD": "ABCD_bank1"}
+	names := map[string]string{
+		"Entry": "Entry_bank1",
+		"ABCD":  "ABCD_bank1",
+	}
 	assert.Equal(t, "lda Entry_bank1+1,X", rewriteSymbols("lda Entry+1,X", names))
 	assert.Equal(t, ".word $ABCD, ABCD_bank1", rewriteSymbols(".word $ABCD, ABCD", names))
 	assert.Equal(t, "EntryExtra", rewriteSymbols("EntryExtra", names))

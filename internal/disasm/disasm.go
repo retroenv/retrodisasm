@@ -243,7 +243,9 @@ func (dis *Disasm) initializeComponents(logger *log.Logger, ar architecture, car
 	// Inject dependencies into architecture
 	switch a := ar.(type) {
 	case *m6502.Arch6502:
-		dis.newArchitecture = func() architecture { return a.NewTrace() }
+		dis.newArchitecture = func() architecture {
+			return a.NewTrace()
+		}
 		a.InjectDependencies(m6502.Dependencies{
 			Disasm:     dis,
 			Mapper:     m,

@@ -387,7 +387,9 @@ func TestExportCHRPropagatesWriteError(t *testing.T) {
 	logger := log.NewTestLogger(t)
 	p := New(logger)
 	wantErr := errors.New("write failed")
-	p.writeFile = func(string, []byte, fs.FileMode) error { return wantErr }
+	p.writeFile = func(string, []byte, fs.FileMode) error {
+		return wantErr
+	}
 
 	opts := options.Program{Parameters: options.Parameters{Input: "game.nes"}}
 	_, err := p.exportCHR(&cartridge.Cartridge{CHR: []byte{1}}, opts, arch.NES)

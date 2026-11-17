@@ -129,7 +129,9 @@ func (v *Vars) AddReference(addressReference, usageAddress uint16, opcode instru
 // Process processes all variables and updates the instructions that use them
 // with a generated alias name.
 func (v *Vars) Process(codeBaseAddress uint16) error {
-	variables := v.SortedByUint16(func(v *variable) uint16 { return v.address })
+	variables := v.SortedByUint16(func(v *variable) uint16 {
+		return v.address
+	})
 
 	for _, varInfo := range variables {
 		if len(varInfo.usageAt) == 1 && !varInfo.indexedUsage && varInfo.address < nes.CodeBaseAddress &&

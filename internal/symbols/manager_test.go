@@ -104,7 +104,9 @@ func TestManager(t *testing.T) {
 			value: 0x2222,
 		})
 
-		sorted := mgr.SortedByUint16(func(t testItem) uint16 { return t.value })
+		sorted := mgr.SortedByUint16(func(t testItem) uint16 {
+			return t.value
+		})
 
 		assert.Len(t, sorted, 3)
 		assert.Equal(t, "A", sorted[0].name)

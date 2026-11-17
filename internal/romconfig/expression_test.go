@@ -8,7 +8,10 @@ import (
 )
 
 func TestEvaluate(t *testing.T) {
-	symbols := map[string]uint16{"Table": 0x80ff, "Base": 0x8000}
+	symbols := map[string]uint16{
+		"Table": 0x80ff,
+		"Base":  0x8000,
+	}
 	for _, test := range []struct {
 		expression string
 		value      uint16
